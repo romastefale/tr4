@@ -27,11 +27,25 @@ from app.bot.tstory import router as tstory_router
 from app.bot.weekfm import router as weekfm_router
 from app.bot.music_extras import register_music_extra_handlers
 from app.bot.music_groups import ensure_tables as ensure_music_group_tables, remember_group
-from app.config.settings import BASE_URL, TELEGRAM_BOT_TOKEN, telegram_webhook_secret, validate_required_env
+from app.config.settings import (
+    BASE_URL,
+    TELEGRAM_BOT_TOKEN,
+    TR4_EQUALIZADOR_ENABLED,
+    TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
+    TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE,
+    TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
+    telegram_webhook_secret,
+    validate_required_env,
+)
 from app.db.database import engine, init_db, run_migrations
 from app.security.rate_limit import rate_limit_status
+from app.equalizador.hardening import equalizador_hardening_status
 
 app = FastAPI(title="TR4 Music Only")
+if TR4_EQUALIZADOR_ENABLED:
+    from app.equalizador.router import router as equalizador_router
+
+    app.include_router(equalizador_router)
 logger = logging.getLogger(__name__)
 
 bot: Bot | None = None
@@ -157,7 +171,12 @@ def _db_ready_check() -> tuple[bool, str | None]:
 
 @app.get("/healthz", status_code=200)
 def healthz() -> dict[str, object]:
-    return {"status": "ok", "mode": "music_only", "rate_limit": rate_limit_status()}
+    return {
+        "status": "ok",
+        "mode": "music_only",
+        "rate_limit": rate_limit_status(),
+        "equalizador_enabled": TR4_EQUALIZADOR_ENABLED,
+    }
 
 
 @app.get("/readyz")
@@ -174,6 +193,12 @@ def readyz() -> JSONResponse:
                 "dispatcher_configured": _telegram_dispatcher_configured,
                 "telegram_ready": _telegram_ready,
                 "telegram_startup_error": _telegram_startup_error,
+                "equalizador": equalizador_hardening_status(
+                    enabled=TR4_EQUALIZADOR_ENABLED,
+                    rate_limit_per_minute=TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE,
+                    session_ttl_seconds=TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
+                    initdata_max_age_seconds=TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
+                ),
             },
         },
         status_code=200 if ok else 503,

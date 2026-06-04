@@ -35,7 +35,6 @@ _EXPENSIVE_COMMANDS = {
     "myself",
     "albnow",
     "nowp",
-    "kingplay",
 }
 
 

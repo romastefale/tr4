@@ -55,38 +55,22 @@ def _bool_env(name: str, default: bool, *, legacy: Iterable[str] = ()) -> bool:
     raise RuntimeError(f"Invalid boolean environment variable {name}={value!r}")
 
 
-def _int_list_env(name: str, *, legacy: Iterable[str] = ()) -> tuple[int, ...]:
-    raw = _env(name, "", legacy=legacy).strip()
+
+
+def _int_set_env(name: str, default: str = "", *, legacy: Iterable[str] = ()) -> set[int]:
+    raw = _env(name, default, legacy=legacy).strip()
     if not raw:
-        return ()
-    items: list[int] = []
-    for part in raw.replace(";", ",").split(","):
-        value = part.strip()
-        if not value:
+        return set()
+    values: set[int] = set()
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
             continue
         try:
-            items.append(int(value))
+            values.add(int(token))
         except ValueError as exc:
-            raise RuntimeError(
-                f"Invalid integer list environment variable {name}: item {value!r}"
-            ) from exc
-    return tuple(dict.fromkeys(items))
-
-
-def _choice_env(
-    name: str,
-    default: str,
-    choices: set[str],
-    *,
-    legacy: Iterable[str] = (),
-) -> str:
-    value = _env(name, default, legacy=legacy).strip().lower()
-    if value not in choices:
-        raise RuntimeError(
-            f"Invalid environment variable {name}={value!r}; expected one of {sorted(choices)}"
-        )
-    return value
-
+            raise RuntimeError(f"Invalid integer item in environment variable {name}={token!r}") from exc
+    return values
 
 def _is_sqlite_url(value: str) -> bool:
     lowered = value.strip().lower()
@@ -107,26 +91,6 @@ TELEGRAM_BOT_TOKEN = _env(
     legacy=("TELEGRAM_BOT_TOKEN",),
 )
 
-OWNER_ID = _int_env(
-    "TR3_ROOT_USER_ID",
-    0,
-    legacy=("TR3_OWNER_ID", "OWNER_ID"),
-)
-ROOT_USER_ID = OWNER_ID
-
-SECOND_MODERATOR_ID = _int_env(
-    "TR3_SECOND_MODERATOR_ID",
-    0,
-    legacy=("SECOND_MODERATOR_ID",),
-)
-THIRD_MODERATOR_ID = _int_env(
-    "TR3_THIRD_MODERATOR_ID",
-    0,
-    legacy=("THIRD_MODERATOR_ID",),
-)
-MODERATOR_IDS: tuple[int, ...] = tuple(
-    x for x in (OWNER_ID, SECOND_MODERATOR_ID, THIRD_MODERATOR_ID) if x
-)
 
 SPOTIFY_CLIENT_ID = _env(
     "TR3_SPOTIFY_CLIENT_ID",
@@ -252,112 +216,6 @@ def _database_url() -> str:
 
 DATABASE_URL = _database_url()
 
-# Phase 1 server variables reserved for upcoming managed-groups/security phases.
-TIGRAORESPONDE_TARGET_CHAT_ID = _int_env(
-    "TR3_TIGRAORESPONDE_TARGET_CHAT_ID",
-    0,
-    legacy=("TIGRAORESPONDE_TARGET_CHAT_ID",),
-)
-SECURITY_ALERT_CHAT_ID = _int_env(
-    "TR3_SECURITY_ALERT_CHAT_ID",
-    OWNER_ID,
-    legacy=("SECURITY_ALERT_CHAT_ID",),
-)
-AUDIT_LOG_CHAT_ID = _int_env(
-    "TR3_AUDIT_LOG_CHAT_ID",
-    SECURITY_ALERT_CHAT_ID,
-    legacy=("AUDIT_LOG_CHAT_ID",),
-)
-MANAGED_GROUP_IDS = _int_list_env(
-    "TR3_MANAGED_GROUP_IDS",
-    legacy=("MANAGED_GROUP_IDS",),
-)
-PANIC_MODE = _choice_env(
-    "TR3_PANIC_MODE",
-    "normal",
-    {"normal", "alert", "restricted", "panic_stop"},
-    legacy=("PANIC_MODE",),
-)
-PANIC_STOP_SERVER = _bool_env(
-    "TR3_PANIC_STOP_SERVER",
-    False,
-    legacy=("PANIC_STOP_SERVER",),
-)
-SECURITY_MONITOR_ENABLED = _bool_env(
-    "TR3_SECURITY_MONITOR_ENABLED",
-    True,
-    legacy=("SECURITY_MONITOR_ENABLED",),
-)
-SECURITY_MONITOR_INTERVAL_SECONDS = _int_env(
-    "TR3_SECURITY_MONITOR_INTERVAL_SECONDS",
-    300,
-    legacy=("SECURITY_MONITOR_INTERVAL_SECONDS",),
-)
-SECURITY_MONITOR_MAX_GROUPS = _int_env(
-    "TR3_SECURITY_MONITOR_MAX_GROUPS",
-    50,
-    legacy=("SECURITY_MONITOR_MAX_GROUPS",),
-)
-ANOMALY_WINDOW_SECONDS = _int_env(
-    "TR3_ANOMALY_WINDOW_SECONDS",
-    300,
-    legacy=("ANOMALY_WINDOW_SECONDS",),
-)
-ANOMALY_MAX_FORBIDDEN_WEBHOOKS = _int_env(
-    "TR3_ANOMALY_MAX_FORBIDDEN_WEBHOOKS",
-    5,
-    legacy=("ANOMALY_MAX_FORBIDDEN_WEBHOOKS",),
-)
-ANOMALY_MAX_PERMISSION_DENIED = _int_env(
-    "TR3_ANOMALY_MAX_PERMISSION_DENIED",
-    10,
-    legacy=("ANOMALY_MAX_PERMISSION_DENIED",),
-)
-
-# Phase 7 security panel/alert/rate-limit settings.
-SECURITY_ALERTS_ENABLED = _bool_env(
-    "TR3_SECURITY_ALERTS_ENABLED",
-    True,
-    legacy=("SECURITY_ALERTS_ENABLED",),
-)
-SECURITY_AUDIT_VIEW_LIMIT = _int_env(
-    "TR3_SECURITY_AUDIT_VIEW_LIMIT",
-    10,
-    legacy=("SECURITY_AUDIT_VIEW_LIMIT",),
-)
-AUDIT_EXPORT_LIMIT = _int_env(
-    "TR3_AUDIT_EXPORT_LIMIT",
-    1000,
-    legacy=("AUDIT_EXPORT_LIMIT",),
-)
-AUDIT_RETENTION_DAYS = _int_env(
-    "TR3_AUDIT_RETENTION_DAYS",
-    90,
-    legacy=("AUDIT_RETENTION_DAYS",),
-)
-CRITICAL_OPERATION_EXPORT_LIMIT = _int_env(
-    "TR3_CRITICAL_OPERATION_EXPORT_LIMIT",
-    1000,
-    legacy=("CRITICAL_OPERATION_EXPORT_LIMIT",),
-)
-CRITICAL_OPERATION_RETENTION_DAYS = _int_env(
-    "TR3_CRITICAL_OPERATION_RETENTION_DAYS",
-    180,
-    legacy=("CRITICAL_OPERATION_RETENTION_DAYS",),
-)
-AUDIT_EXPORT_ENCRYPTION_KEY = _env(
-    "TR3_AUDIT_EXPORT_ENCRYPTION_KEY",
-    legacy=("AUDIT_EXPORT_ENCRYPTION_KEY",),
-)
-AUDIT_EXPORT_ENCRYPTION_KEY_ID = _env(
-    "TR3_AUDIT_EXPORT_ENCRYPTION_KEY_ID",
-    "current",
-    legacy=("AUDIT_EXPORT_ENCRYPTION_KEY_ID",),
-)
-AUDIT_EXPORT_DECRYPTION_KEYS = _env(
-    "TR3_AUDIT_EXPORT_DECRYPTION_KEYS",
-    legacy=("AUDIT_EXPORT_DECRYPTION_KEYS",),
-)
 
 COMMAND_RATE_LIMIT_ENABLED = _bool_env(
     "TR3_COMMAND_RATE_LIMIT_ENABLED",
@@ -397,16 +255,40 @@ RADIO_SCHEDULER_MAX_DUE_PER_TICK = _int_env(
     legacy=("RADIO_SCHEDULER_MAX_DUE_PER_TICK",),
 )
 
-SESSION_PERSISTENCE_ENABLED = _bool_env(
-    "TR3_SESSION_PERSISTENCE_ENABLED",
-    True,
-    legacy=("SESSION_PERSISTENCE_ENABLED",),
-)
-OPERATIONAL_LOCK_TTL_SECONDS = _int_env(
-    "TR3_OPERATIONAL_LOCK_TTL_SECONDS",
-    90,
-    legacy=("OPERATIONAL_LOCK_TTL_SECONDS",),
-)
+
+# Equalizador Mini App — disabled by default. The web moderation surface is
+# registered only when TR4_EQUALIZADOR_ENABLED is true. Phase 7 adds hardening: rate limit, short session, mesa lock and sanitized logs.
+TR4_EQUALIZADOR_ENABLED = _bool_env("TR4_EQUALIZADOR_ENABLED", False)
+TR4_EQUALIZADOR_APP_NAME = _env("TR4_EQUALIZADOR_APP_NAME", "equalizador").strip() or "equalizador"
+TR4_EQUALIZADOR_MAESTRO_IDS_SET = _int_set_env("TR4_EQUALIZADOR_MAESTRO_IDS", "")
+TR4_EQUALIZADOR_OPERADOR_IDS_SET = _int_set_env("TR4_EQUALIZADOR_OPERADOR_IDS", "")
+TR4_EQUALIZADOR_PALCO_IDS_SET = _int_set_env("TR4_EQUALIZADOR_PALCO_IDS", "")
+TR4_EQUALIZADOR_CANAIS_RAW = _env("TR4_EQUALIZADOR_CANAIS", "")
+TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS = _bool_env("TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS", True)
+TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS = _int_env("TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS", 600)
+TR4_EQUALIZADOR_SESSION_TTL_SECONDS = _int_env("TR4_EQUALIZADOR_SESSION_TTL_SECONDS", 900)
+TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE = _int_env("TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE", 30)
+
+
+def equalizador_user_is_allowed(user_id: int) -> bool:
+    return user_id in TR4_EQUALIZADOR_MAESTRO_IDS_SET or user_id in TR4_EQUALIZADOR_OPERADOR_IDS_SET
+
+
+def equalizador_allowed_palco_ids() -> set[int]:
+    return set(TR4_EQUALIZADOR_PALCO_IDS_SET)
+
+
+def equalizador_canais_raw() -> str:
+    return TR4_EQUALIZADOR_CANAIS_RAW
+
+
+def equalizador_alias_secret() -> str:
+    # Validation requires TELEGRAM_BOT_TOKEN. Reuse it as a server-side secret
+    # for stable UI aliases without exposing Telegram numeric identifiers.
+    if TELEGRAM_BOT_TOKEN:
+        return TELEGRAM_BOT_TOKEN
+    return "tr4-equalizador-alias-development-only"
+
 
 REQUIRED_ENV_VARS = (
     ("TR3_TELEGRAM_BOT_TOKEN/TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
@@ -417,7 +299,6 @@ REQUIRED_ENV_VARS = (
         "TR3_BASE_URL/BASE_URL",
         BASE_URL if BASE_URL != "http://localhost:8000" else "",
     ),
-    ("TR3_ROOT_USER_ID/OWNER_ID", str(OWNER_ID) if OWNER_ID else ""),
 )
 
 

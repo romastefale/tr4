@@ -1,5 +1,6 @@
 from __future__ import annotations
 
-from app.bot.telegram import bot_dispatcher
+# Keep package import side-effect free. Runtime imports the dispatcher directly
+# from app.bot.telegram in app.main, where aiogram is an explicit dependency.
 
-__all__ = ["bot_dispatcher"]
+__all__: list[str] = []

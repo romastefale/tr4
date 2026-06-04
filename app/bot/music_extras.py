@@ -6,16 +6,10 @@ import logging
 
 from aiogram import Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-from sqlalchemy import text
-
-from app.bot.filters import IsOwner
-from app.db.database import SessionLocal
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from app.bot.music_groups import list_groups
-from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service  # Sprint 8
-from app.services.spotify_canvas import fetch_canvas_video_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -106,17 +100,6 @@ def _nowp_groups_keyboard(requester_id: int, groups: list[dict]) -> InlineKeyboa
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _kingplay_groups_keyboard() -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    groups = list_groups()
-    for group in groups[:10]:
-        chat_id = int(group["chat_id"])
-        title = str(group.get("title") or chat_id)
-        label = title if len(title) <= 40 else title[:37] + "..."
-        rows.append([_safe_button(label, f"kingplay:send:{chat_id}", "primary")])
-    rows.append([_safe_button("Fechar", "kingplay:close", "danger")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
 
 def _format_albnow(user_name: str, data: dict) -> str:
     safe_user = html.escape(user_name or "Usuário")
@@ -132,101 +115,6 @@ def _format_albnow(user_name: str, data: dict) -> str:
         return f"{safe_user} · <i>♬ {track} — {artist}</i>"
     return f"{safe_user} · <i>nada tocando agora</i>"
 
-
-async def _send_kingplay(message: Message, target_chat_id: int, owner_user_id: int, owner_display_name: str) -> bool:
-    try:
-        chat = await message.bot.get_chat(target_chat_id)
-        group_name_raw = _normalize_optional_text(chat.title)
-    except Exception:
-        group_name_raw = _normalize_optional_text(str(target_chat_id))
-
-    try:
-        # Sprint 3.5: music_service (Last.fm-first) substitui o caminho
-        # via spotify_service que dependia do monkey-patch do music_proxy.
-        track = await music_service.get_current_or_last_played(owner_user_id)
-    except Exception:
-        logger.exception("Falha no /kingplay | owner_user_id=%s", owner_user_id)
-        await message.answer("Erro ao obter música.")
-        return False
-
-    if not track:
-        await message.answer("Nada tocando.")
-        return False
-
-    track_name = html.escape(_normalize_optional_text(track.get("track_name")) or "")
-    artist_name = html.escape(_normalize_optional_text(track.get("artist")) or "")
-    group_name = html.escape(group_name_raw or "")
-    track_url = html.escape(str(track.get("spotify_url") or ""), quote=True)
-    caption = f'<b><i>♫ {group_name} está ouvindo </i></b><a href="{track_url}"><b>{track_name}</b></a><b><i> — {artist_name}</i></b>'
-
-    # Tenta Canvas (vídeo vertical do Spotify) ANTES da capa estática.
-    # Mesma lógica de /tcanvas: helper resolve lfm:->Spotify ID e baixa
-    # bytes. Em qualquer falha (sem canvas, sem match, download falhou),
-    # canvas_bytes = None -> cai no fluxo de capa/texto original.
-    raw_track_id = str(track.get("track_id") or "").strip()
-    raw_artist = _normalize_optional_text(track.get("artist"))
-    raw_track_name = _normalize_optional_text(track.get("track_name"))
-    canvas_bytes: bytes | None = None
-    try:
-        canvas_bytes = await fetch_canvas_video_bytes(
-            raw_track_id, raw_artist, raw_track_name
-        )
-    except Exception:
-        logger.exception(
-            "KINGPLAY_CANVAS_ERROR | owner=%s | track_id=%s",
-            owner_user_id, raw_track_id,
-        )
-
-    try:
-        if canvas_bytes:
-            filename_id = raw_track_id or "track"
-            sent = await message.bot.send_video(
-                chat_id=target_chat_id,
-                video=BufferedInputFile(canvas_bytes, filename=f"canvas-{filename_id}.mp4"),
-                caption=caption,
-                parse_mode="HTML",
-            )
-        else:
-            cover = track.get("album_image_url")
-            if cover:
-                sent = await message.bot.send_photo(chat_id=target_chat_id, photo=str(cover), caption=caption, parse_mode="HTML")
-            else:
-                sent = await message.bot.send_message(chat_id=target_chat_id, text=caption, parse_mode="HTML")
-    except Exception as exc:
-        logger.exception("Falha de envio no /kingplay", exc_info=exc)
-        await message.answer("Erro ao enviar mensagem no grupo.")
-        return False
-
-    # Sprint 8: registra card pra reactions tracking (mesmo do /playing).
-    track_id_raw = str(track.get("track_id") or "").strip()
-    if track_id_raw:
-        try:
-            await reactions_service.register_card(
-                chat_id=sent.chat.id,
-                message_id=sent.message_id,
-                track_id=track_id_raw,
-                owner_user_id=owner_user_id,
-                track_name=_normalize_optional_text(track.get("track_name")),
-                artist_name=_normalize_optional_text(track.get("artist")),
-            )
-        except Exception:
-            logger.exception("KINGPLAY_REGISTER_CARD_FAILED chat=%s", target_chat_id)
-
-    try:
-        await message.bot.pin_chat_message(chat_id=target_chat_id, message_id=sent.message_id)
-    except Exception:
-        logger.exception("Falha ao fixar /kingplay")
-
-    safe_owner = html.escape(owner_display_name or str(owner_user_id))
-    # Sprint 5 (S5.01): removido `target_chat_id` e `sent.message_id` da
-    # resposta — antes vazava topologia de grupos pra quem visse o print
-    # ou log. Confirmação fica enxuta; quem precisa do ID consulta logs
-    # do bot (que mantêm contexto completo via logger.exception em falha).
-    await message.answer(
-        f"Kingplay enviado.\nDono: {safe_owner}",
-        parse_mode="HTML",
-    )
-    return True
 
 
 def register_music_extra_handlers(dp: Dispatcher) -> None:
@@ -487,77 +375,3 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
             except Exception:
                 pass
         await query.answer()
-
-    @dp.message(Command("kingplay"), IsOwner())
-    async def kingplay(message: Message) -> None:
-        # S3: OWNER-only via filter IsOwner.
-        if message.from_user:
-            from app.security.rate_limit import enforce_message_rate_limit
-            if not await enforce_message_rate_limit(message, "kingplay"):
-                return
-        parts = (message.text or "").splitlines()
-        if len(parts) >= 2:
-            try:
-                target_chat_id = int(parts[1].strip())
-            except Exception:
-                await message.answer("chat_id inválido")
-                return
-            await _send_kingplay(message, target_chat_id, message.from_user.id, message.from_user.full_name)
-            return
-
-        groups = list_groups()
-        if not groups:
-            await message.answer("Nenhum grupo conhecido. Envie qualquer mensagem no grupo com o bot ativo ou use:\n/kingplay\n<chat_id>")
-            return
-        await message.answer("Kingplay — escolha o grupo:", reply_markup=_kingplay_groups_keyboard())
-
-    @dp.callback_query(F.data.startswith("kingplay:send:"), IsOwner())
-    async def kingplay_send_callback(query: CallbackQuery) -> None:
-        # S3: OWNER-only via filter IsOwner (silencioso — não-owners não veem nada).
-        if not query.message or not query.data:
-            await query.answer()
-            return
-        try:
-            target_chat_id = int(query.data.rsplit(":", 1)[-1])
-        except Exception:
-            await query.answer("chat_id inválido", show_alert=True)
-            return
-        await query.answer("Enviando...")
-        await _send_kingplay(query.message, target_chat_id, query.from_user.id, query.from_user.full_name)
-
-    @dp.callback_query(F.data == "kingplay:close", IsOwner())
-    async def kingplay_close_callback(query: CallbackQuery) -> None:
-        # S3: OWNER-only via filter IsOwner.
-        if query.message:
-            await query.message.edit_text("Kingplay fechado.")
-        await query.answer()
-
-    @dp.message(Command("debuguser"), IsOwner())
-    async def debug_user(message: Message) -> None:
-        # S3: OWNER-only via filter IsOwner.
-        parts = (message.text or "").split(maxsplit=1)
-        if len(parts) < 2:
-            await message.answer("Uso: /debuguser <user_id>")
-            return
-        try:
-            target_user_id = int(parts[1].strip())
-        except ValueError:
-            await message.answer("user_id inválido")
-            return
-
-        with SessionLocal() as db:
-            total_plays = db.execute(text("SELECT COUNT(*) FROM track_plays WHERE user_id = :uid"), {"uid": target_user_id}).scalar() or 0
-            likes_sent = db.execute(text("SELECT COUNT(*) FROM track_likes WHERE user_id = :uid AND COALESCE(liked, 1) = 1"), {"uid": target_user_id}).scalar() or 0
-            likes_received = db.execute(text("SELECT COUNT(*) FROM track_likes WHERE owner_user_id = :uid AND COALESCE(liked, 1) = 1"), {"uid": target_user_id}).scalar() or 0
-
-        top_tracks = await likes_service.get_user_top_tracks(target_user_id, limit=5)
-        top_lines = [f"{name} → {plays}" for name, plays in top_tracks] or ["Nenhum dado encontrado."]
-        await message.answer(
-            "DEBUG USER\n\n"
-            f"user_id: {target_user_id}\n\n"
-            f"plays totais: {total_plays}\n"
-            f"likes recebidos: {likes_received}\n"
-            f"likes enviados: {likes_sent}\n\n"
-            "TOP MÚSICAS:\n"
-            + "\n".join(top_lines)
-        )

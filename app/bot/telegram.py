@@ -10,32 +10,22 @@ from aiogram.types import (
     CallbackQuery,
     InlineQuery,
     InlineQueryResultPhoto,
-    KeyboardButton,
-    KeyboardButtonRequestUsers,
     Message,
     MessageReactionUpdated,
     ReactionTypeEmoji,
-    ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
 )
 
 from app.bot.intent import detect_intent
-from app.bot.filters import IsOwner
 from app.config.settings import LASTFM_API_KEY
 from app.services.connection_check import connect_hint_for, is_user_connected
 from app.services.lastfm import lastfm_service
 from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service
-from app.services.reaction_audit import reaction_audit_service
 from app.services.spotify import spotify_service
 
 logger = logging.getLogger(__name__)
 
-
-def is_managed_group(chat_id: int) -> bool:
-    # Music-only build: moderation/reaction audit panel is disabled.
-    return False
 
 
 bot_dispatcher: Dispatcher = Dispatcher()
@@ -49,8 +39,6 @@ _EFFECT_FIRE = "5104841245755180586"      # 🔥
 _EFFECT_PARTY = "5046509860389126442"     # 🎉
 _EFFECT_THUMBS_UP = "5107584321108051014"  # 👍
 
-# Sprint 9 (#5): request_id estável pro botão RequestUsers do /manual.
-_MANUAL_REQUEST_USER_ID = 1001
 
 # Sprint 10: emojis pra bot reagir nos próprios cards de música.
 # Telegram restringe reactions de bots não-Premium à lista oficial
@@ -446,43 +434,6 @@ def _register_handlers(dp: Dispatcher) -> None:
             parse_mode="HTML",
         )
 
-    @dp.message(Command("hidden"), IsOwner())
-    async def hidden_command(message: Message) -> None:
-        # S3: OWNER-only via filter IsOwner (silencioso pra não-owners).
-        # Mesmo padrão de /manual, /kingplay, /debuguser.
-        await message.answer(
-            "<b>🔒 COMANDOS OCULTOS</b> — só você (dono) vê isso\n\n"
-            "— SPOTIFY (uso restrito, &lt;5 pessoas) —\n\n"
-            "🎧 /login\n"
-            "Inicia o OAuth do Spotify. Só funciona em DM com o bot — em grupo, "
-            "ele responde com instrução pra ir pro privado. Gera link de autorização; "
-            "depois que autoriza, o Spotify volta como fallback de música pra quem não tem Last.fm.\n\n"
-            "🎧 /logout\n"
-            "Limpa a sessão Spotify do usuário no banco. Resposta seca: \"Spotify desconectado.\"\n\n"
-            "— ATALHOS DOS BOTÕES DO /myself —\n\n"
-            "Estes dois comandos existem mas <b>não são documentados publicamente</b>: "
-            "a UX canônica é clicar nos botões 🟢 Semanal / 🔴 Mensal dentro do /myself. "
-            "Ficam aqui só pra você lembrar que existem e poder digitar direto se quiser.\n\n"
-            "◌ /weekfm\n"
-            "Atalho direto pro extrato <b>semanal</b> do Last.fm (mesmo card do botão Semanal do /myself). "
-            "Aceita data: <code>/weekfm</code>, <code>/weekfm 2026-05-06</code> ou "
-            "<code>/weekfm 2026-05-06 2026-05-13</code>.\n\n"
-            "◌ /monthfm\n"
-            "Atalho direto pro extrato <b>mensal</b> (mesmo card do botão Mensal do /myself). "
-            "Aceita: <code>/monthfm</code>, <code>/monthfm 05</code> ou <code>/monthfm 2026-05</code>.\n\n"
-            "— UTILIDADES MUSICAIS AVANÇADAS —\n\n"
-            "♛ /kingplay\n"
-            "Força-fixa sua música atual num grupo conhecido. Se houver Spotify Canvas, posta o vídeo; senão, usa a capa do álbum.\n\n"
-            "🪪 /manual <user_id> <lastfm_username>\n"
-            "Cadastra Last.fm manualmente para um user_id. Útil para corrigir perfil musical.\n\n"
-            "🔎 /debuguser <user_id>\n"
-            "Mostra estatísticas musicais internas de um usuário no banco.\n\n"
-            "🔒 /hidden\n"
-            "Este comando de ajuda avançada. Silencioso para quem não é autorizado.",
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-
     @dp.message(Command("login"))
     async def login(message: Message) -> None:
         if message.chat.type != "private":
@@ -568,131 +519,6 @@ def _register_handlers(dp: Dispatcher) -> None:
             return
         # Sprint 9 (#8): conexão bem-sucedida ganha efeito 🔥 (DM only, fallback OK).
         await _answer_with_effect(message, head, _EFFECT_FIRE, parse_mode="HTML")
-
-    @dp.message(Command("manual"), IsOwner())
-    async def manual(message: Message) -> None:
-        # Comando de dono: cadastra outra pessoa no Last.fm.
-        # S3: OWNER-only via filter IsOwner (silencioso pra não-owners).
-        parts = (message.text or "").split()
-        if len(parts) < 3:
-            # Sprint 9 (#5): sem args → keyboard RequestUsers (DM only)
-            # captura user_id nativamente. Em grupo, mantém comportamento
-            # antigo (texto). Falha graceful pra versões aiogram antigas.
-            if message.chat.type == "private":
-                try:
-                    request_btn = KeyboardButton(
-                        text="👤 Escolher usuário",
-                        request_users=KeyboardButtonRequestUsers(
-                            request_id=_MANUAL_REQUEST_USER_ID,
-                            user_is_bot=False,
-                            max_quantity=1,
-                        ),
-                    )
-                    kb = ReplyKeyboardMarkup(
-                        keyboard=[[request_btn]],
-                        resize_keyboard=True,
-                        one_time_keyboard=True,
-                    )
-                    await message.answer(
-                        "Uso completo: <code>/manual &lt;user_id&gt; &lt;lastfm_username&gt;</code>\n"
-                        "Aceita @, URL completa do Last.fm ou só o nome.\n"
-                        "Exemplo: <code>/manual 123456789 @romastefale</code>\n\n"
-                        "Ou clica abaixo pra escolher o usuário nativamente:",
-                        parse_mode="HTML",
-                        reply_markup=kb,
-                    )
-                    return
-                except Exception:
-                    logger.debug("MANUAL_REQUEST_USERS_KB_FAILED", exc_info=True)
-            await message.answer(
-                "Uso: <code>/manual &lt;user_id&gt; &lt;lastfm_username&gt;</code>\n"
-                "Aceita @, URL completa do Last.fm ou só o nome.\n"
-                "Exemplo: <code>/manual 123456789 @romastefale</code>",
-                parse_mode="HTML",
-            )
-            return
-        raw_uid = parts[1].strip()
-        try:
-            target_uid = int(raw_uid)
-        except ValueError:
-            await message.answer(
-                f"❌ <code>{html.escape(raw_uid)}</code> não é um Telegram user_id válido.",
-                parse_mode="HTML",
-            )
-            return
-        raw_username = " ".join(parts[2:]).strip()
-        try:
-            clean, deleted = await lastfm_service.manual_register(target_uid, raw_username)
-        except ValueError:
-            await message.answer(
-                f"❌ Username Last.fm inválido: <code>{html.escape(raw_username)}</code>",
-                parse_mode="HTML",
-            )
-            return
-        except Exception:
-            logger.exception("MANUAL_REGISTER_FAILED user_id=%s raw=%r", target_uid, raw_username)
-            await message.answer(
-                "❌ Erro ao cadastrar — nada foi alterado no banco (transação revertida).",
-                parse_mode="HTML",
-            )
-            return
-        cleanup_line = (
-            f"🧹 Limpei {deleted} registro(s) antigo(s) desse user_id antes."
-            if deleted
-            else "🧹 Nenhuma sujeira antiga — slot estava limpo."
-        )
-        # Sprint 10: effect PARTY em DM (toda vez owner cadastra manual).
-        await _answer_with_effect(
-            message,
-            "✓ Cadastro manual concluído.\n"
-            f"• user_id: <code>{target_uid}</code>\n"
-            f"• Last.fm: <b>@{html.escape(clean)}</b>\n"
-            f"{cleanup_line}",
-            _EFFECT_PARTY,
-            parse_mode="HTML",
-        )
-
-    @dp.message(F.users_shared, IsOwner())
-    async def on_users_shared(message: Message) -> None:
-        """Sprint 9 (#5): captura user_id do botão RequestUsers do /manual.
-
-        Owner clica "Escolher usuário" no keyboard → Telegram envia
-        message com users_shared. Validamos request_id pra garantir
-        que veio do nosso botão (não de outro keyboard). Owner-only
-        via filter (silencioso pra não-owners). Não armazena estado:
-        owner copia o ID e roda /manual completo manualmente.
-        """
-        shared = message.users_shared
-        if not shared or shared.request_id != _MANUAL_REQUEST_USER_ID:
-            return
-        # aiogram3 expõe .users (list[SharedUser]) em versões novas e
-        # .user_ids (list[int]) em versões antigas. Tratamento defensivo.
-        target_id: int | None = None
-        users_attr = getattr(shared, "users", None)
-        if users_attr:
-            try:
-                target_id = int(users_attr[0].user_id)
-            except (AttributeError, IndexError, ValueError, TypeError):
-                target_id = None
-        if target_id is None:
-            ids_attr = getattr(shared, "user_ids", None)
-            if ids_attr:
-                try:
-                    target_id = int(ids_attr[0])
-                except (IndexError, ValueError, TypeError):
-                    target_id = None
-        if target_id is None:
-            await message.answer(
-                "Não consegui ler o usuário escolhido.",
-                reply_markup=ReplyKeyboardRemove(),
-            )
-            return
-        await message.answer(
-            f"✓ User ID capturado: <code>{target_id}</code>\n\n"
-            f"Agora roda:\n<code>/manual {target_id} &lt;lastfm_username&gt;</code>",
-            parse_mode="HTML",
-            reply_markup=ReplyKeyboardRemove(),
-        )
 
     @dp.message(Command("lastfmoff"))
     async def lastfmoff(message: Message) -> None:
@@ -787,26 +613,6 @@ def _register_handlers(dp: Dispatcher) -> None:
                 "MESSAGE_REACTION_FAILED chat=%s msg=%s user=%s",
                 event.chat.id, event.message_id, event.user.id,
             )
-        # Sprint X3: log paralelo na tabela de auditoria (TTL 24h) pra
-        # o painel rmod listar quem reagiu numa msg/chat sem depender
-        # de @username. Falha aqui NÃO deve abortar o fluxo principal
-        # de tracking de cards — wrap independente.
-        if is_managed_group(int(event.chat.id)):
-            try:
-                await reaction_audit_service.record_change(
-                    chat_id=event.chat.id,
-                    message_id=event.message_id,
-                    user_id=event.user.id,
-                    user_name=getattr(event.user, "full_name", None),
-                    user_username=getattr(event.user, "username", None),
-                    old_emojis=old_emojis,
-                    new_emojis=new_emojis,
-                )
-            except Exception:
-                logger.exception(
-                    "REACTION_AUDIT_HANDLER_FAILED chat=%s msg=%s user=%s",
-                    event.chat.id, event.message_id, event.user.id,
-                )
 
     # Inline público. Query vazia (ou "playing") -> card da música tocando
     # como 1ª opção. Query com termo -> busca por termo (mesmo motor do /radiofm).
