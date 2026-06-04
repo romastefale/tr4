@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.moderation_tigrao.actions import set_group_photo
 from app.moderation_tigrao.keyboards import customize_keyboard, home_keyboard
+from app.moderation_tigrao.display import group_display_name
 from app.moderation_tigrao.permissions import is_owner_callback, is_owner_private_message
 from app.moderation_tigrao.state import clear_action, consume_if_expired, get_session, set_action
 from app.moderation_tigrao.storage import log_action
@@ -40,6 +41,12 @@ def _consume_recent_photo_change(chat_id: int) -> bool:
     return True
 
 
+
+def _selected_group_label() -> str:
+    session = get_session()
+    return group_display_name(getattr(session, "selected_group_title", None))
+
+
 def _need_group_text() -> str:
     return error_text(
         "Nenhum grupo selecionado",
@@ -69,7 +76,7 @@ async def tigrao_customize_photo(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — alterar foto do grupo\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_selected_group_label()}\n\n"
             "Envie agora a imagem no privado do bot.\n"
             "Use uma foto/imagem em boa resolução. O Telegram aplicará o recorte próprio da foto do grupo."
         )
@@ -121,7 +128,7 @@ async def tigrao_receive_group_photo(message: Message) -> None:
         log_action(chat_id=int(session.selected_chat_id), action="customize_photo", status="success")
         clear_action()
         await message.answer(
-            success_text("Foto do grupo alterada", f"Grupo: {session.selected_chat_id}\nArquivo: {filename}"),
+            success_text("Foto do grupo alterada", f"Grupo: {_selected_group_label()}\nArquivo: {filename}"),
             reply_markup=customize_keyboard(),
         )
     except TelegramForbiddenError as exc:

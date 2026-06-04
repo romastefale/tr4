@@ -87,6 +87,8 @@ from app.security.panic import record_security_signal, security_status, should_b
 from app.security.task_registry import shutdown_tasks, task_count
 from app.security.session_store import cleanup_expired_operational_locks, cleanup_expired_private_sessions, ensure_tables as ensure_session_store_tables, list_operational_locks, list_private_sessions
 from app.security.critical_operations import ensure_tables as ensure_critical_operation_tables, critical_operations_summary
+from app.security.adeus_recovery import ensure_tables as ensure_adeus_recovery_tables
+from app.security.group_membership_router import router as group_membership_router
 
 app = FastAPI(title="Minimal Backend")
 logger = logging.getLogger(__name__)
@@ -452,6 +454,7 @@ async def on_startup() -> None:
     ensure_radio_schedule_tables()
     ensure_session_store_tables()
     ensure_critical_operation_tables()
+    ensure_adeus_recovery_tables()
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -475,6 +478,7 @@ async def on_startup() -> None:
         )
         if not _telegram_dispatcher_configured:
             dispatcher.include_router(global_error_router)
+            dispatcher.include_router(group_membership_router)
             dispatcher.include_router(tigrao_ddx_router)
             dispatcher.include_router(tigrao_ddx_soft_router)
             dispatcher.include_router(tigrao_customize_router)

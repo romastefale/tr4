@@ -6,6 +6,8 @@ from aiogram.types import (
     InlineKeyboardMarkup,
 )
 
+from app.moderation_tigrao.display import disambiguate_group_labels
+
 
 def _button(text: str, callback_data: str, style: str | None = None) -> InlineKeyboardButton:
     """Cria um InlineKeyboardButton.
@@ -322,14 +324,50 @@ def rmod_confirm_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def groups_keyboard(groups: list[dict]) -> InlineKeyboardMarkup:
+def groups_keyboard(
+    groups: list[dict] | None = None,
+    *,
+    current_group: dict | None = None,
+    managed_groups: list[dict] | None = None,
+    discovered_count: int = 0,
+    inaccessible_count: int = 0,
+) -> InlineKeyboardMarkup:
+    """Teclado de grupos por categoria.
+
+    Compatibilidade: `groups` ainda é aceito, mas a lista operacional deve vir
+    de `managed_groups`. O chat_id segue no callback interno; o texto do botão
+    nunca exibe ID.
+    """
     rows: list[list[InlineKeyboardButton]] = []
-    for group in groups[:10]:
+
+    if current_group:
+        current = disambiguate_group_labels([current_group])[0]
+        label = str(current.get("display_label") or "Grupo atual")
+        if len(label) > 46:
+            label = label[:43] + "..."
+        rows.append([_button(f"Atual: {label}", f"tigrao:group:{int(current['chat_id'])}", "success")])
+
+    source = managed_groups if managed_groups is not None else (groups or [])
+    for group in disambiguate_group_labels(list(source))[:10]:
         chat_id = int(group["chat_id"])
-        title = str(group.get("title") or chat_id)
-        label = title if len(title) <= 40 else title[:37] + "..."
+        label = str(group.get("display_label") or "Grupo")
+        if len(label) > 46:
+            label = label[:43] + "..."
         rows.append([_button(label, f"tigrao:group:{chat_id}", "primary")])
-    rows.append([_button("Digitar chat_id", "tigrao:group:manual", "primary")])
+
+    maintenance: list[InlineKeyboardButton] = [
+        _button("Atualizar status", "tigrao:groups:refresh", "primary"),
+    ]
+    if inaccessible_count:
+        maintenance.append(_button(f"Inacessíveis ({inaccessible_count})", "tigrao:groups:inaccessible", "danger"))
+    rows.append(maintenance)
+
+    secondary: list[InlineKeyboardButton] = []
+    if discovered_count:
+        secondary.append(_button(f"Descobertos ({discovered_count})", "tigrao:groups:discovered", "primary"))
+    secondary.append(_button("Digitar grupo", "tigrao:group:manual", "primary"))
+    rows.append(secondary)
+
     rows.extend(_back_close_rows())
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

@@ -61,3 +61,25 @@ def test_governance_signals_missing_change_info_and_invite():
     text = _keyboard_text(markup)
     assert "tigrao:rights:missing:change_info" in text
     assert "tigrao:rights:missing:invite" in text
+
+
+def test_groups_keyboard_hides_chat_ids_but_keeps_callback_data():
+    from app.moderation_tigrao.keyboards import groups_keyboard
+
+    markup = groups_keyboard(
+        managed_groups=[
+            {"chat_id": -1003818494866, "title": "_ e tigraoRADIO"},
+            {"chat_id": -1003818494999, "title": "_ e tigraoRADIO"},
+        ],
+        discovered_count=1,
+        inaccessible_count=1,
+    )
+    button_labels = [button.text for row in markup.inline_keyboard for button in row]
+    callback_data = [button.callback_data for row in markup.inline_keyboard for button in row if button.callback_data]
+
+    assert not any("-1003818494866" in label for label in button_labels)
+    assert not any("-1003818494999" in label for label in button_labels)
+    assert "_ e tigraoRADIO" in button_labels
+    assert "_ e tigraoRADIO #2" in button_labels
+    assert "tigrao:group:-1003818494866" in callback_data
+    assert "tigrao:group:-1003818494999" in callback_data

@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.moderation_tigrao.actions import copy_message
 from app.moderation_tigrao.keyboards import customize_keyboard, home_keyboard
+from app.moderation_tigrao.display import group_display_name
 from app.moderation_tigrao.permissions import is_owner_callback, is_owner_private_message
 from app.moderation_tigrao.state import clear_action, consume_if_expired, get_session, set_action
 from app.moderation_tigrao.storage import log_action
@@ -14,6 +15,12 @@ from app.moderation_tigrao.texts import error_text, success_text
 router = Router(name="moderation_tigrao_pinned_media")
 
 MEDIA_FILTER = F.photo | F.video | F.document | F.animation | F.sticker | F.audio | F.voice | F.video_note
+
+
+
+def _selected_group_label() -> str:
+    session = get_session()
+    return group_display_name(getattr(session, "selected_group_title", None))
 
 
 def _need_group_text() -> str:
@@ -45,7 +52,7 @@ async def tigrao_send_media_pin(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — enviar mídia e fixar\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_selected_group_label()}\n\n"
             "Envie agora a foto, vídeo, documento, animação, sticker, áudio, voz ou outra mídia que será copiada e fixada no grupo.\n\n"
             "Se a mídia tiver legenda, ela será preservada pelo Telegram ao copiar."
         )
@@ -88,7 +95,7 @@ async def tigrao_private_pinned_media(message: Message) -> None:
         await message.answer(
             success_text(
                 "Mídia enviada e fixada",
-                f"Grupo: {chat_id}\nMensagem: {copied_id}",
+                f"Grupo: {_selected_group_label()}\nMensagem: {copied_id}",
             ),
             reply_markup=customize_keyboard(),
         )

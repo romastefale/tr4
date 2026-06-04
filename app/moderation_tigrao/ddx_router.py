@@ -7,6 +7,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
 from app.moderation_tigrao.keyboards import ddx_keyboard, home_keyboard
+from app.moderation_tigrao.display import group_display_name
 from app.moderation_tigrao.permissions import is_owner_callback, is_owner_private_message
 from app.moderation_tigrao.state import clear_action, consume_if_expired, get_session, set_action
 from app.moderation_tigrao.storage import get_ddx_filters, load_ddx_words, log_action, set_ddx_filters
@@ -26,6 +27,12 @@ async def _deny_if_no_ddx_permission(callback: CallbackQuery) -> bool:
         return False
     await callback.answer("Sem permissão DDX neste grupo.", show_alert=True)
     return True
+
+
+
+def _selected_group_label() -> str:
+    session = get_session()
+    return group_display_name(getattr(session, "selected_group_title", None))
 
 
 def _need_group_text() -> str:
@@ -56,7 +63,7 @@ def _ddx_list_text() -> str:
     if not row:
         return (
             "Tigrão — filtros DDX\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_selected_group_label()}\n\n"
             "Nenhum filtro cadastrado."
         )
 
@@ -73,7 +80,7 @@ def _ddx_list_text() -> str:
 
     return (
         "Tigrão — filtros DDX\n\n"
-        f"Grupo: {session.selected_chat_id}\n"
+        f"Grupo: {_selected_group_label()}\n"
         f"Status: {enabled}\n"
         f"Atualizado em: {row.get('updated_at') or '-'}\n\n"
         f"Palavras:\n{words_text}"
@@ -99,7 +106,7 @@ async def tigrao_ddx_add(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — adicionar filtro DDX\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_selected_group_label()}\n\n"
             "Envie as palavras ou frases que devem ser filtradas.\n"
             "Pode separar por vírgula, ponto e vírgula ou linha."
         )
@@ -148,7 +155,7 @@ async def tigrao_ddx_receive_add_words(message: Message) -> None:
     await message.answer(
         success_text(
             "Filtro DDX atualizado",
-            f"Grupo: {chat_id}\nAdicionados: {len(incoming)}\nTotal de filtros: {len(final_words)}",
+            f"Grupo: {_selected_group_label()}\nAdicionados: {len(incoming)}\nTotal de filtros: {len(final_words)}",
         ),
         reply_markup=ddx_keyboard(),
     )
@@ -173,7 +180,7 @@ async def tigrao_ddx_remove(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — remover filtro DDX\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_selected_group_label()}\n\n"
             "Envie as palavras ou frases que devem ser removidas.\n"
             "Pode separar por vírgula, ponto e vírgula ou linha."
         )
@@ -223,7 +230,7 @@ async def tigrao_ddx_receive_remove_words(message: Message) -> None:
     await message.answer(
         success_text(
             "Filtro DDX atualizado",
-            f"Grupo: {chat_id}\nRemovidos: {removed_count}\nTotal de filtros: {len(final_words)}",
+            f"Grupo: {_selected_group_label()}\nRemovidos: {removed_count}\nTotal de filtros: {len(final_words)}",
         ),
         reply_markup=ddx_keyboard(),
     )
@@ -253,7 +260,7 @@ async def tigrao_ddx_off(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             success_text(
                 "DDX desligado",
-                f"Grupo: {chat_id}\nFiltros preservados: {len(current)}",
+                f"Grupo: {_selected_group_label()}\nFiltros preservados: {len(current)}",
             ),
             reply_markup=ddx_keyboard(),
         )

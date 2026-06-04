@@ -30,6 +30,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config.settings import OWNER_ID
+from app.moderation_tigrao.display import group_display_name
 from app.moderation_tigrao.storage import get_ddx_soft_filters, log_action
 from app.security.task_registry import spawn_task
 
@@ -157,7 +158,7 @@ async def _notify_owner_ddx_soft_scheduled(bot, snap: _Snapshot) -> None:
             if snap.user_username
             else ""
         )
-        group_title = html.escape(snap.chat_title or str(snap.chat_id))
+        group_title = html.escape(group_display_name(snap.chat_title, "grupo monitorado"))
         matched_text = (
             ", ".join(html.escape(word) for word in snap.matched_words)
             if snap.matched_words
@@ -166,7 +167,7 @@ async def _notify_owner_ddx_soft_scheduled(bot, snap: _Snapshot) -> None:
         message_text = html.escape(_shorten_text(snap.text_value))
         notice = (
             "Tigrão — DDX 10min agendou apagamento\n\n"
-            f"Grupo: {group_title} ({snap.chat_id})\n"
+            f"Grupo: {group_title}\n"
             f"Autor: {author_name} — <code>{snap.user_id}</code>{username_line}\n"
             f"Mensagem ID: <code>{snap.message_id}</code>\n"
             f"Filtro: {matched_text}\n"
@@ -207,7 +208,7 @@ async def _notify_owner_ddx_soft_deleted(bot, snap: _Snapshot) -> None:
             if snap.user_username
             else ""
         )
-        group_title = html.escape(snap.chat_title or str(snap.chat_id))
+        group_title = html.escape(group_display_name(snap.chat_title, "grupo monitorado"))
         matched_text = (
             ", ".join(html.escape(word) for word in snap.matched_words)
             if snap.matched_words
@@ -216,7 +217,7 @@ async def _notify_owner_ddx_soft_deleted(bot, snap: _Snapshot) -> None:
         message_text = html.escape(_shorten_text(snap.text_value))
         notice = (
             "Tigrão — DDX 10min apagou mensagem\n\n"
-            f"Grupo: {group_title} ({snap.chat_id})\n"
+            f"Grupo: {group_title}\n"
             f"Autor: {author_name} — <code>{snap.user_id}</code>{username_line}\n"
             f"Mensagem ID: <code>{snap.message_id}</code>\n"
             f"Filtro: {matched_text}\n"
@@ -254,7 +255,7 @@ async def _notify_owner_ddx_soft_failed(
             if snap.user_username
             else ""
         )
-        group_title = html.escape(snap.chat_title or str(snap.chat_id))
+        group_title = html.escape(group_display_name(snap.chat_title, "grupo monitorado"))
         matched_text = (
             ", ".join(html.escape(word) for word in snap.matched_words)
             if snap.matched_words
@@ -264,7 +265,7 @@ async def _notify_owner_ddx_soft_failed(
         error_text = html.escape(_shorten_text(error_message, limit=300))
         notice = (
             "Tigrão — DDX 10min FALHOU ao apagar\n\n"
-            f"Grupo: {group_title} ({snap.chat_id})\n"
+            f"Grupo: {group_title}\n"
             f"Autor: {author_name} — <code>{snap.user_id}</code>{username_line}\n"
             f"Mensagem ID: <code>{snap.message_id}</code>\n"
             f"Filtro: {matched_text}\n"

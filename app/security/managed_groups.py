@@ -148,6 +148,62 @@ def list_managed_groups(limit: int = 100) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+
+def update_managed_group_title(chat_id: int, title: str | None) -> None:
+    ensure_tables()
+    clean_title = str(title or "").strip() or None
+    if not clean_title:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE managed_groups
+                   SET title=:title, updated_at=:updated_at
+                 WHERE chat_id=:chat_id
+                """
+            ),
+            {"chat_id": int(chat_id), "title": clean_title, "updated_at": utcnow()},
+        )
+
+
+def set_managed_group_enabled(chat_id: int, enabled: bool, *, notes: str | None = None) -> None:
+    ensure_tables()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE managed_groups
+                   SET enabled=:enabled, updated_at=:updated_at, notes=COALESCE(:notes, notes)
+                 WHERE chat_id=:chat_id
+                """
+            ),
+            {
+                "chat_id": int(chat_id),
+                "enabled": 1 if enabled else 0,
+                "updated_at": utcnow(),
+                "notes": notes,
+            },
+        )
+
+
+def get_managed_group(chat_id: int | str) -> dict[str, Any] | None:
+    ensure_tables()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT chat_id, title, enabled, added_by_user_id, created_at, updated_at, notes
+                  FROM managed_groups
+                 WHERE chat_id=:chat_id
+                 LIMIT 1
+                """
+            ),
+            {"chat_id": int(chat_id)},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
 def update_group_status(
     *,
     chat_id: int,

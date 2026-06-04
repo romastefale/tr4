@@ -122,6 +122,17 @@ async def _bot_perms(bot, chat_id: int) -> dict[str, bool] | None:
         return None
 
 
+async def _chat_display_name(bot, chat_id: int) -> str:
+    try:
+        chat = await bot.get_chat(chat_id)
+        title = str(getattr(chat, "title", "") or "").strip()
+        if title:
+            return html.escape(title)
+    except Exception:
+        logger.warning("X9_GET_CHAT_TITLE_FAILED chat=%s", chat_id, exc_info=True)
+    return "grupo alvo"
+
+
 @router.inline_query()
 async def x9_inline(query: InlineQuery) -> None:
     """L1: só responde a moderador autorizado (owner ou 2º). Senão 0 resultados."""
@@ -348,10 +359,11 @@ async def x9_chosen(result: ChosenInlineResult) -> None:
 
     # DM pro owner — sem emojis, conforme política de UI.
     try:
+        group_label = await _chat_display_name(bot, chat_id)
         text = (
             "<b>Tigrão X9</b>\n"
             f"Ação: <b>{html.escape(label)}</b>\n"
-            f"Grupo: <code>{chat_id}</code>\n"
+            f"Grupo: {group_label}\n"
             f"User: <code>{target_user_id}</code>\n"
             f"Status: {html.escape(status)}\n"
             f"Música: {'enviada' if music_sent else 'não enviada'}"

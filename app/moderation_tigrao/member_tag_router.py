@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.moderation_tigrao.actions import set_member_tag
 from app.moderation_tigrao.keyboards import customize_keyboard, home_keyboard
+from app.moderation_tigrao.display import group_display_name
 from app.moderation_tigrao.parsers import parse_user_id
 from app.moderation_tigrao.permissions import is_owner_callback, is_owner_private_message
 from app.moderation_tigrao.state import (
@@ -20,6 +21,12 @@ from app.moderation_tigrao.texts import error_text, success_text
 router = Router(name="moderation_tigrao_member_tag")
 
 REGULAR_TAGGABLE_STATUSES = {"member", "restricted"}
+
+
+
+def _selected_group_label() -> str:
+    session = get_session()
+    return group_display_name(getattr(session, "selected_group_title", None))
 
 
 def _need_group_text() -> str:
@@ -73,7 +80,7 @@ async def tigrao_member_tag_start(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — tag de membro\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_selected_group_label()}\n\n"
             "Envie agora apenas o user_id do membro comum.\n"
             "A tag não pode ser aplicada em admin ou criador do grupo."
         )
@@ -110,7 +117,7 @@ async def tigrao_member_tag_receive_text(message: Message) -> None:
         touch_session()  # Sprint 7 (T01-fix): refresh updated_at em transition
         await message.answer(
             "Tigrão — tag de membro\n\n"
-            f"Grupo: {session.selected_chat_id}\n"
+            f"Grupo: {_selected_group_label()}\n"
             f"Usuário: {user_id}\n\n"
             "Envie agora a tag que será aplicada.\n"
             "Para remover a tag, envie apenas um ponto: ."
@@ -158,7 +165,7 @@ async def tigrao_member_tag_receive_text(message: Message) -> None:
             clear_action()
             detail = "Tag removida" if tag == "" else f"Tag aplicada: {tag}"
             await message.answer(
-                success_text("Tag de membro atualizada", f"Grupo: {session.selected_chat_id}\nUsuário: {target_user_id}\n{detail}"),
+                success_text("Tag de membro atualizada", f"Grupo: {_selected_group_label()}\nUsuário: {target_user_id}\n{detail}"),
                 reply_markup=customize_keyboard(),
             )
         except Exception as exc:

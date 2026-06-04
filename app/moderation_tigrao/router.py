@@ -69,6 +69,7 @@ def _new_picker_nonce() -> str:
     """Sprint X3: token curto pra invalidar pickers antigos."""
     return _secrets.token_urlsafe(6)
 from app.moderation_tigrao.parsers import parse_chat_id, parse_duration, parse_message_link, parse_user_id
+from app.moderation_tigrao.display import group_display_name
 from app.moderation_tigrao.permissions import (
     OWNER_ID,
     is_moderator_user,
@@ -94,7 +95,7 @@ from app.security.audit import cleanup_audit_events_older_than, export_audit_eve
 from app.security.callbacks import CallbackParseError, page_number, trailing_int
 from app.security.critical_operations import begin_critical_operation, cleanup_critical_operations_older_than, export_critical_operations_jsonl, finish_critical_operation, format_critical_operations, list_critical_operations, replay_packet
 from app.security.bot_rights import BotRights, format_bot_rights, format_rights_refresh_report, get_bot_rights, refresh_managed_group_rights
-from app.security.managed_groups import list_managed_groups
+from app.security.managed_groups import get_managed_group, list_managed_groups, update_managed_group_title
 from app.security.radio_drafts import (
     create_media_draft,
     create_text_draft,
@@ -150,7 +151,7 @@ from app.moderation_tigrao.state import (
     touch_session,
 )
 from app.btb.state import cleanup_expired_sessions as btb_cleanup_expired_sessions, session_diagnostics as btb_session_diagnostics
-from app.moderation_tigrao.storage import list_groups, list_logs, log_action, remember_group
+from app.moderation_tigrao.storage import get_group, list_groups, list_logs, log_action, remember_group
 from app.moderation_tigrao.texts import delegate_home_text, entry_text, error_text, home_text, owner_home_text, radio_home_text, success_text
 
 logger = logging.getLogger(__name__)
@@ -219,7 +220,7 @@ async def _validate_group_access(bot, chat_id: int) -> tuple[str | None, str | N
             return (
                 error_text(
                     "Bot removido do grupo",
-                    f"O bot não está mais no grupo {chat_id}.",
+                    "O bot não está mais nesse grupo.",
                     "Escolha outro grupo ou readicione o bot antes de prosseguir.",
                 ),
                 None,
@@ -228,7 +229,7 @@ async def _validate_group_access(bot, chat_id: int) -> tuple[str | None, str | N
             return (
                 error_text(
                     "Grupo inválido",
-                    f"O Telegram recusou consultar o grupo {chat_id}.",
+                    "O Telegram recusou consultar esse grupo.",
                     "Confira o chat_id e tente outro grupo.",
                 ),
                 None,
@@ -283,11 +284,43 @@ RADIO_TEXT_WAITING_STATES = {
 RADIO_MEDIA_WAITING_STATES = {"outbound_media"}
 
 
+
+def _session_group_label() -> str:
+    session = get_session()
+    return group_display_name(session.selected_group_title)
+
+
+def _group_label_for_chat(chat_id: int | str | None, fallback: str = "grupo selecionado") -> str:
+    if chat_id is None:
+        return fallback
+    try:
+        cid = int(chat_id)
+    except (TypeError, ValueError):
+        return fallback
+    managed = get_managed_group(cid)
+    if managed:
+        return group_display_name(managed.get("title"), fallback)
+    discovered = get_group(cid)
+    if discovered:
+        return group_display_name(discovered.get("title"), fallback)
+    return fallback
+
+
+def _group_panel_counts() -> tuple[list[dict], int, int]:
+    managed = [g for g in list_managed_groups(limit=100) if int(g.get("enabled") or 0) == 1]
+    managed_ids = {int(g["chat_id"]) for g in managed}
+    discovered = [g for g in list_groups(limit=100) if int(g.get("chat_id")) not in managed_ids]
+    # Inacessíveis são expostos apenas por diagnóstico técnico; aqui o número
+    # é conservador para não inventar status sem refresh explícito.
+    inaccessible_count = 0
+    return managed, len(discovered), inaccessible_count
+
+
 def _section_text(title: str, detail: str) -> str:
     session = get_session()
     selected = ""
     if session.selected_chat_id:
-        selected = f"\n\nGrupo selecionado: {session.selected_group_title or session.selected_chat_id} ({session.selected_chat_id})"
+        selected = f"\n\nGrupo selecionado: {_session_group_label()}"
     return f"Tigrão — {title}\n\n{detail}{selected}\n\nEscolha uma opção pelos botões abaixo."
 
 
@@ -299,7 +332,7 @@ def _confirm_text() -> str:
     duration_line = f"Duração: {duration_label}\n" if duration_label else ""
     return (
         "Tigrão — confirmar ação\n\n"
-        f"Grupo: {session.selected_chat_id}\n"
+        f"Grupo: {_session_group_label()}\n"
         f"Ação: {action_label}\n"
         f"Usuário: {target_user_id}\n"
         f"{duration_line}\n"
@@ -312,7 +345,7 @@ def _execution_text(action: str, chat_id: int | str, target_user_id: int | str, 
     duration_line = f"\nDuração: {payload.get('duration_label')}" if payload.get("duration_label") else ""
     return (
         "Tigrão — executando ação\n\n"
-        f"Grupo: {chat_id}\n"
+        f"Grupo: {_group_label_for_chat(chat_id)}\n"
         f"Ação: {action_label}\n"
         f"Usuário: {target_user_id}"
         f"{duration_line}\n\n"
@@ -332,7 +365,7 @@ def _rmod_confirm_text() -> str:
         lines.append("")
         lines.append("Vai apagar a reaction dessa pessoa NESSA mensagem (Telegram permite 1 reaction por user/msg).")
     elif action == "rmod_del_user_chat":
-        lines.append(f"Grupo: {session.selected_chat_id}")
+        lines.append(f"Grupo: {_session_group_label()}")
         lines.append(f"Alvo: {p.get('target_label')} ({p.get('target_user_id')})")
         lines.append("")
         lines.append("Vai apagar até 10000 reactions RECENTES dessa pessoa no GRUPO INTEIRO (todas mensagens).")
@@ -341,7 +374,7 @@ def _rmod_confirm_text() -> str:
         lines.append("")
         lines.append("Atenção: vai remover TODAS as reactions desta mensagem, inclusive as do próprio bot.")
     elif action == "rmod_mute_react":
-        lines.append(f"Grupo: {session.selected_chat_id}")
+        lines.append(f"Grupo: {_session_group_label()}")
         lines.append(f"Alvo: {p.get('target_label')} ({p.get('target_user_id')})")
         lines.append(f"Duração: {p.get('duration_label')}")
         lines.append("")
@@ -430,7 +463,7 @@ def _moderators_text() -> str:
     lines = [
         "Tigrão — moderadores",
         "",
-        f"Grupo: {session.selected_group_title or session.selected_chat_id} ({session.selected_chat_id})",
+        f"Grupo: {_session_group_label()}",
         "",
     ]
     if not rows:
@@ -853,16 +886,16 @@ def _radio_access_denied_text(permission: str) -> str:
 
 def _governance_summary(action: str, chat_id: int, payload: dict) -> str:
     if action == "governance_set_title":
-        return f"Grupo: {chat_id}\nAção: alterar nome\nNovo nome: {payload.get('title', '')}"
+        return f"Grupo: {_group_label_for_chat(chat_id)}\nAção: alterar nome\nNovo nome: {payload.get('title', '')}"
     if action == "governance_set_description":
         desc = str(payload.get("description", ""))
         preview = "(apagar descrição)" if desc.strip() == "." else f"{len(desc)} caracteres"
-        return f"Grupo: {chat_id}\nAção: alterar descrição\nConteúdo: {preview}"
+        return f"Grupo: {_group_label_for_chat(chat_id)}\nAção: alterar descrição\nConteúdo: {preview}"
     if action == "governance_link_direct":
-        return f"Grupo: {chat_id}\nAção: gerar link direto de convite"
+        return f"Grupo: {_group_label_for_chat(chat_id)}\nAção: gerar link direto de convite"
     if action == "governance_link_approval":
-        return f"Grupo: {chat_id}\nAção: gerar link com aprovação"
-    return f"Grupo: {chat_id}\nAção: {action}"
+        return f"Grupo: {_group_label_for_chat(chat_id)}\nAção: gerar link com aprovação"
+    return f"Grupo: {_group_label_for_chat(chat_id)}\nAção: {action}"
 
 
 def _prepare_governance_confirmation(action: str, chat_id: int, payload: dict) -> None:
@@ -911,15 +944,12 @@ def _radio_preview_text(draft: dict) -> str:
         content = f"Prévia do texto:\n<blockquote>{preview}</blockquote>"
     else:
         kind_label = "mídia"
-        content = (
-            "Prévia da mídia:\n"
-            f"Mensagem privada de origem: {draft.get('source_chat_id')} / {draft.get('source_message_id')}"
-        )
+        content = "Prévia da mídia recebida no privado do bot."
     return (
         "Radio — prévia de rascunho\n\n"
         f"Rascunho: {draft_id[:8]}\n"
         f"Tipo: {kind_label}\n"
-        f"Grupo destino: {target_chat_id}\n"
+        f"Grupo destino: {_group_label_for_chat(target_chat_id)}\n"
         f"Fixar: {'sim' if pin else 'não'}\n"
         f"Expira em: {expires_at}\n\n"
         f"{content}\n\n"
@@ -949,7 +979,7 @@ def _radio_template_preview(template: dict) -> str:
 
 def _radio_history_text(chat_id: int | None = None, *, page: int = 0, rows: list[dict] | None = None) -> str:
     rows = rows if rows is not None else list_post_history(chat_id=chat_id, limit=RADIO_PAGE_SIZE, offset=page * RADIO_PAGE_SIZE)
-    scope = f"grupo {chat_id}" if chat_id is not None else "todos os grupos"
+    scope = _group_label_for_chat(chat_id) if chat_id is not None else "todos os grupos"
     if not rows:
         return f"Radio — histórico\n\nSem postagens registradas na página {page + 1} para {scope}."
     lines = [f"Radio — histórico\n\nPágina {page + 1}. Últimas postagens para {scope}:"]
@@ -966,7 +996,7 @@ def _radio_history_text(chat_id: int | None = None, *, page: int = 0, rows: list
 
 def _radio_schedules_text(chat_id: int | None = None, *, page: int = 0, rows: list[dict] | None = None) -> str:
     schedules = rows if rows is not None else list_schedules(chat_id=chat_id, limit=RADIO_PAGE_SIZE, offset=page * RADIO_PAGE_SIZE)
-    scope = f"grupo {chat_id}" if chat_id is not None else "todos os grupos"
+    scope = _group_label_for_chat(chat_id) if chat_id is not None else "todos os grupos"
     if not schedules:
         return (
             "Radio — agendamentos\n\n"
@@ -979,7 +1009,7 @@ def _radio_schedules_text(chat_id: int | None = None, *, page: int = 0, rows: li
         pin = "fixado" if int(row.get("pin") or 0) else "não fixado"
         minutes = int(row.get("interval_seconds") or 0) // 60
         lines.append(
-            f"- id={row.get('id')} template={row.get('template_id')} grupo={row.get('chat_id')} "
+            f"- id={row.get('id')} template={row.get('template_id')} "
             f"{status}, {pin}, a cada {minutes} min, próximo={row.get('next_due_at')}, último={row.get('last_status') or '-'}"
         )
     return "\n".join(lines)
@@ -992,7 +1022,7 @@ def _radio_quiet_text(chat_id: int | None) -> str:
     if not policy or not policy.get("quiet_from") or not policy.get("quiet_to"):
         return (
             "Radio — janela de silêncio\n\n"
-            f"Grupo: {chat_id}\n"
+            f"Grupo: {_group_label_for_chat(chat_id)}\n"
             "Nenhuma janela configurada.\n\n"
             "Formato: HH:MM-HH:MM +00:00\n"
             "Exemplo: 23:00-08:00 -03:00"
@@ -1001,7 +1031,7 @@ def _radio_quiet_text(chat_id: int | None) -> str:
     active = "sim" if is_quiet_now(chat_id) else "não"
     return (
         "Radio — janela de silêncio\n\n"
-        f"Grupo: {chat_id}\n"
+        f"Grupo: {_group_label_for_chat(chat_id)}\n"
         f"Janela: {policy.get('quiet_from')}-{policy.get('quiet_to')} {offset}\n"
         f"Ativa agora: {active}"
     )
@@ -1237,7 +1267,7 @@ async def tigrao_private_text(message: Message) -> None:
         sent = await message.answer(
             success_text(
                 "Moderador atualizado",
-                f"Grupo: {chat_id}\nUsuário: {target_user_id}\nPermissões {action_label}: {', '.join(permissions)}\nMenu nativo: {sync_line}",
+                f"Grupo: {_group_label_for_chat(chat_id)}\nUsuário: {target_user_id}\nPermissões {action_label}: {', '.join(permissions)}\nMenu nativo: {sync_line}",
             ),
             reply_markup=moderators_keyboard(),
         )
@@ -1326,7 +1356,7 @@ async def tigrao_private_text(message: Message) -> None:
         sent = await message.answer(
             success_text(
                 "Agendamento criado",
-                f"ID: {schedule_id}\nGrupo: {session.selected_chat_id}\nTemplate: {template_id}\nIntervalo: {interval_seconds // 60} min\nFixar: {'sim' if pin else 'não'}",
+                f"ID: {schedule_id}\nGrupo: {_session_group_label()}\nTemplate: {template_id}\nIntervalo: {interval_seconds // 60} min\nFixar: {'sim' if pin else 'não'}",
             ),
             reply_markup=radio_schedules_keyboard(),
         )
@@ -1420,11 +1450,12 @@ async def tigrao_private_text(message: Message) -> None:
         if blocking:
             await message.answer(blocking, reply_markup=home_keyboard())
             return
-        remember_group(chat_id, str(chat_id))
-        set_selected_group(chat_id, str(chat_id))
+        title = _group_label_for_chat(chat_id, "Grupo selecionado manualmente")
+        remember_group(chat_id, title)
+        set_selected_group(chat_id, title)
         await message.answer(
-            success_text("Grupo selecionado", f"Grupo: {chat_id}{warn or ''}"),
-            reply_markup=entry_keyboard(is_root=is_root_user(callback.from_user.id), can_delegate=is_moderator_user(callback.from_user.id), can_radio=has_any_radio_permission(callback.from_user.id)),
+            success_text("Grupo selecionado", f"Grupo: {title}{warn or ''}"),
+            reply_markup=entry_keyboard(is_root=is_root_user(message.from_user.id), can_delegate=is_moderator_user(message.from_user.id), can_radio=has_any_radio_permission(message.from_user.id)),
         )
         return
 
@@ -1532,7 +1563,7 @@ async def tigrao_private_text(message: Message) -> None:
             touch_session()  # Sprint 7 (T01-fix): refresh updated_at em transition
             await message.answer(
                 "Tigrão — duração do mute\n\n"
-                f"Grupo: {session.selected_chat_id}\n"
+                f"Grupo: {_session_group_label()}\n"
                 f"Usuário: {user_id}\n\n"
                 "Envie a duração. Exemplos:\n"
                 "10m, 2h, 3d ou i para indefinido."
@@ -1638,7 +1669,7 @@ async def tigrao_private_text(message: Message) -> None:
             touch_session()
             await message.answer(
                 "Tigrão — duração do silêncio de reactions\n\n"
-                f"Grupo: {session.selected_chat_id}\n"
+                f"Grupo: {_session_group_label()}\n"
                 f"Alvo: {target_label} ({target_user_id})\n\n"
                 "Escolha por quanto tempo o alvo ficará sem poder reagir.",
                 reply_markup=rmod_duration_keyboard(),
@@ -1790,7 +1821,7 @@ async def radio_draft_confirm(callback: CallbackQuery) -> None:
             await callback.message.edit_text(
                 success_text(
                     "Postagem enviada",
-                    f"Grupo: {draft['target_chat_id']}\nMensagem: {sent_message_id}",
+                    f"Grupo: {_group_label_for_chat(draft['target_chat_id'])}\nMensagem enviada com sucesso.",
                 ),
                 reply_markup=_radio_keyboard_for_actor(callback.from_user.id if callback.from_user else None),
             )
@@ -2076,7 +2107,7 @@ async def radio_schedule_create(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Radio — criar agendamento\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie no formato:\n"
             "template_id intervalo_min pin(0/1)\n\n"
             "Exemplo:\n"
@@ -2134,7 +2165,7 @@ async def radio_quiet_set(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Radio — configurar janela de silêncio\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie no formato:\n"
             "HH:MM-HH:MM +00:00\n\n"
             "Exemplo para horário de Brasília:\n"
@@ -2253,20 +2284,78 @@ async def tigrao_groups(callback: CallbackQuery) -> None:
     ):
         await callback.answer("Acesso negado.", show_alert=True)
         return
+    managed, discovered_count, inaccessible_count = _group_panel_counts()
+    session = get_session()
+    current = get_managed_group(session.selected_chat_id) if session.selected_chat_id else None
     if callback.message:
         await callback.message.edit_text(
             _section_text(
-                "escolher grupo",
-                "Selecione um grupo já conhecido ou use a opção para digitar o chat_id.",
+                "grupos",
+                "Escolha um grupo gerenciado. Grupos apenas vistos ficam separados como descobertos.",
             ),
-            reply_markup=groups_keyboard(list_groups()),
+            reply_markup=groups_keyboard(
+                current_group=current,
+                managed_groups=managed,
+                discovered_count=discovered_count,
+                inaccessible_count=inaccessible_count,
+            ),
         )
     await callback.answer()
 
 
+@router.callback_query(F.data == "tigrao:groups:refresh")
+async def tigrao_groups_refresh(callback: CallbackQuery) -> None:
+    if not callback.from_user or not is_root_user(callback.from_user.id):
+        await callback.answer("Somente o Owner pode atualizar status.", show_alert=True)
+        return
+    result = await refresh_managed_group_rights(callback.bot, limit=100)
+    managed, discovered_count, inaccessible_count = _group_panel_counts()
+    if callback.message:
+        await callback.message.edit_text(
+            "Tigrão — grupos\n\n"
+            "Status dos grupos gerenciados atualizado.\n\n"
+            f"Total: {result.get('total', 0)}\n"
+            f"Admin: {result.get('admin', 0)}\n"
+            f"Musical-only: {result.get('musical_only', 0)}\n"
+            f"Erro: {result.get('error', 0)}",
+            reply_markup=groups_keyboard(
+                managed_groups=managed,
+                discovered_count=discovered_count,
+                inaccessible_count=inaccessible_count,
+            ),
+        )
+    await callback.answer("Status atualizado.")
+
+
+@router.callback_query(F.data == "tigrao:groups:discovered")
+async def tigrao_groups_discovered(callback: CallbackQuery) -> None:
+    if not callback.from_user or not is_root_user(callback.from_user.id):
+        await callback.answer("Somente o Owner pode ver descobertos.", show_alert=True)
+        return
+    managed_ids = {int(g["chat_id"]) for g in list_managed_groups(limit=500)}
+    discovered = [g for g in list_groups(limit=100) if int(g.get("chat_id")) not in managed_ids]
+    lines = ["Tigrão — grupos descobertos", "", "Grupos vistos que ainda não são gerenciados:", ""]
+    if not discovered:
+        lines.append("Nenhum grupo descoberto fora da lista gerenciada.")
+    else:
+        for group in discovered[:30]:
+            lines.append(f"- {group_display_name(group.get('title'), 'Grupo')}")
+    if callback.message:
+        await callback.message.edit_text("\n".join(lines), reply_markup=groups_keyboard(managed_groups=[g for g in list_managed_groups(limit=100) if int(g.get('enabled') or 0) == 1]))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "tigrao:groups:inaccessible")
+async def tigrao_groups_inaccessible(callback: CallbackQuery) -> None:
+    if not callback.from_user or not is_root_user(callback.from_user.id):
+        await callback.answer("Somente o Owner pode ver diagnóstico.", show_alert=True)
+        return
+    await callback.answer("Use Segurança > Diagnóstico direitos todos para detalhes técnicos.", show_alert=True)
+
+
 @router.callback_query(F.data == "tigrao:group:manual")
 async def tigrao_group_manual(callback: CallbackQuery) -> None:
-    if not callback.from_user or not (is_root_user(callback.from_user.id) or has_any_grant(callback.from_user.id)):
+    if not callback.from_user or not (is_root_user(callback.from_user.id) or has_any_grant(callback.from_user.id) or has_any_radio_permission(callback.from_user.id)):
         await callback.answer("Acesso negado.", show_alert=True)
         return
     set_action("select_group", waiting_for="chat_id")
@@ -2274,16 +2363,14 @@ async def tigrao_group_manual(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             "Tigrão — escolher grupo\n\n"
             "Envie agora o chat_id numérico do grupo.\n"
-            "Pode ser com ou sem hífen.\n\n"
-            "Exemplo:\n"
-            "-1001234567890"
+            "Essa entrada manual é técnica e só será usada internamente."
         )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("tigrao:group:"))
 async def tigrao_group_select(callback: CallbackQuery) -> None:
-    if not callback.from_user or not (is_root_user(callback.from_user.id) or has_any_grant(callback.from_user.id)):
+    if not callback.from_user or not (is_root_user(callback.from_user.id) or has_any_grant(callback.from_user.id) or has_any_radio_permission(callback.from_user.id)):
         await callback.answer("Acesso negado.", show_alert=True)
         return
     if callback.data == "tigrao:group:manual":
@@ -2303,10 +2390,11 @@ async def tigrao_group_select(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    set_selected_group(chat_id, str(chat_id))
+    title = _group_label_for_chat(chat_id)
+    set_selected_group(chat_id, title)
     if callback.message:
         await callback.message.edit_text(
-            success_text("Grupo selecionado", f"Grupo: {chat_id}{perm_warning or ''}"),
+            success_text("Grupo selecionado", f"Grupo: {title}{perm_warning or ''}"),
             reply_markup=entry_keyboard(is_root=is_root_user(callback.from_user.id), can_delegate=is_moderator_user(callback.from_user.id), can_radio=has_any_radio_permission(callback.from_user.id)),
         )
     await callback.answer()
@@ -2340,7 +2428,7 @@ async def tigrao_prepare_user_action(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             f"Tigrão — {ACTION_LABELS[action]}\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie agora apenas o user_id do alvo."
         )
     await callback.answer()
@@ -2390,7 +2478,7 @@ async def tigrao_confirm(callback: CallbackQuery) -> None:
     try:
         extra = await _execute_simple_action(callback.bot, action, int(chat_id), int(target_user_id), session.payload)
         log_action(chat_id=int(chat_id), action=action, target_user_id=int(target_user_id), status="success")
-        details = f"Grupo: {chat_id}\nAção: {ACTION_LABELS[action]}\nUsuário: {target_user_id}\nStatus: concluído com sucesso"
+        details = f"Grupo: {_group_label_for_chat(chat_id)}\nAção: {ACTION_LABELS[action]}\nUsuário: {target_user_id}\nStatus: concluído com sucesso"
         if session.payload.get("duration_label"):
             details += f"\nDuração: {session.payload['duration_label']}"
         if extra:
@@ -2506,7 +2594,7 @@ async def tigrao_customize_title(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — alterar nome\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie agora o novo nome do grupo."
         )
     await callback.answer()
@@ -2527,7 +2615,7 @@ async def tigrao_customize_bio(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — alterar bio\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie agora a nova bio/descrição do grupo.\n"
             "Para apagar a bio, envie apenas um ponto: ."
         )
@@ -2549,7 +2637,7 @@ async def tigrao_send_text(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Radio — enviar mensagem\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie agora o texto que será publicado no grupo."
         )
     await callback.answer()
@@ -2570,7 +2658,7 @@ async def tigrao_send_text_pin(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Radio — enviar e fixar\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie agora o texto que será publicado e fixado no grupo."
         )
     await callback.answer()
@@ -2591,7 +2679,7 @@ async def tigrao_send_media(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Radio — enviar mídia\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie agora a foto, vídeo, documento, sticker ou outra mídia que será copiada para o grupo."
         )
     await callback.answer()
@@ -2612,7 +2700,7 @@ async def tigrao_send_media_pin(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Radio — enviar mídia e fixar\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Envie agora a foto, vídeo, documento, sticker ou outra mídia que será copiada e fixada no grupo."
         )
     await callback.answer()
@@ -2674,7 +2762,7 @@ async def tigrao_moderators_grant(callback: CallbackQuery) -> None:
     await _edit_private_panel(
         callback,
         "Tigrão — conceder permissão\n\n"
-        f"Grupo: {session.selected_chat_id}\n\n"
+        f"Grupo: {_session_group_label()}\n\n"
         "Envie: <code>user_id permission</code>\n"
         "Ou: <code>user_id *:mod</code>, <code>user_id *:radio</code> ou <code>user_id *:all</code>.\n"
         "Compatibilidade: <code>user_id *</code> concede pacote de moderação.\n\n"
@@ -2699,7 +2787,7 @@ async def tigrao_moderators_revoke(callback: CallbackQuery) -> None:
     await _edit_private_panel(
         callback,
         "Tigrão — revogar permissão\n\n"
-        f"Grupo: {session.selected_chat_id}\n\n"
+        f"Grupo: {_session_group_label()}\n\n"
         "Envie: <code>user_id permission</code>\n"
         "Ou: <code>user_id *:mod</code>, <code>user_id *:radio</code> ou <code>user_id *:all</code>.\n"
         "Compatibilidade: <code>user_id *</code> revoga pacote de moderação.",
@@ -3500,7 +3588,7 @@ async def tigrao_governance_title(callback: CallbackQuery) -> None:
     await _edit_private_panel(
         callback,
         "Tigrão — governança: alterar nome\n\n"
-        f"Grupo: {session.selected_chat_id}\n\n"
+        f"Grupo: {_session_group_label()}\n\n"
         "Envie o novo nome. Depois haverá confirmação dupla.",
         governance_keyboard(),
     )
@@ -3519,7 +3607,7 @@ async def tigrao_governance_description(callback: CallbackQuery) -> None:
     await _edit_private_panel(
         callback,
         "Tigrão — governança: alterar descrição\n\n"
-        f"Grupo: {session.selected_chat_id}\n\n"
+        f"Grupo: {_session_group_label()}\n\n"
         "Envie a nova descrição. Para apagar, envie apenas ponto: .\n"
         "Depois haverá confirmação dupla.",
         governance_keyboard(),
@@ -3654,7 +3742,7 @@ async def tigrao_governance_confirm(callback: CallbackQuery) -> None:
         clear_action()
         await _edit_private_panel(
             callback,
-            success_text("Governança executada", f"Grupo: {chat_id}\nAção: {action}\n{result_text}\nOperação crítica: {operation_id}"),
+            success_text("Governança executada", f"Grupo: {_group_label_for_chat(chat_id)}\nAção: {action}\n{result_text}\nOperação crítica: {operation_id}"),
             governance_keyboard(),
         )
     except Exception as exc:
@@ -3738,7 +3826,7 @@ async def tigrao_rmod_del_user_chat(callback: CallbackQuery) -> None:
             try:
                 await callback.message.edit_text(
                     "Tigrão — apagar reactions de 1 pessoa (grupo inteiro)\n\n"
-                    f"Grupo: {session.selected_chat_id}\n"
+                    f"Grupo: {_session_group_label()}\n"
                     f"Reactors recentes (últimas 24h): {len(reactors)}\n\n"
                     "Toque na pessoa cujas reactions devem ser apagadas no grupo todo.",
                     reply_markup=rmod_reactors_picker_keyboard(reactors, nonce),
@@ -3755,7 +3843,7 @@ async def tigrao_rmod_del_user_chat(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — apagar reactions de 1 pessoa (grupo inteiro)\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Sem reactors rastreados nas últimas 24h.\n"
             "Envie agora o user_id numérico OU @username do alvo.\n"
             "Vai apagar até 10000 reactions RECENTES dessa pessoa em TODAS as mensagens deste grupo."
@@ -3805,7 +3893,7 @@ async def tigrao_rmod_mute_react(callback: CallbackQuery) -> None:
             try:
                 await callback.message.edit_text(
                     "Tigrão — silenciar reactor\n\n"
-                    f"Grupo: {session.selected_chat_id}\n"
+                    f"Grupo: {_session_group_label()}\n"
                     f"Reactors recentes (últimas 24h): {len(reactors)}\n\n"
                     "Toque na pessoa que vai perder a permissão de reagir.",
                     reply_markup=rmod_reactors_picker_keyboard(reactors, nonce),
@@ -3821,7 +3909,7 @@ async def tigrao_rmod_mute_react(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             "Tigrão — silenciar reactor\n\n"
-            f"Grupo: {session.selected_chat_id}\n\n"
+            f"Grupo: {_session_group_label()}\n\n"
             "Sem reactors rastreados nas últimas 24h.\n"
             "Envie agora o user_id numérico OU @username do alvo.\n"
             "Apenas a permissão de reagir será removida; o resto fica preservado."
@@ -3917,7 +4005,7 @@ async def tigrao_rmod_pick(callback: CallbackQuery) -> None:
             try:
                 await callback.message.edit_text(
                     "Tigrão — duração do silêncio de reactions\n\n"
-                    f"Grupo: {session.selected_chat_id}\n"
+                    f"Grupo: {_session_group_label()}\n"
                     f"Alvo: {target_label} ({target_user_id})\n\n"
                     "Escolha por quanto tempo o alvo ficará sem poder reagir.",
                     reply_markup=rmod_duration_keyboard(),
@@ -3979,7 +4067,7 @@ async def tigrao_rmod_manual(callback: CallbackQuery) -> None:
         try:
             await callback.message.edit_text(
                 "Tigrão — digitar alvo manualmente\n\n"
-                f"Grupo: {session.selected_chat_id}\n\n"
+                f"Grupo: {_session_group_label()}\n\n"
                 "Envie agora o user_id numérico OU @username do alvo.\n"
                 "Dica: @username só resolve se o bot já interagiu com a pessoa antes."
             )
@@ -4056,7 +4144,7 @@ async def tigrao_rmod_confirm(callback: CallbackQuery) -> None:
                 bot, int(chat_id), user_id=int(target_user_id)
             )
             details = (
-                f"Grupo: {chat_id}\n"
+                f"Grupo: {_group_label_for_chat(chat_id)}\n"
                 f"Alvo: {p.get('target_label')} ({target_user_id})\n"
                 "Até 10000 reactions recentes desta pessoa no grupo foram removidas."
             )
@@ -4107,7 +4195,7 @@ async def tigrao_rmod_confirm(callback: CallbackQuery) -> None:
             target_for_log = int(target_user_id)
             await mute_reactions(bot, int(chat_id), int(target_user_id), duration)
             details = (
-                f"Grupo: {chat_id}\n"
+                f"Grupo: {_group_label_for_chat(chat_id)}\n"
                 f"Alvo: {p.get('target_label')} ({target_user_id})\n"
                 f"Duração: {p.get('duration_label')}\n"
                 "Permissão de reagir removida (outras permissões preservadas)."

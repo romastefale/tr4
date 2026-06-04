@@ -109,6 +109,23 @@ def list_groups(limit: int = 20) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def get_group(chat_id: int | str) -> dict[str, Any] | None:
+    ensure_tables()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT chat_id, title, last_seen_at
+                  FROM tigrao_groups
+                 WHERE chat_id=:chat_id
+                 LIMIT 1
+                """
+            ),
+            {"chat_id": int(chat_id)},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
 _ERROR_MESSAGE_MAX_LEN = 200
 _LONG_DIGITS_RE = re.compile(r"\d{6,}")
 
