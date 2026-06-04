@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
+from app.config import settings
 from app.equalizador.identity import display_name_from_telegram_user, make_ui_ref
 
 
@@ -142,7 +143,8 @@ def sync_allowed_palcos(
                 text("SELECT title, username FROM music_groups WHERE chat_id=:chat_id"),
                 {"chat_id": chat_id},
             ).mappings().first()
-            title = _clean_label(music_group["title"] if music_group else "", fallback="Palco sem título")
+            fallback_alias = settings.group_alias_for_chat(chat_id) or "Palco sem título"
+            title = _clean_label(music_group["title"] if music_group else "", fallback=fallback_alias)
             username = str(music_group["username"] or "").strip() if music_group else ""
             username = username or None
             ui_ref = make_ui_ref("grp", chat_id, alias_secret)

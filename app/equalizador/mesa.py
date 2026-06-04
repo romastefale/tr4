@@ -567,3 +567,67 @@ async def executar_ajuste(
         if isinstance(exc, MesaError):
             raise
         raise MesaError("ajuste_falhou") from exc
+
+
+def list_mensagens_publicas(
+    *,
+    palco_id: int,
+    limit: int = 25,
+    db_engine: Engine = default_engine,
+) -> list[dict[str, object]]:
+    """Return recent message aliases for the Mesa UI without exposing message_id."""
+    ensure_phase5_tables(db_engine)
+    safe_limit = max(1, min(int(limit), 50))
+    with db_engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT ui_ref, resumo_publico, updated_at
+                FROM eq_mensagens
+                WHERE telegram_chat_id=:chat_id AND habilitado=1
+                ORDER BY updated_at DESC, id DESC
+                LIMIT :limit
+                """
+            ),
+            {"chat_id": int(palco_id), "limit": safe_limit},
+        ).mappings().all()
+    return [
+        {
+            "msg_ref": str(row["ui_ref"]),
+            "resumo": str(row["resumo_publico"] or "Mensagem"),
+            "updated_at": str(row["updated_at"]),
+        }
+        for row in rows
+    ]
+
+
+def list_alvos_publicos(
+    *,
+    palco_id: int,
+    limit: int = 25,
+    db_engine: Engine = default_engine,
+) -> list[dict[str, object]]:
+    """Return recent member aliases for the Mesa UI without exposing user_id."""
+    ensure_phase5_tables(db_engine)
+    safe_limit = max(1, min(int(limit), 50))
+    with db_engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT ui_ref, nome_publico, updated_at
+                FROM eq_alvos
+                WHERE telegram_chat_id=:chat_id AND habilitado=1
+                ORDER BY updated_at DESC, id DESC
+                LIMIT :limit
+                """
+            ),
+            {"chat_id": int(palco_id), "limit": safe_limit},
+        ).mappings().all()
+    return [
+        {
+            "alvo_ref": str(row["ui_ref"]),
+            "nome": str(row["nome_publico"] or "Membro"),
+            "updated_at": str(row["updated_at"]),
+        }
+        for row in rows
+    ]

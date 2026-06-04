@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 from pathlib import Path
 from typing import Iterable
@@ -111,6 +112,28 @@ def _equalizador_int_set_env(name: str) -> set[int]:
             _record_equalizador_config_error(f"Invalid integer item in environment variable {name}={token!r}")
     return values
 
+
+
+def _json_int_mapping_env(name: str) -> dict[str, int]:
+    raw = _env(name, "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    mapping: dict[str, int] = {}
+    for key, value in data.items():
+        label = str(key or "").strip()
+        if not label:
+            continue
+        try:
+            mapping[label] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return mapping
 
 def _is_sqlite_url(value: str) -> bool:
     lowered = value.strip().lower()
@@ -295,6 +318,17 @@ RADIO_SCHEDULER_MAX_DUE_PER_TICK = _int_env(
     legacy=("RADIO_SCHEDULER_MAX_DUE_PER_TICK",),
 )
 
+
+GROUP_ALIASES = _json_int_mapping_env("GROUP_ALIASES")
+
+def group_aliases() -> dict[str, int]:
+    return dict(GROUP_ALIASES)
+
+def group_alias_for_chat(chat_id: int) -> str | None:
+    for label, configured_chat_id in GROUP_ALIASES.items():
+        if int(configured_chat_id) == int(chat_id):
+            return label
+    return None
 
 # Equalizador Mini App — disabled by default. These variables are parsed in
 # failure-tolerant mode so a bad Equalizador value never prevents /healthz from

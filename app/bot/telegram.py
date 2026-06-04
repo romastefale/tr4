@@ -16,6 +16,7 @@ from aiogram.types import (
 )
 
 from app.bot.intent import detect_intent
+from app.config import settings
 from app.config.settings import LASTFM_API_KEY
 from app.services.connection_check import connect_hint_for, is_user_connected
 from app.services.lastfm import lastfm_service
@@ -23,6 +24,7 @@ from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service
 from app.services.spotify import spotify_service
+from app.equalizador.mesa import register_alvo_ref, register_mensagem_ref
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,52 @@ def _user_mention(message: Message) -> str:
 _BOLD_UPPER_OFFSET = 0x1D400 - ord("A")
 _BOLD_LOWER_OFFSET = 0x1D41A - ord("a")
 _BOLD_DIGIT_OFFSET = 0x1D7CE - ord("0")
+
+
+def _equalizador_safe_label(value: object, *, fallback: str = "Membro") -> str:
+    text = str(value or "").strip().replace("@", "")
+    return text[:120] or fallback
+
+
+async def _remember_equalizador_message(message: Message) -> None:
+    """Register message/member aliases for the Equalizador UI without affecting handlers."""
+    try:
+        allowed_palcos = settings.equalizador_allowed_palco_ids()
+        if not settings.TR4_EQUALIZADOR_ENABLED or int(message.chat.id) not in allowed_palcos:
+            return
+        alias_secret = settings.equalizador_alias_secret()
+        text_value = (message.text or message.caption or "").strip()
+        resumo = text_value[:140] if text_value else "Mensagem"
+        register_mensagem_ref(
+            chat_id=int(message.chat.id),
+            message_id=int(message.message_id),
+            resumo_publico=resumo,
+            alias_secret=alias_secret,
+        )
+        if message.from_user and not message.from_user.is_bot:
+            register_alvo_ref(
+                chat_id=int(message.chat.id),
+                user_id=int(message.from_user.id),
+                nome_publico=_equalizador_safe_label(message.from_user.full_name),
+                alias_secret=alias_secret,
+            )
+        replied = getattr(message, "reply_to_message", None)
+        if replied is not None:
+            register_mensagem_ref(
+                chat_id=int(message.chat.id),
+                message_id=int(replied.message_id),
+                resumo_publico=(replied.text or replied.caption or "Mensagem respondida")[:140],
+                alias_secret=alias_secret,
+            )
+            if replied.from_user and not replied.from_user.is_bot:
+                register_alvo_ref(
+                    chat_id=int(message.chat.id),
+                    user_id=int(replied.from_user.id),
+                    nome_publico=_equalizador_safe_label(replied.from_user.full_name),
+                    alias_secret=alias_secret,
+                )
+    except Exception:
+        logger.debug("EQUALIZADOR_CAPTURE_FAILED", exc_info=True)
 
 
 def _bold_unicode(text: str) -> str:
@@ -690,6 +738,7 @@ def _register_handlers(dp: Dispatcher) -> None:
         lambda m: not _owner_dialog_active(m),
     )
     async def text_aliases(message: Message) -> None:
+        await _remember_equalizador_message(message)
         text = message.text or ""
         if detect_intent(text) == "play":
             # U3: _send_playing já deleta a mensagem em grupo (gatilho some

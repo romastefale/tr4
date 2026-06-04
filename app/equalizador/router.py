@@ -15,6 +15,8 @@ from app.equalizador.permissions import (
 from app.equalizador.mesa import (
     ACTION_SPECS,
     MesaError,
+    list_alvos_publicos,
+    list_mensagens_publicas,
     MesaNotFoundError,
     MesaRightError,
     executar_ajuste,
@@ -51,18 +53,38 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root { color-scheme: dark light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; padding: 24px; background: var(--tg-theme-bg-color, #101014); color: var(--tg-theme-text-color, #f4f4f5); }
-    main { max-width: 760px; margin: 0 auto; }
-    .card { border: 1px solid rgba(255,255,255,.10); border-radius: 18px; padding: 18px; background: rgba(255,255,255,.04); }
-    h1 { margin: 0 0 14px; font-size: 24px; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: var(--tg-theme-bg-color, #101014); color: var(--tg-theme-text-color, #f4f4f5); }
+    main { max-width: 820px; margin: 0 auto; }
+    .card { border: 1px solid rgba(255,255,255,.10); border-radius: 20px; padding: 18px; background: rgba(255,255,255,.045); box-shadow: 0 10px 32px rgba(0,0,0,.18); }
+    h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; }
+    h2 { margin: 22px 0 10px; font-size: 18px; }
+    h3 { margin: 14px 0 8px; font-size: 15px; }
     p { line-height: 1.45; }
     .muted { color: var(--tg-theme-hint-color, #a1a1aa); }
-    .hidden { display: none; }
-    .row { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 12px; margin-top: 12px; }
-    h2 { margin: 22px 0 10px; font-size: 17px; }
-    ul { list-style: none; padding: 0; margin: 0; }
-    li { border-top: 1px solid rgba(255,255,255,.08); padding: 12px 0; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .hidden { display: none !important; }
+    .top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .pill { display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: var(--tg-theme-hint-color, #a1a1aa); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .panel { border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.035); }
+    .palco { width: 100%; text-align: left; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.06); color: inherit; font: inherit; }
+    .palco.active { outline: 2px solid var(--tg-theme-button-color, #5b8cff); }
+    .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,.08); padding-top: 10px; margin-top: 10px; }
+    button, select, textarea, input { font: inherit; }
+    button.action, button.nav { border: 0; border-radius: 14px; padding: 12px 14px; background: var(--tg-theme-button-color, #5b8cff); color: var(--tg-theme-button-text-color, white); font-weight: 650; }
+    button.secondary { background: rgba(255,255,255,.09); color: inherit; border: 1px solid rgba(255,255,255,.10); }
+    button.danger { background: #b42318; color: #fff; }
+    button:disabled { opacity: .45; filter: grayscale(1); }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 12px; background: rgba(0,0,0,.18); color: inherit; }
+    textarea { min-height: 92px; resize: vertical; }
+    .list { display: grid; gap: 8px; }
+    .item { border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 12px; background: rgba(255,255,255,.03); }
+    .ok { color: #50d890; }
+    .bad { color: #ff8a80; }
+    .warn { color: #ffd166; }
+    .small { font-size: 12px; }
+    .toast { position: sticky; bottom: 12px; margin-top: 16px; border-radius: 14px; padding: 12px; background: rgba(255,255,255,.10); }
   </style>
 </head>
 <body>
@@ -76,18 +98,76 @@ _EQUALIZADOR_HTML = """<!doctype html>
       <p>Acesso indisponível.</p>
     </section>
     <section id="app" class="card hidden">
-      <h1>Equalizador</h1>
-      <p class="muted">Mesa em modo controlado.</p>
-      <div class="row"><span>Operador</span><strong id="nome"></strong></div>
-      <div class="row"><span>Perfil</span><strong id="perfil"></strong></div>
-      <div class="row"><span>Referência</span><code id="ui_ref"></code></div>
-      <div class="row"><span>Canais</span><span id="canais"></span></div>
-      <h2>Palcos disponíveis</h2>
-      <div id="palcos" class="muted">Nenhum palco disponível.</div>
-      <h2>Distribuição de canais</h2>
-      <div id="canais_mesa" class="muted">Nenhum canal disponível.</div>
-      <h2>Afinação</h2>
-      <div id="afinacao" class="muted">Nenhum diagnóstico carregado.</div>
+      <div class="top">
+        <div>
+          <h1>Equalizador</h1>
+          <p class="muted">Mesa em modo controlado.</p>
+        </div>
+        <span id="perfil" class="pill">Operador</span>
+      </div>
+      <div class="row"><span>Operador</span><strong id="nome">Operador</strong></div>
+      <div class="row"><span>Referência segura</span><span id="ui_ref" class="muted small"></span></div>
+      <h2>Palcos</h2>
+      <div id="palcos" class="grid"></div>
+      <div id="mesa" class="hidden">
+        <h2 id="mesa_titulo">Mesa do palco</h2>
+        <div class="toolbar">
+          <button class="nav secondary" data-view="mesa_view">Mesa</button>
+          <button class="nav secondary" data-view="afinacao_view">Afinação</button>
+          <button class="nav secondary" data-view="historico_view">Histórico</button>
+          <button class="nav secondary" data-view="maestro_view">Modo Maestro</button>
+        </div>
+        <section id="mesa_view" class="view">
+          <div class="grid">
+            <div class="panel">
+              <h3>Mensagens</h3>
+              <select id="mensagem_select"></select>
+              <div class="toolbar">
+                <button class="action danger" data-action="mensagens.apagar">Apagar</button>
+                <button class="action secondary" data-action="fixados.criar">Fixar</button>
+                <button class="action secondary" data-action="fixados.remover">Remover fixado</button>
+              </div>
+              <p class="muted small">A lista usa referências internas. IDs de mensagem não aparecem.</p>
+            </div>
+            <div class="panel">
+              <h3>Membros</h3>
+              <select id="alvo_select"></select>
+              <div class="toolbar">
+                <button class="action secondary" data-action="membros.silenciar">Silenciar</button>
+                <button class="action secondary" data-action="membros.liberar">Liberar</button>
+                <button class="action danger" data-action="membros.remover">Remover</button>
+                <button class="action secondary" data-action="membros.reintegrar">Reintegrar</button>
+              </div>
+              <p class="muted small">A lista usa referências internas. IDs de usuário não aparecem.</p>
+            </div>
+            <div class="panel">
+              <h3>Convites</h3>
+              <input id="convite_nome" maxlength="32" placeholder="Nome do convite" value="Equalizador" />
+              <div class="toolbar"><button class="action secondary" data-action="convites.criar">Criar convite</button></div>
+            </div>
+          </div>
+        </section>
+        <section id="afinacao_view" class="view hidden">
+          <div id="afinacao" class="list muted">Afinação não carregada.</div>
+        </section>
+        <section id="historico_view" class="view hidden">
+          <div id="historico" class="list muted">Histórico não carregado.</div>
+        </section>
+        <section id="maestro_view" class="view hidden">
+          <div class="panel">
+            <h3>Modo Maestro</h3>
+            <p class="muted small">Ações críticas exigem confirmação dupla.</p>
+            <textarea id="transmissao_texto" maxlength="4096" placeholder="Texto da transmissão"></textarea>
+            <div class="toolbar">
+              <button class="action danger" data-action="silencio.ativar">Ativar modo silêncio</button>
+              <button class="action secondary" data-action="transmissao.enviar">Enviar transmissão</button>
+              <button id="exportar_historico" class="action secondary" type="button">Exportar histórico</button>
+            </div>
+            <div id="distribuicao" class="list muted"></div>
+          </div>
+        </section>
+      </div>
+      <div id="toast" class="toast hidden"></div>
     </section>
   </main>
   <script>
@@ -95,76 +175,216 @@ _EQUALIZADOR_HTML = """<!doctype html>
       const tg = window.Telegram && window.Telegram.WebApp;
       if (tg) { tg.ready(); tg.expand(); }
       const initData = tg && tg.initData ? tg.initData : "";
+      let apiHeaders = null;
+      let currentPalco = null;
+      let canaisPorPalco = new Map();
+      let direitosDisponiveis = new Set();
+      let afinacaoLoaded = false;
+      const endpoints = {
+        "mensagens.apagar": "mensagens/apagar",
+        "membros.silenciar": "membros/silenciar",
+        "membros.liberar": "membros/liberar",
+        "membros.remover": "membros/remover",
+        "membros.reintegrar": "membros/reintegrar",
+        "fixados.criar": "fixados/criar",
+        "fixados.remover": "fixados/remover",
+        "convites.criar": "convites/criar",
+        "silencio.ativar": "silencio/ativar",
+        "transmissao.enviar": "transmissao/enviar"
+      };
+      const actionLabels = {
+        "mensagens.apagar": "Apagar mensagem",
+        "membros.silenciar": "Silenciar membro",
+        "membros.liberar": "Liberar membro",
+        "membros.remover": "Remover membro",
+        "membros.reintegrar": "Reintegrar membro",
+        "fixados.criar": "Fixar mensagem",
+        "fixados.remover": "Remover fixado",
+        "convites.criar": "Criar convite",
+        "silencio.ativar": "Ativar modo silêncio",
+        "transmissao.enviar": "Enviar transmissão"
+      };
       const show = (id) => {
-        for (const el of document.querySelectorAll("section")) el.classList.add("hidden");
+        for (const el of document.querySelectorAll("main > section")) el.classList.add("hidden");
         document.getElementById(id).classList.remove("hidden");
       };
+      const toast = (text, kind) => {
+        const el = document.getElementById("toast");
+        el.textContent = text;
+        el.className = "toast " + (kind || "");
+        setTimeout(() => el.classList.add("hidden"), 5200);
+      };
+      const api = (url, options) => fetch(url, Object.assign({ headers: apiHeaders }, options || {}));
+      const option = (value, label) => {
+        const item = document.createElement("option");
+        item.value = value;
+        item.textContent = label;
+        return item;
+      };
+      const hasCanal = (codigo) => currentPalco && (canaisPorPalco.get(currentPalco.grp_ref) || new Set()).has(codigo);
+      const canRun = (codigo) => hasCanal(codigo) && (!afinacaoLoaded || direitosDisponiveis.has(codigo) || codigo === "convites.criar" || codigo === "transmissao.enviar" || codigo === "silencio.ativar");
+      const openView = (id) => {
+        for (const el of document.querySelectorAll(".view")) el.classList.add("hidden");
+        document.getElementById(id).classList.remove("hidden");
+      };
+      document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
+      function renderPalcos(palcos) {
+        const container = document.getElementById("palcos");
+        container.replaceChildren();
+        if (!palcos.length) {
+          container.textContent = "Nenhum palco disponível.";
+          container.className = "muted";
+          return;
+        }
+        container.className = "grid";
+        for (const palco of palcos) {
+          const button = document.createElement("button");
+          button.className = "palco";
+          button.textContent = (palco.titulo || "Palco") + " · " + (palco.estado || "habilitado");
+          button.addEventListener("click", () => selectPalco(palco, button));
+          container.appendChild(button);
+        }
+      }
+      function renderCanais(rows) {
+        canaisPorPalco = new Map();
+        for (const row of rows || []) {
+          const set = new Set((row.canais || []).map((canal) => canal.codigo));
+          canaisPorPalco.set(row.grp_ref, set);
+        }
+      }
+      function fillSelect(id, rows, valueKey, labelKey, emptyText) {
+        const select = document.getElementById(id);
+        select.replaceChildren();
+        if (!rows.length) {
+          select.appendChild(option("", emptyText));
+          return;
+        }
+        for (const row of rows) select.appendChild(option(row[valueKey], row[labelKey] || row[valueKey]));
+      }
+      function updateButtons() {
+        document.querySelectorAll("button.action[data-action]").forEach((button) => {
+          button.disabled = !currentPalco || !canRun(button.dataset.action);
+          button.title = button.disabled ? "Canal ou afinação indisponível" : "";
+        });
+      }
+      async function selectPalco(palco, button) {
+        currentPalco = palco;
+        document.querySelectorAll(".palco").forEach((el) => el.classList.remove("active"));
+        if (button) button.classList.add("active");
+        document.getElementById("mesa").classList.remove("hidden");
+        document.getElementById("mesa_titulo").textContent = "Mesa · " + (palco.titulo || "Palco");
+        openView("mesa_view");
+        await loadPalcoData();
+      }
+      async function loadPalcoData() {
+        if (!currentPalco) return;
+        direitosDisponiveis = new Set();
+        afinacaoLoaded = false;
+        const base = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref);
+        const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes] = await Promise.all([
+          api(base + "/afinacao").then((r) => r.ok ? r.json() : null).catch(() => null),
+          api(base + "/mensagens").then((r) => r.ok ? r.json() : { mensagens: [] }).catch(() => ({ mensagens: [] })),
+          api(base + "/alvos").then((r) => r.ok ? r.json() : { alvos: [] }).catch(() => ({ alvos: [] })),
+          api("/equalizador/api/historico").then((r) => r.ok ? r.json() : { historico: [] }).catch(() => ({ historico: [] })),
+          api("/equalizador/api/canais/distribuicao").then((r) => r.ok ? r.json() : { distribuicao: [] }).catch(() => ({ distribuicao: [] }))
+        ]);
+        if (afinacaoRes && Array.isArray(afinacaoRes.canais)) {
+          afinacaoLoaded = true;
+          direitosDisponiveis = new Set(afinacaoRes.canais.filter((canal) => canal.disponivel).map((canal) => canal.codigo));
+          const af = document.getElementById("afinacao");
+          af.className = "list";
+          af.replaceChildren(...afinacaoRes.canais.map((canal) => {
+            const item = document.createElement("div");
+            item.className = "item";
+            item.innerHTML = `<strong>${canal.nome}</strong><br><span class="${canal.disponivel ? 'ok' : 'bad'}">${canal.disponivel ? 'Disponível' : 'Indisponível'}</span>`;
+            return item;
+          }));
+        }
+        if (!afinacaoLoaded) {
+          const af = document.getElementById("afinacao");
+          af.className = "list muted";
+          af.textContent = "Afinação restrita ao Maestro ou indisponível. A execução continua validada pelo servidor.";
+        }
+        fillSelect("mensagem_select", mensagensRes.mensagens || [], "msg_ref", "resumo", "Nenhuma mensagem registrada");
+        fillSelect("alvo_select", alvosRes.alvos || [], "alvo_ref", "nome", "Nenhum membro registrado");
+        const hist = document.getElementById("historico");
+        const rows = (historicoRes.historico || []).filter((row) => row.palco_ref === currentPalco.grp_ref).slice(0, 20);
+        hist.className = rows.length ? "list" : "list muted";
+        hist.replaceChildren(...(rows.length ? rows.map((row) => {
+          const item = document.createElement("div");
+          item.className = "item";
+          item.textContent = `${row.resumo} · ${row.status}`;
+          return item;
+        }) : [document.createTextNode("Nenhum ajuste registrado.")]));
+        const dist = document.getElementById("distribuicao");
+        const distRows = distribuicaoRes.distribuicao || [];
+        dist.className = distRows.length ? "list" : "list muted";
+        dist.replaceChildren(...(distRows.length ? distRows.slice(0, 12).map((row) => {
+          const item = document.createElement("div");
+          item.className = "item small";
+          item.textContent = `${row.operador || 'Operador'} · ${(row.canais || []).join(', ') || 'sem canais'}`;
+          return item;
+        }) : [document.createTextNode("Distribuição indisponível para este perfil.")]));
+        updateButtons();
+      }
+      function buildPayload(action) {
+        if (action.startsWith("mensagens.") || action.startsWith("fixados.")) {
+          const msg = document.getElementById("mensagem_select").value;
+          if (!msg) throw new Error("Escolha uma mensagem registrada.");
+          return { msg_ref: msg, sem_notificacao: true };
+        }
+        if (action.startsWith("membros.")) {
+          const alvo = document.getElementById("alvo_select").value;
+          if (!alvo) throw new Error("Escolha um membro registrado.");
+          return { alvo_ref: alvo, duracao_segundos: 3600, apenas_se_banido: true };
+        }
+        if (action === "convites.criar") return { nome: document.getElementById("convite_nome").value || "Equalizador" };
+        if (action === "silencio.ativar") return { confirmacao: "CONFIRMAR AJUSTE" };
+        if (action === "transmissao.enviar") {
+          const texto = document.getElementById("transmissao_texto").value.trim();
+          if (!texto) throw new Error("Escreva o texto da transmissão.");
+          return { texto, confirmacao: "CONFIRMAR AJUSTE", sem_preview: true };
+        }
+        return {};
+      }
+      async function runAction(action) {
+        if (!currentPalco) return;
+        if (!confirm("Confirmar ajuste: " + (actionLabels[action] || action) + "?")) return;
+        if ((action === "silencio.ativar" || action === "transmissao.enviar") && !confirm("Ação crítica de Maestro. Confirmar novamente?")) return;
+        let payload;
+        try { payload = buildPayload(action); } catch (err) { toast(err.message, "warn"); return; }
+        const url = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/" + endpoints[action];
+        const res = await api(url, { method: "POST", headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }), body: JSON.stringify(payload) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(data.detail || "Ajuste não concluído.", "bad"); return; }
+        toast(data.resumo || "Ajuste concluído.", "ok");
+        await loadPalcoData();
+      }
+      document.querySelectorAll("button.action[data-action]").forEach((button) => button.addEventListener("click", () => runAction(button.dataset.action)));
+      document.getElementById("exportar_historico").addEventListener("click", async () => {
+        const res = await api("/equalizador/api/historico/exportar");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(data.detail || "Exportação indisponível.", "bad"); return; }
+        toast("Exportação gerada: " + ((data.exportacao && data.exportacao.exportacao_ref) || "pronta"), "ok");
+      });
       if (!initData) { show("denied"); return; }
-      const headers = { "Authorization": "tma " + initData };
-      fetch("/equalizador/api/me", { headers })
+      const bootstrapHeaders = { "Authorization": "tma " + initData };
+      fetch("/equalizador/api/me", { headers: bootstrapHeaders })
         .then((response) => response.ok ? response.json() : Promise.reject(new Error("denied")))
-        .then((data) => {
-          const sessionToken = data.sessao && data.sessao.token ? data.sessao.token : "";
-          const apiHeaders = sessionToken ? { "Authorization": "eqs " + sessionToken } : headers;
+        .then((me) => {
+          const sessionToken = me.sessao && me.sessao.token ? me.sessao.token : "";
+          apiHeaders = sessionToken ? { "Authorization": "eqs " + sessionToken } : bootstrapHeaders;
+          document.getElementById("nome").textContent = me.nome || "Operador";
+          document.getElementById("perfil").textContent = me.perfil || "Operador";
+          document.getElementById("ui_ref").textContent = me.ui_ref || "";
           return Promise.all([
-            Promise.resolve(data),
-            fetch("/equalizador/api/palcos", { headers: apiHeaders }).then((response) => response.ok ? response.json() : { palcos: [] }),
-            fetch("/equalizador/api/canais", { headers: apiHeaders }).then((response) => response.ok ? response.json() : { canais: [] }),
-            Promise.resolve(apiHeaders)
+            fetch("/equalizador/api/palcos", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { palcos: [] }),
+            fetch("/equalizador/api/canais", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { canais: [] })
           ]);
         })
-        .then(([data, palcosData, canaisData, apiHeaders]) => {
-          document.getElementById("nome").textContent = data.nome || "Operador";
-          document.getElementById("perfil").textContent = data.perfil || "Operador";
-          document.getElementById("ui_ref").textContent = data.ui_ref || "";
-          document.getElementById("canais").textContent = Array.isArray(data.canais) ? data.canais.join(", ") : "";
-          const canaisMesa = Array.isArray(canaisData.canais) ? canaisData.canais : [];
-          const canaisContainer = document.getElementById("canais_mesa");
-          if (canaisMesa.length) {
-            const list = document.createElement("ul");
-            for (const palco of canaisMesa) {
-              const item = document.createElement("li");
-              const nomes = Array.isArray(palco.canais) ? palco.canais.map((canal) => canal.nome || canal.codigo).join(", ") : "";
-              item.textContent = (palco.titulo || "Palco") + " · " + nomes;
-              list.appendChild(item);
-            }
-            canaisContainer.replaceChildren(list);
-            canaisContainer.classList.remove("muted");
-          }
-          const palcos = Array.isArray(palcosData.palcos) ? palcosData.palcos : [];
-          const container = document.getElementById("palcos");
-          if (palcos.length) {
-            const list = document.createElement("ul");
-            for (const palco of palcos) {
-              const item = document.createElement("li");
-              item.textContent = (palco.titulo || "Palco") + " · " + (palco.estado || "habilitado");
-              list.appendChild(item);
-            }
-            container.replaceChildren(list);
-            container.classList.remove("muted");
-
-            const afinacao = document.getElementById("afinacao");
-            afinacao.textContent = "Carregando afinação…";
-            Promise.all(palcos.map((palco) =>
-              fetch("/equalizador/api/palcos/" + encodeURIComponent(palco.grp_ref) + "/afinacao", { headers: apiHeaders })
-                .then((response) => response.ok ? response.json() : null)
-                .catch(() => null)
-            )).then((snapshots) => {
-              const rows = snapshots.filter(Boolean);
-              if (!rows.length) { afinacao.textContent = "Afinação indisponível."; return; }
-              const afList = document.createElement("ul");
-              for (const snapshot of rows) {
-                const item = document.createElement("li");
-                const available = Array.isArray(snapshot.canais)
-                  ? snapshot.canais.filter((canal) => canal.disponivel).map((canal) => canal.codigo).join(", ")
-                  : "";
-                item.textContent = (snapshot.titulo || "Palco") + " · " + (snapshot.estado || "indisponível") + (available ? " · " + available : "");
-                afList.appendChild(item);
-              }
-              afinacao.replaceChildren(afList);
-              afinacao.classList.remove("muted");
-            });
-          }
+        .then(([palcosData, canaisData]) => {
+          renderCanais(canaisData.canais || []);
+          renderPalcos(palcosData.palcos || []);
           show("app");
         })
         .catch(() => show("denied"));
@@ -446,6 +666,32 @@ async def equalizador_palco_afinacao(
         )
     except PalcoNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Palco indisponível.") from exc
+
+
+@router.get("/api/palcos/{grp_ref}/mensagens")
+def equalizador_palco_mensagens(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="palco.ver")
+    return {"mensagens": list_mensagens_publicas(palco_id=int(palco["telegram_chat_id"]))}
+
+
+@router.get("/api/palcos/{grp_ref}/alvos")
+def equalizador_palco_alvos(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="palco.ver")
+    return {"alvos": list_alvos_publicos(palco_id=int(palco["telegram_chat_id"]))}
 
 
 @router.get("/api/historico")
