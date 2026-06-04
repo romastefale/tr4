@@ -14,7 +14,6 @@ from aiogram.types import (
     Message,
 )
 
-from app.moderation_tigrao.permissions import is_moderator_user
 from app.services.lastfm import lastfm_service
 from app.services.lastfm_group import lastfm_group_service
 from app.services.monthfm_card import render_monthfm_card
@@ -87,8 +86,7 @@ async def _members_in_chat(
     """Filtra `profiles` retendo só quem está no grupo `chat_id`.
 
     Roda `get_chat_member` com `Semaphore(8)`; falhas individuais são
-    silenciadas (usuário fica fora do ranking). Padrão alinhado ao
-    moderation_tigrao.member_tag_router.
+    silenciadas (usuário fica fora do ranking).
     """
     if not profiles:
         return []
@@ -134,17 +132,7 @@ async def songcharts(message: Message) -> None:
     chat = message.chat
 
     if chat.type == "private":
-        # DM: exclusivo de moderador autorizado (owner ou 2º). Modo global,
-        # agrega todos os conectados.
-        if not is_moderator_user(requester.id):
-            await message.answer(_dm_deny_text(), parse_mode="HTML")
-            return
-        await message.answer(
-            "♫ Ranking <b>global</b> — agrega TODOS os Last.fm conectados.\n"
-            "Escolha o período:",
-            parse_mode="HTML",
-            reply_markup=_menu_keyboard(scope="a", chat_id=0, requester_id=requester.id),
-        )
+        await message.answer(_dm_deny_text(), parse_mode="HTML")
         return
 
     # Grupo/supergrupo: restrito a admin/creator.
@@ -319,10 +307,9 @@ async def songcharts_callback(query: CallbackQuery) -> None:
                 show_alert=True,
             )
             return
-    else:  # scope == "a" (DM moderador)
-        if not is_moderator_user(query.from_user.id):
-            await query.answer("Acesso negado.", show_alert=True)
-            return
+    else:  # scope == "a" desativado no build music-only
+        await query.answer("Ranking global por DM não está disponível neste build.", show_alert=True)
+        return
 
     if query.from_user.id != requester_id:
         # Botão foi gerado por outro user — bloqueia pra evitar disputa.

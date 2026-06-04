@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from app.bot.filters import IsOwner
 from app.db.database import SessionLocal
-from app.moderation_tigrao.storage import list_groups
+from app.bot.music_groups import list_groups
 from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service  # Sprint 8

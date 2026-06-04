@@ -29,9 +29,15 @@ from app.services.music import music_service
 from app.services.reactions import reactions_service
 from app.services.reaction_audit import reaction_audit_service
 from app.services.spotify import spotify_service
-from app.security.managed_groups import is_managed_group
 
 logger = logging.getLogger(__name__)
+
+
+def is_managed_group(chat_id: int) -> bool:
+    # Music-only build: moderation/reaction audit panel is disabled.
+    return False
+
+
 bot_dispatcher: Dispatcher = Dispatcher()
 
 
@@ -464,44 +470,15 @@ def _register_handlers(dp: Dispatcher) -> None:
             "◌ /monthfm\n"
             "Atalho direto pro extrato <b>mensal</b> (mesmo card do botão Mensal do /myself). "
             "Aceita: <code>/monthfm</code>, <code>/monthfm 05</code> ou <code>/monthfm 2026-05</code>.\n\n"
-            "— MÚSICA ADMIN/OWNER —\n\n"
-            "≡ /songcharts\n"
-            "Ranking agregado do Last.fm:\n"
-            "  • Em <b>grupo</b>: só admin/creator pode rodar. Mostra top 10 artistas + 10 músicas "
-            "do grupo (botões pra escolher período). Card vai fixado automaticamente.\n"
-            "  • Em <b>DM</b>: SÓ VOCÊ. Vira modo <b>global</b> — agrega TODOS os Last.fm conectados "
-            "no bot, independente de grupo.\n\n"
+            "— UTILIDADES MUSICAIS AVANÇADAS —\n\n"
             "♛ /kingplay\n"
-            "Força-fixa sua música atual num grupo específico. Se a faixa tiver Spotify Canvas "
-            "(vídeo curto vertical em loop), posta o vídeo; senão, cai pra capa do álbum. "
-            "Mesma legenda nos dois casos. Funciona pra Last.fm-only também (resolve a track "
-            "internamente). Dois modos:\n"
-            "  1) <code>/kingplay</code> (sem args) → painel com botões dos grupos conhecidos.\n"
-            "  2) Multi-linha:\n"
-            "     <code>/kingplay\n&lt;chat_id&gt;</code>\n"
-            "     → envia direto pro grupo informado.\n"
-            "Útil pra \"carimbar\" sua presença musical sem precisar entrar no grupo.\n\n"
-            "🔎 /debuguser &lt;user_id&gt;\n"
-            "Stats internas de qualquer usuário no banco: plays totais, likes recebidos/enviados "
-            "e top 5 músicas dele. Ex.: <code>/debuguser 123456789</code>.\n\n"
-            "— MODERAÇÃO / UTILIDADE OWNER —\n\n"
-            "⚙ /tigrao\n"
-            "Painel completo de moderação (só em DM com você). Menu FSM com: "
-            "selecionar grupo (lista os conhecidos ou cola chat_id manual), "
-            "ações no usuário (ban, mute, unmute, pin de mensagem), "
-            "customizar grupo (título, bio, foto), ver logs, gerar links de convite, "
-            "enviar mensagem em nome do bot. Toda interação por botões + estados de espera (texto/mídia).\n\n"
-            "🤝 /btb (bot-to-bot)\n"
-            "Relay pra controlar OUTROS bots (tipo @MissRose_bot) por dentro do tigraoRADIO. "
-            "Você seleciona target bot + grupo alvo, configura modo/opções (cleanup, fallback, wait), "
-            "e o tigraoRADIO dispara a sequência de comandos no destino. Tem allowlist por bot "
-            "(btb:arm) pra evitar disparo acidental.\n\n"
-            "🪪 /manual &lt;user_id&gt; &lt;lastfm_username&gt;\n"
-            "Cadastra OUTRA pessoa no Last.fm manualmente (sem ela precisar mandar /lastfm). "
-            "Aceita @, URL completa do Last.fm ou só o nome. Limpa registros antigos daquele user_id "
-            "antes de gravar (transação atômica). Ex.: <code>/manual 123456789 @romastefale</code>.\n\n"
+            "Força-fixa sua música atual num grupo conhecido. Se houver Spotify Canvas, posta o vídeo; senão, usa a capa do álbum.\n\n"
+            "🪪 /manual <user_id> <lastfm_username>\n"
+            "Cadastra Last.fm manualmente para um user_id. Útil para corrigir perfil musical.\n\n"
+            "🔎 /debuguser <user_id>\n"
+            "Mostra estatísticas musicais internas de um usuário no banco.\n\n"
             "🔒 /hidden\n"
-            "Este comando. Silencioso pra qualquer um que não seja você.",
+            "Este comando de ajuda avançada. Silencioso para quem não é autorizado.",
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -831,11 +808,8 @@ def _register_handlers(dp: Dispatcher) -> None:
                     event.chat.id, event.message_id, event.user.id,
                 )
 
-    # Inline público (usuários comuns). Query vazia (ou "playing") -> card da
-    # música tocando como 1ª opção. Query com termo -> busca por termo (mesmo
-    # motor do /radiofm). O formato owner-only de moderação X9
-    # (`<chat_id> <user_id>`, dois inteiros) é EXCLUÍDO via filter pra cair no
-    # sub-router de moderação — root é testado antes dos sub_routers em aiogram3.
+    # Inline público. Query vazia (ou "playing") -> card da música tocando
+    # como 1ª opção. Query com termo -> busca por termo (mesmo motor do /radiofm).
     def _is_x9_inline_format(query: InlineQuery) -> bool:
         parts = (query.query or "").strip().split()
         if len(parts) != 2:
@@ -897,35 +871,10 @@ def _register_handlers(dp: Dispatcher) -> None:
     # `return` cedo devolveria None ao observer (que NÃO é UNHANDLED em
     # aiogram3), e a propagação para sub-routers seria abortada.
     # StateFilter(None) também evita interceptar texto durante FSM.
-    # CRÍTICO: TR3 e BTB não usam FSM nativo do aiogram (StateFilter(None)
-    # SEMPRE passa pra eles). Como este handler vive no dispatcher (root
-    # router) e aiogram3 testa handlers do root ANTES dos sub_routers
-    # (router.py:_propagate_event linhas 174-193), sem o guard
-    # `_owner_dialog_active` toda mensagem de texto livre do owner em DM
-    # seria consumida aqui (mesmo no-op) e NUNCA chegaria nos handlers
-    # `waiting_for` dos sub-routers tigrao/btb (rmod_link, customize_title,
-    # outbound_text, btb tadd/gmanual, etc), causando silêncio do bot.
+    # Music-only: não há painéis privados de moderação. O guard permanece
+    # defensivo e retorna False se módulos legados não existirem.
     def _owner_dialog_active(message: Message) -> bool:
-        # Lazy imports evitam ciclo (telegram.py é importado antes dos
-        # routers em main.py). Try/except por segurança caso módulo falhe.
-        try:
-            from app.moderation_tigrao.permissions import is_owner_private_message
-        except Exception:
-            return False
-        if not is_owner_private_message(message):
-            return False
-        try:
-            from app.moderation_tigrao.state import get_session as _tigrao_session
-            if _tigrao_session().waiting_for is not None:
-                return True
-        except Exception:
-            pass
-        try:
-            from app.btb.state import get_session as _btb_session
-            if _btb_session().waiting_for is not None:
-                return True
-        except Exception:
-            pass
+        # Music-only build: não há painéis privados com estado de espera.
         return False
 
     @dp.message(

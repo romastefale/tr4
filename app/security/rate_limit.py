@@ -11,8 +11,6 @@ from app.config.settings import (
     COMMAND_RATE_LIMIT_STANDARD_PER_WINDOW,
     COMMAND_RATE_LIMIT_WINDOW_SECONDS,
 )
-from app.security.audit import log_audit_event
-from app.security.panic import record_security_signal
 
 
 @dataclass(frozen=True)
@@ -52,12 +50,6 @@ def _limit_for(command: str) -> int:
 
 
 def check_command_rate_limit(command: str, user_id: int, chat_id: int) -> RateLimitResult:
-    """In-memory per-user/per-chat command throttle.
-
-    Phase 7 intentionally keeps this local and non-persistent. It is a guard
-    against bursts of expensive card/canvas/ranking commands, not an accounting
-    system. It does not affect root security operations.
-    """
     if not COMMAND_RATE_LIMIT_ENABLED:
         return RateLimitResult(True)
     now = utcnow()
@@ -70,19 +62,6 @@ def check_command_rate_limit(command: str, user_id: int, chat_id: int) -> RateLi
         q.popleft()
     if len(q) >= limit:
         retry_after = max(1, int((window - (now - q[0])).total_seconds())) if q else max(1, COMMAND_RATE_LIMIT_WINDOW_SECONDS)
-        try:
-            record_security_signal("command.rate_limited", threshold=0, reason=f"{command_key}:{user_id}:{chat_id}")
-            log_audit_event(
-                category="rate_limit",
-                action=command_key,
-                status="blocked",
-                actor_user_id=int(user_id),
-                chat_id=int(chat_id),
-                reason=f"retry_after={retry_after}",
-                payload={"limit": limit, "window_seconds": COMMAND_RATE_LIMIT_WINDOW_SECONDS},
-            )
-        except Exception:
-            pass
         return RateLimitResult(False, retry_after_seconds=retry_after, count=len(q), limit=limit)
     q.append(now)
     if len(_BUCKETS) > _BOUND:
@@ -99,7 +78,6 @@ def rate_limit_status() -> dict[str, object]:
 
 
 async def enforce_message_rate_limit(message, command: str) -> bool:
-    """Return True if the command may continue; otherwise answer and block."""
     user = getattr(message, "from_user", None)
     chat = getattr(message, "chat", None)
     if not user or not chat:
