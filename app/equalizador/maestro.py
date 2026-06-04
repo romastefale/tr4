@@ -31,6 +31,21 @@ class MaestroConfirmationError(MaestroError):
     """Raised when a critical action lacks the required confirmation phrase."""
 
 
+def maestro_error_public_detail(exc: BaseException) -> str:
+    """Return a sanitized operator-facing detail for Maestro failures."""
+    if isinstance(exc, MaestroConfirmationError):
+        return "Confirmação exigida."
+    reason = _safe_text(exc, fallback="maestro_erro")
+    known = {
+        "transmissao_vazia": "Escreva o texto da transmissão.",
+        "transmissao_longa": "Transmissão acima do limite do Telegram.",
+        "modo_silencio_falhou": "Modo silêncio não concluído.",
+        "transmissao_falhou": "Transmissão não concluída.",
+        "maestro_erro": "Ajuste crítico não concluído.",
+    }
+    return known.get(reason, "Ajuste crítico não concluído.")
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -139,7 +154,7 @@ async def executar_modo_silencio(
             alvo_ref=None,
             ajuste="silencio.ativar",
             status="falhou",
-            resumo_publico="Modo silêncio não concluído",
+            resumo_publico=f"Modo silêncio não concluído · {maestro_error_public_detail(exc) if isinstance(exc, MaestroError) else _safe_text(exc, fallback='Telegram recusou a operação')}",
             payload_tecnico={"erro": _safe_text(exc, fallback=exc.__class__.__name__), "method": "setChatPermissions"},
             alias_secret=alias_secret,
             db_engine=db_engine,
@@ -210,7 +225,7 @@ async def executar_transmissao(
             alvo_ref=None,
             ajuste="transmissao.enviar",
             status="falhou",
-            resumo_publico="Transmissão não concluída",
+            resumo_publico=f"Transmissão não concluída · {maestro_error_public_detail(exc) if isinstance(exc, MaestroError) else _safe_text(exc, fallback='Telegram recusou a operação')}",
             payload_tecnico={"erro": _safe_text(exc, fallback=exc.__class__.__name__), "method": "sendMessage"},
             alias_secret=alias_secret,
             db_engine=db_engine,
@@ -237,6 +252,7 @@ def exportar_historico_publico(
         "exportacao_ref": export_ref,
         "gerado_em": generated_at,
         "formato": "json",
+        "total_registros": len(rows),
         "registros": rows,
     }
 

@@ -3,8 +3,9 @@ from __future__ import annotations
 import html
 import logging
 import uuid
+from typing import Any, Awaitable, Callable
 
-from aiogram import Dispatcher, F
+from aiogram import BaseMiddleware, Dispatcher, F
 from aiogram.filters import Command, StateFilter
 from aiogram.types import (
     CallbackQuery,
@@ -140,6 +141,7 @@ async def _remember_equalizador_message(message: Message) -> None:
             message_id=int(message.message_id),
             resumo_publico=resumo,
             alias_secret=alias_secret,
+            message_unix_time=int(message.date.timestamp()) if message.date else None,
         )
         if message.from_user and not message.from_user.is_bot:
             register_alvo_ref(
@@ -148,6 +150,14 @@ async def _remember_equalizador_message(message: Message) -> None:
                 nome_publico=_equalizador_safe_label(message.from_user.full_name),
                 alias_secret=alias_secret,
             )
+        for member in getattr(message, "new_chat_members", None) or []:
+            if member and not getattr(member, "is_bot", False):
+                register_alvo_ref(
+                    chat_id=int(message.chat.id),
+                    user_id=int(member.id),
+                    nome_publico=_equalizador_safe_label(member.full_name),
+                    alias_secret=alias_secret,
+                )
         replied = getattr(message, "reply_to_message", None)
         if replied is not None:
             register_mensagem_ref(
@@ -155,6 +165,7 @@ async def _remember_equalizador_message(message: Message) -> None:
                 message_id=int(replied.message_id),
                 resumo_publico=(replied.text or replied.caption or "Mensagem respondida")[:140],
                 alias_secret=alias_secret,
+                message_unix_time=int(replied.date.timestamp()) if replied.date else None,
             )
             if replied.from_user and not replied.from_user.is_bot:
                 register_alvo_ref(
@@ -165,6 +176,23 @@ async def _remember_equalizador_message(message: Message) -> None:
                 )
     except Exception:
         logger.debug("EQUALIZADOR_CAPTURE_FAILED", exc_info=True)
+
+
+class EqualizadorCaptureMiddleware(BaseMiddleware):
+    """Capture message/member aliases for the Equalizador without consuming updates.
+
+    Aiogram middlewares must call the downstream handler to keep normal bot
+    routing intact. The capture is best-effort and cannot block music handlers.
+    """
+
+    async def __call__(
+        self,
+        handler: Callable[[Message, dict[str, Any]], Awaitable[Any]],
+        event: Message,
+        data: dict[str, Any],
+    ) -> Any:
+        await _remember_equalizador_message(event)
+        return await handler(event, data)
 
 
 def _bold_unicode(text: str) -> str:
@@ -366,6 +394,10 @@ async def _send_playing(message: Message) -> None:
 
 
 def _register_handlers(dp: Dispatcher) -> None:
+    if not getattr(dp, "_equalizador_capture_middleware_registered", False):
+        dp.message.outer_middleware(EqualizadorCaptureMiddleware())
+        setattr(dp, "_equalizador_capture_middleware_registered", True)
+
     @dp.message(Command("start"))
     async def start(message: Message) -> None:
         # Sprint 9 (#3): deep links via /start <payload>.
@@ -738,7 +770,6 @@ def _register_handlers(dp: Dispatcher) -> None:
         lambda m: not _owner_dialog_active(m),
     )
     async def text_aliases(message: Message) -> None:
-        await _remember_equalizador_message(message)
         text = message.text or ""
         if detect_intent(text) == "play":
             # U3: _send_playing já deleta a mensagem em grupo (gatilho some

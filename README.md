@@ -125,3 +125,11 @@ TR4_EQUALIZADOR_ENABLED=false
 ```
 
 Depois reinicie/redeploie o serviço. O router `/equalizador` deixa de ser registrado e a parte musical segue ativa.
+
+### Equalizador — Etapa 27
+
+O Modo Maestro passou a depender da Afinação também na interface: `silencio.ativar` exige `can_restrict_members` e `transmissao.enviar` exige `can_manage_chat` antes de habilitar os botões. Erros críticos agora retornam mensagens públicas específicas e sanitizadas, e a exportação de histórico informa total de registros sem expor payload técnico.
+
+### Equalizador — Etapa 29
+
+A interface do Equalizador recebeu polimento final para uso mobile: status da Mesa, estados vazios para mensagens e membros, nomes públicos de canais na distribuição, resumo visual de Afinação, mensagens de erro sanitizadas no frontend e bloqueio operacional mais explícito quando a Afinação não está carregada. Esta etapa não adiciona novos poderes; apenas melhora usabilidade, clareza e segurança visual.
