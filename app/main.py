@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 
@@ -36,6 +37,9 @@ logger = logging.getLogger(__name__)
 bot: Bot | None = None
 dispatcher: Dispatcher = bot_dispatcher
 _telegram_dispatcher_configured = False
+_telegram_ready = False
+_telegram_startup_task: asyncio.Task | None = None
+_telegram_startup_error: str | None = None
 
 
 def _message_from_update(update: Update):
@@ -56,34 +60,30 @@ def _remember_music_group_from_update(update: Update) -> None:
         logger.debug("MUSIC_GROUP_REMEMBER_FAILED", exc_info=True)
 
 
-@app.on_event("startup")
-async def on_startup() -> None:
-    global bot, _telegram_dispatcher_configured
-    missing_env = validate_required_env()
-    if missing_env:
-        logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
-    init_db()
-    run_migrations(engine)
-    ensure_music_group_tables()
-    if not TELEGRAM_BOT_TOKEN:
-        logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
+def _configure_dispatcher_once() -> None:
+    global _telegram_dispatcher_configured
+    if _telegram_dispatcher_configured:
         return
+    dispatcher.include_router(monthfm_router)
+    dispatcher.include_router(weekfm_router)
+    dispatcher.include_router(tnow_router)
+    dispatcher.include_router(tcanvas_router)
+    dispatcher.include_router(tstory_router)
+    dispatcher.include_router(tly_router)
+    dispatcher.include_router(radiofm_router)
+    dispatcher.include_router(myself_router)
+    dispatcher.include_router(songcharts_router)
+    register_music_extra_handlers(dispatcher)
+    _register_handlers(dispatcher)
+    _telegram_dispatcher_configured = True
 
+
+async def _finish_telegram_startup() -> None:
+    global bot, _telegram_ready, _telegram_startup_error
     try:
-        bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        if not _telegram_dispatcher_configured:
-            dispatcher.include_router(monthfm_router)
-            dispatcher.include_router(weekfm_router)
-            dispatcher.include_router(tnow_router)
-            dispatcher.include_router(tcanvas_router)
-            dispatcher.include_router(tstory_router)
-            dispatcher.include_router(tly_router)
-            dispatcher.include_router(radiofm_router)
-            dispatcher.include_router(myself_router)
-            dispatcher.include_router(songcharts_router)
-            register_music_extra_handlers(dispatcher)
-            _register_handlers(dispatcher)
-            _telegram_dispatcher_configured = True
+        if bot is None:
+            _telegram_startup_error = "bot_not_initialized"
+            return
         webhook_secret = telegram_webhook_secret()
         await bot.set_webhook(
             f"{BASE_URL}/webhook",
@@ -91,8 +91,41 @@ async def on_startup() -> None:
             secret_token=webhook_secret,
         )
         await setup_bot_commands(bot)
-    except Exception:
+        _telegram_ready = True
+        _telegram_startup_error = None
+        logger.info("TELEGRAM_STARTUP_READY")
+    except Exception as exc:
+        _telegram_ready = False
+        _telegram_startup_error = f"{type(exc).__name__}: {exc}"
         logger.exception("TELEGRAM_STARTUP_FAILED")
+        if bot:
+            await bot.session.close()
+        bot = None
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    global bot, _telegram_startup_task, _telegram_ready, _telegram_startup_error
+    missing_env = validate_required_env()
+    if missing_env:
+        logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
+    init_db()
+    run_migrations(engine)
+    ensure_music_group_tables()
+    _telegram_ready = False
+    _telegram_startup_error = None
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
+        return
+
+    try:
+        bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        _configure_dispatcher_once()
+        _telegram_startup_task = asyncio.create_task(_finish_telegram_startup())
+        logger.info("TELEGRAM_STARTUP_SCHEDULED")
+    except Exception as exc:
+        _telegram_startup_error = f"{type(exc).__name__}: {exc}"
+        logger.exception("TELEGRAM_STARTUP_SCHEDULE_FAILED")
         if bot:
             await bot.session.close()
         bot = None
@@ -100,7 +133,13 @@ async def on_startup() -> None:
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    global bot
+    global bot, _telegram_startup_task
+    if _telegram_startup_task and not _telegram_startup_task.done():
+        _telegram_startup_task.cancel()
+        try:
+            await _telegram_startup_task
+        except asyncio.CancelledError:
+            pass
     await shutdown_telegram_bot()
     if bot:
         await bot.session.close()
@@ -124,7 +163,7 @@ def healthz() -> dict[str, object]:
 @app.get("/readyz")
 def readyz() -> JSONResponse:
     db_ok, db_error = _db_ready_check()
-    ok = bool(db_ok and TELEGRAM_BOT_TOKEN and bot is not None and _telegram_dispatcher_configured)
+    ok = bool(db_ok and TELEGRAM_BOT_TOKEN and bot is not None and _telegram_dispatcher_configured and _telegram_ready)
     return JSONResponse(
         {
             "status": "ready" if ok else "not_ready",
@@ -133,15 +172,17 @@ def readyz() -> JSONResponse:
                 "database": {"ok": db_ok, "error": db_error},
                 "bot_token_configured": bool(TELEGRAM_BOT_TOKEN),
                 "dispatcher_configured": _telegram_dispatcher_configured,
+                "telegram_ready": _telegram_ready,
+                "telegram_startup_error": _telegram_startup_error,
             },
         },
         status_code=200 if ok else 503,
     )
 
 
-@app.post("/webhook")
-async def telegram_webhook(request: Request) -> dict[str, bool] | Response:
-    if bot is None:
+@app.post("/webhook", response_model=None)
+async def telegram_webhook(request: Request):
+    if bot is None or not _telegram_ready:
         return {"ok": True}
     expected_secret = telegram_webhook_secret()
     if expected_secret:
