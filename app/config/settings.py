@@ -226,13 +226,31 @@ HTTP_TIMEOUT_SECONDS = _float_env(
     legacy=("HTTP_TIMEOUT_SECONDS",),
 )
 
-DATA_DIR = Path(_env("TR3_DATA_DIR", "/data", legacy=("DATA_DIR",)))
+DATA_DIR = Path(_env("TR3_DATA_DIR", "/app/data", legacy=("DATA_DIR",)))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DATABASE_URL = _env("TR3_DATABASE_URL", legacy=("DATABASE_URL",)).strip()
-if not DATABASE_URL:
-    DATABASE_URL = f"sqlite:///{DATA_DIR / 'app.db'}"
-DATABASE_URL = _require_sqlite_url(DATABASE_URL)
+
+def _database_url() -> str:
+    """Return a SQLite URL without crashing on Railway's legacy DATABASE_URL.
+
+    Music-only TR4 is SQLite-only. Railway projects migrated from older TR3
+    deployments may still have a Postgres DATABASE_URL injected by a previous
+    database plugin. Treat TR3_DATABASE_URL as explicit and strict, but ignore a
+    non-SQLite legacy DATABASE_URL so the app can boot with the local/volume
+    SQLite path.
+    """
+    explicit = os.getenv("TR3_DATABASE_URL")
+    if explicit is not None and explicit.strip():
+        return _require_sqlite_url(explicit.strip())
+
+    legacy = os.getenv("DATABASE_URL")
+    if legacy is not None and legacy.strip() and _is_sqlite_url(legacy):
+        return legacy.strip()
+
+    return f"sqlite:///{DATA_DIR / 'app.db'}"
+
+
+DATABASE_URL = _database_url()
 
 # Phase 1 server variables reserved for upcoming managed-groups/security phases.
 TIGRAORESPONDE_TARGET_CHAT_ID = _int_env(

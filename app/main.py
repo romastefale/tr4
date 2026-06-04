@@ -65,7 +65,11 @@ async def on_startup() -> None:
     init_db()
     run_migrations(engine)
     ensure_music_group_tables()
-    if TELEGRAM_BOT_TOKEN:
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
+        return
+
+    try:
         bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         if not _telegram_dispatcher_configured:
             dispatcher.include_router(monthfm_router)
@@ -87,6 +91,11 @@ async def on_startup() -> None:
             secret_token=webhook_secret,
         )
         await setup_bot_commands(bot)
+    except Exception:
+        logger.exception("TELEGRAM_STARTUP_FAILED")
+        if bot:
+            await bot.session.close()
+        bot = None
 
 
 @app.on_event("shutdown")

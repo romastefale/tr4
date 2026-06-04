@@ -23,3 +23,10 @@ python -m compileall app scripts tests
 PYTHONPATH=. python scripts/smoke_imports.py
 PYTHONPATH=. pytest -q
 ```
+
+
+<!-- TR4_DATABASE_RAILWAY_NOTE -->
+## Railway / SQLite
+
+TR4 music-only is SQLite-only. For Railway, use a persistent volume mounted at `/app/data`.
+Set `TR3_DATABASE_URL=sqlite:////app/data/app.db` when possible. If an older Postgres `DATABASE_URL` remains from a previous service, TR4 ignores it unless it is already a SQLite URL.
