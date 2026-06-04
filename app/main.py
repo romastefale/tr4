@@ -27,6 +27,7 @@ from app.bot.tstory import router as tstory_router
 from app.bot.weekfm import router as weekfm_router
 from app.bot.music_extras import register_music_extra_handlers
 from app.bot.music_groups import ensure_tables as ensure_music_group_tables, remember_group
+from app.config import settings
 from app.config.settings import (
     BASE_URL,
     TELEGRAM_BOT_TOKEN,
@@ -193,12 +194,16 @@ def readyz() -> JSONResponse:
                 "dispatcher_configured": _telegram_dispatcher_configured,
                 "telegram_ready": _telegram_ready,
                 "telegram_startup_error": _telegram_startup_error,
-                "equalizador": equalizador_hardening_status(
-                    enabled=TR4_EQUALIZADOR_ENABLED,
-                    rate_limit_per_minute=TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE,
-                    session_ttl_seconds=TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
-                    initdata_max_age_seconds=TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
-                ),
+                "equalizador": {
+                    **equalizador_hardening_status(
+                        enabled=TR4_EQUALIZADOR_ENABLED,
+                        rate_limit_per_minute=TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE,
+                        session_ttl_seconds=TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
+                        initdata_max_age_seconds=TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
+                    ),
+                    "config_ok": settings.equalizador_config_ok(),
+                    "config_errors": list(settings.equalizador_config_errors()),
+                },
             },
         },
         status_code=200 if ok else 503,

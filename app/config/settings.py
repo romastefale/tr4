@@ -72,6 +72,46 @@ def _int_set_env(name: str, default: str = "", *, legacy: Iterable[str] = ()) ->
             raise RuntimeError(f"Invalid integer item in environment variable {name}={token!r}") from exc
     return values
 
+
+_EQUALIZADOR_CONFIG_ERRORS: list[str] = []
+
+
+def _record_equalizador_config_error(message: str) -> None:
+    _EQUALIZADOR_CONFIG_ERRORS.append(message[:200])
+
+
+def _equalizador_bool_env(name: str, default: bool) -> bool:
+    try:
+        return _bool_env(name, default)
+    except RuntimeError as exc:
+        _record_equalizador_config_error(str(exc))
+        return default
+
+
+def _equalizador_int_env(name: str, default: int) -> int:
+    try:
+        return _int_env(name, default)
+    except RuntimeError as exc:
+        _record_equalizador_config_error(str(exc))
+        return default
+
+
+def _equalizador_int_set_env(name: str) -> set[int]:
+    raw = _env(name, "").strip()
+    if not raw:
+        return set()
+    values: set[int] = set()
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            values.add(int(token))
+        except ValueError:
+            _record_equalizador_config_error(f"Invalid integer item in environment variable {name}={token!r}")
+    return values
+
+
 def _is_sqlite_url(value: str) -> bool:
     lowered = value.strip().lower()
     return lowered.startswith("sqlite:")
@@ -256,18 +296,21 @@ RADIO_SCHEDULER_MAX_DUE_PER_TICK = _int_env(
 )
 
 
-# Equalizador Mini App — disabled by default. The web moderation surface is
-# registered only when TR4_EQUALIZADOR_ENABLED is true. Phase 7 adds hardening: rate limit, short session, mesa lock and sanitized logs.
-TR4_EQUALIZADOR_ENABLED = _bool_env("TR4_EQUALIZADOR_ENABLED", False)
+# Equalizador Mini App — disabled by default. These variables are parsed in
+# failure-tolerant mode so a bad Equalizador value never prevents /healthz from
+# coming up. Invalid items are reported through equalizador_config_errors() and
+# /readyz, matching the release rule that Equalizador failures must not kill the
+# musical TR4 process.
+TR4_EQUALIZADOR_ENABLED = _equalizador_bool_env("TR4_EQUALIZADOR_ENABLED", False)
 TR4_EQUALIZADOR_APP_NAME = _env("TR4_EQUALIZADOR_APP_NAME", "equalizador").strip() or "equalizador"
-TR4_EQUALIZADOR_MAESTRO_IDS_SET = _int_set_env("TR4_EQUALIZADOR_MAESTRO_IDS", "")
-TR4_EQUALIZADOR_OPERADOR_IDS_SET = _int_set_env("TR4_EQUALIZADOR_OPERADOR_IDS", "")
-TR4_EQUALIZADOR_PALCO_IDS_SET = _int_set_env("TR4_EQUALIZADOR_PALCO_IDS", "")
+TR4_EQUALIZADOR_MAESTRO_IDS_SET = _equalizador_int_set_env("TR4_EQUALIZADOR_MAESTRO_IDS")
+TR4_EQUALIZADOR_OPERADOR_IDS_SET = _equalizador_int_set_env("TR4_EQUALIZADOR_OPERADOR_IDS")
+TR4_EQUALIZADOR_PALCO_IDS_SET = _equalizador_int_set_env("TR4_EQUALIZADOR_PALCO_IDS")
 TR4_EQUALIZADOR_CANAIS_RAW = _env("TR4_EQUALIZADOR_CANAIS", "")
-TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS = _bool_env("TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS", True)
-TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS = _int_env("TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS", 600)
-TR4_EQUALIZADOR_SESSION_TTL_SECONDS = _int_env("TR4_EQUALIZADOR_SESSION_TTL_SECONDS", 900)
-TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE = _int_env("TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE", 30)
+TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS = _equalizador_bool_env("TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS", True)
+TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS = _equalizador_int_env("TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS", 600)
+TR4_EQUALIZADOR_SESSION_TTL_SECONDS = _equalizador_int_env("TR4_EQUALIZADOR_SESSION_TTL_SECONDS", 900)
+TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE = _equalizador_int_env("TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE", 30)
 
 
 def equalizador_user_is_allowed(user_id: int) -> bool:
@@ -280,6 +323,14 @@ def equalizador_allowed_palco_ids() -> set[int]:
 
 def equalizador_canais_raw() -> str:
     return TR4_EQUALIZADOR_CANAIS_RAW
+
+
+def equalizador_config_errors() -> tuple[str, ...]:
+    return tuple(_EQUALIZADOR_CONFIG_ERRORS)
+
+
+def equalizador_config_ok() -> bool:
+    return not _EQUALIZADOR_CONFIG_ERRORS
 
 
 def equalizador_alias_secret() -> str:
