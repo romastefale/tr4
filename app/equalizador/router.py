@@ -161,6 +161,35 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Equalizador</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    (function () {
+      function report(kind, message, source, line, col) {
+        try {
+          fetch("/equalizador/api/client-error", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              kind: String(kind || "client_error").slice(0, 40),
+              message: String(message || "").slice(0, 240),
+              source: String(source || "").slice(0, 160),
+              line: Number(line || 0),
+              col: Number(col || 0),
+              user_agent: String(navigator.userAgent || "").slice(0, 220)
+            })
+          }).catch(function () {});
+        } catch (_) {}
+      }
+      window.__eqClientError = report;
+      window.addEventListener("error", function (event) {
+        report("error", event.message, event.filename, event.lineno, event.colno);
+      });
+      window.addEventListener("unhandledrejection", function (event) {
+        var reason = event.reason;
+        var message = reason && reason.message ? reason.message : String(reason || "unhandledrejection");
+        report("unhandledrejection", message, "", 0, 0);
+      });
+    })();
+  </script>
   <style>
     :root { color-scheme: dark light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
@@ -964,6 +993,20 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       const tg = window.Telegram && window.Telegram.WebApp;
       if (tg) { tg.ready(); tg.expand(); }
       const initData = tg && tg.initData ? tg.initData : "";
+      const SESSION_KEY = "tr4_equalizador_eqs";
+      const reportClient = (kind, message) => {
+        try { if (window.__eqClientError) window.__eqClientError(kind, message, "equalizador", 0, 0); } catch (_) {}
+      };
+      const getStoredSession = () => {
+        try { return String(sessionStorage.getItem(SESSION_KEY) || "").trim(); } catch (_) { return ""; }
+      };
+      const setStoredSession = (token) => {
+        try {
+          const value = String(token || "").trim();
+          if (value) sessionStorage.setItem(SESSION_KEY, value);
+          else sessionStorage.removeItem(SESSION_KEY);
+        } catch (_) {}
+      };
       let apiHeaders = null;
       let bootstrapHeaders = null;
       let currentPalco = null;
@@ -3163,13 +3206,25 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         try { await navigator.clipboard.writeText(value); toast("Bloco Raw Editor copiado.", "ok"); }
         catch (_) { toast("Não foi possível copiar automaticamente. Selecione o campo Raw Editor.", "warn"); }
       });
-      if (!initData) { show("denied"); return; }
-      bootstrapHeaders = { "Authorization": "tma " + initData };
-      fetch("/equalizador/api/me", { headers: bootstrapHeaders })
+      const storedSession = getStoredSession();
+      if (initData) {
+        bootstrapHeaders = { "Authorization": "tma " + initData };
+        apiHeaders = bootstrapHeaders;
+      } else if (storedSession) {
+        bootstrapHeaders = null;
+        apiHeaders = { "Authorization": "eqs " + storedSession };
+        reportClient("initdata_ausente_usando_sessao", "initData ausente; tentando sessão curta persistida no WebView.");
+      } else {
+        reportClient("initdata_ausente", "Telegram.WebApp.initData ausente e sem sessão curta local.");
+        show("denied");
+        return;
+      }
+      fetch("/equalizador/api/me", { headers: apiHeaders })
         .then((response) => response.ok ? response.json() : Promise.reject(new Error("denied")))
         .then((me) => {
           const sessionToken = me.sessao && me.sessao.token ? me.sessao.token : "";
-          apiHeaders = sessionToken ? { "Authorization": "eqs " + sessionToken } : bootstrapHeaders;
+          if (sessionToken) setStoredSession(sessionToken);
+          apiHeaders = sessionToken ? { "Authorization": "eqs " + sessionToken } : apiHeaders;
           const nomeEl = document.getElementById("nome");
           if (nomeEl) {
             const username = String(me.username || "").replace(/^@/, "").trim();
@@ -3191,7 +3246,11 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           if (botData) renderBotResumo(botData);
           show("app");
         })
-        .catch(() => show("denied"));
+        .catch((error) => {
+          setStoredSession("");
+          reportClient("bootstrap_failed", error && error.message ? error.message : "Falha ao iniciar painel.");
+          show("denied");
+        });
     })();
   </script>
 </body>
@@ -3202,7 +3261,14 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def equalizador_home() -> HTMLResponse:
-    return HTMLResponse(_EQUALIZADOR_HTML)
+    return HTMLResponse(
+        _EQUALIZADOR_HTML,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 def _identity_from_authorization(authorization: str | None) -> TelegramWebAppIdentity:
@@ -3591,6 +3657,35 @@ async def _refresh_palcos_public_metadata(*, palco_ids: set[int]) -> None:
                     remember_group(chat_id=chat_id, title=title, username=username)
             except Exception:
                 continue
+
+
+@router.post("/api/client-error")
+async def equalizador_client_error(request: Request) -> dict[str, object]:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    def clean(value: object, limit: int = 180) -> str:
+        text_value = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+        for marker in ("bot", "Authorization", "hash=", "user=", "tgWebAppData"):
+            if marker in text_value:
+                text_value = text_value.replace(marker, "[omitido]")
+        return text_value[:limit]
+    kind = clean(payload.get("kind"), 40) or "client_error"
+    message = clean(payload.get("message"), 240)
+    source = clean(payload.get("source"), 120)
+    user_agent = clean(payload.get("user_agent"), 180)
+    logger = __import__("logging").getLogger(__name__)
+    logger.warning(
+        "EQUALIZADOR_CLIENT_ERROR | tipo=%s | mensagem=%s | origem=%s | linha=%s | coluna=%s | ua=%s",
+        kind,
+        message or "-",
+        source or "-",
+        payload.get("line") or 0,
+        payload.get("col") or 0,
+        user_agent or "-",
+    )
+    return {"ok": True}
 
 
 @router.get("/api/me")
