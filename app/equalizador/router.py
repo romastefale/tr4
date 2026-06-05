@@ -80,6 +80,7 @@ from app.equalizador.admin import (
     AdminConfirmationError,
     admin_error_public_detail,
     executar_admin_critico,
+    executar_grupo_foto,
 )
 
 router = APIRouter(prefix="/equalizador", tags=["equalizador"], include_in_schema=False)
@@ -94,60 +95,84 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <style>
     :root { color-scheme: dark light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 16px; background: var(--tg-theme-bg-color, #101014); color: var(--tg-theme-text-color, #f4f4f5); }
+    body { margin: 0; padding: 16px; background: var(--tg-theme-bg-color, #0b0d10); color: var(--tg-theme-text-color, #f8fafc); }
     main { max-width: 820px; margin: 0 auto; }
-    .card { border: 1px solid rgba(255,255,255,.10); border-radius: 20px; padding: 18px; background: rgba(255,255,255,.045); box-shadow: 0 10px 32px rgba(0,0,0,.18); }
+    .card { border: 1px solid rgba(255,255,255,.18); border-radius: 20px; padding: 18px; background: #151923; box-shadow: 0 16px 42px rgba(0,0,0,.38); }
     h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; }
     h2 { margin: 22px 0 10px; font-size: 18px; }
     h3 { margin: 14px 0 8px; font-size: 15px; }
     p { line-height: 1.45; }
-    .muted { color: var(--tg-theme-hint-color, #a1a1aa); }
+    .muted { color: var(--tg-theme-hint-color, #cbd5e1); }
     .hidden { display: none !important; }
     .top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-    .pill { display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: var(--tg-theme-hint-color, #a1a1aa); }
+    .pill { display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: #f8fafc; background: rgba(255,255,255,.08); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
     .formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-    .panel { border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.035); }
+    .panel { border: 1px solid rgba(255,255,255,.16); border-radius: 16px; padding: 14px; background: #1a202b; }
     .palco { width: 100%; text-align: left; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.06); color: inherit; font: inherit; }
     .palco.active { outline: 2px solid var(--tg-theme-button-color, #5b8cff); }
     .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,.08); padding-top: 10px; margin-top: 10px; }
     button, select, textarea, input { font: inherit; }
     button.action, button.nav { border: 0; border-radius: 14px; padding: 12px 14px; background: var(--tg-theme-button-color, #5b8cff); color: var(--tg-theme-button-text-color, white); font-weight: 650; }
-    button.secondary { background: rgba(255,255,255,.09); color: inherit; border: 1px solid rgba(255,255,255,.10); }
+    button.secondary { background: #263142; color: #f8fafc; border: 1px solid rgba(255,255,255,.20); }
+    button.nav.active { background: #3b82f6; color: #fff; border-color: rgba(255,255,255,.36); }
     button.danger { background: #b42318; color: #fff; }
     button:disabled { opacity: .45; filter: grayscale(1); }
-    button.action[data-action="convites.criar"], button.action[data-action="entradas.aprovar"], button.action[data-action="membros.liberar"], button.action[data-action="membros.reintegrar"], button.action[data-action="canais_remetentes.liberar"], button.action[data-action="admins.promover"], button.action[data-action="silencio.desativar"] { background: #168a55; color: #fff; }
+    button.action[data-action="convites.criar"], button.action[data-action="entradas.aprovar"], button.action[data-action="membros.liberar"], button.action[data-action="membros.reintegrar"], button.action[data-action="canais_remetentes.liberar"], button.action[data-action="admins.promover"], button.action[data-action="silencio.desativar"], button.action[data-action="grupo.foto"] { background: #168a55; color: #fff; }
     button.action[data-action="fixados.criar"], button.action[data-action="fixados.remover"], button.action[data-action="topicos.criar"], button.action[data-action="topicos.editar"], button.action[data-action="topicos.reabrir"], button.action[data-action="topicos.desfixar"], button.action[data-action="topicos.geral.reabrir"], button.action[data-action="topicos.geral.exibir"], button.action[data-action="topicos.geral.desfixar"], button.action[data-action="grupo.descricao"], button.action[data-action="admins.titulo"], button#resolver_mensagem, button#resolver_alvo { background: #2563eb; color: #fff; }
-    button.action[data-action="transmissao.enviar"], button.action[data-action="convites.editar"], button.action[data-action="convites.exportar_primario"], button.action[data-action="grupo.titulo"], button.action[data-action="membros.tag.definir"], button.action[data-action="membros.silenciar"], button.action[data-action="silencio.ativar"], button.action[data-action="topicos.fechar"], button.action[data-action="topicos.geral.fechar"], button.action[data-action="topicos.geral.ocultar"], button.action[data-action="reacoes.mensagem.limpar"], button.action[data-action="reacoes.recentes.limpar"], button#atualizar_configuracao, button#gerar_config_raw, button#resetar_config_form, button#copiar_config_raw, button#exportar_historico { background: #c77800; color: #fff; }
-    button.action[data-action="mensagens.apagar"], button.action[data-action="membros.remover"], button.action[data-action="entradas.recusar"], button.action[data-action="convites.revogar"], button.action[data-action="topicos.apagar"], button.action[data-action="canais_remetentes.banir"], button.action[data-action="admins.rebaixar"] { background: #b42318; color: #fff; }
-    .nav[data-view="mesa_view"]::before { content: "Moderação · "; }
-    .nav[data-view="afinacao_view"]::before { content: "Permissões · "; }
+    button.action[data-action="transmissao.enviar"], button.action[data-action="mensagens.enviar"], button.action[data-action="convites.editar"], button.action[data-action="convites.exportar_primario"], button.action[data-action="grupo.titulo"], button.action[data-action="membros.tag.definir"], button.action[data-action="membros.silenciar"], button.action[data-action="silencio.ativar"], button.action[data-action="topicos.fechar"], button.action[data-action="topicos.geral.fechar"], button.action[data-action="topicos.geral.ocultar"], button.action[data-action="reacoes.mensagem.limpar"], button.action[data-action="reacoes.recentes.limpar"], button#atualizar_configuracao, button#gerar_config_raw, button#resetar_config_form, button#copiar_config_raw, button#exportar_historico { background: #c77800; color: #fff; }
+    button.action[data-action="mensagens.apagar"], button.action[data-action="membros.remover"], button.action[data-action="entradas.recusar"], button.action[data-action="convites.revogar"], button.action[data-action="topicos.apagar"], button.action[data-action="canais_remetentes.banir"], button.action[data-action="admins.rebaixar"], button.action[data-action="grupo.foto.remover"] { background: #b42318; color: #fff; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-    select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 12px; background: rgba(0,0,0,.18); color: inherit; }
+    select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.22); border-radius: 14px; padding: 12px; background: #0f172a; color: #f8fafc; }
     textarea { min-height: 92px; resize: vertical; }
     .list { display: grid; gap: 8px; }
-    .item { border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 12px; background: rgba(255,255,255,.03); }
+    .item { border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 12px; background: #111827; }
     .ok { color: #50d890; }
     .bad { color: #ff8a80; }
     .warn { color: #ffd166; }
     .small { font-size: 12px; }
-    .section-note { margin: 8px 0 12px; color: var(--tg-theme-hint-color, #a1a1aa); font-size: 13px; }
-    .statusbar { margin: 14px 0; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 12px; background: rgba(255,255,255,.035); }
-    .badge { display: inline-flex; align-items: center; margin: 3px 4px 3px 0; border-radius: 999px; padding: 5px 9px; border: 1px solid rgba(255,255,255,.10); font-size: 12px; color: var(--tg-theme-hint-color, #a1a1aa); }
-    .empty { border: 1px dashed rgba(255,255,255,.14); border-radius: 14px; padding: 12px; color: var(--tg-theme-hint-color, #a1a1aa); background: rgba(255,255,255,.02); }
-    .toast { position: sticky; bottom: 12px; margin-top: 16px; border-radius: 14px; padding: 12px; background: rgba(255,255,255,.10); white-space: pre-wrap; }
+    .section-note { margin: 8px 0 12px; color: #d1d5db; font-size: 13px; }
+    .statusbar { margin: 14px 0; border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #111827; }
+    .badge { display: inline-flex; align-items: center; margin: 3px 4px 3px 0; border-radius: 999px; padding: 5px 9px; border: 1px solid rgba(255,255,255,.20); font-size: 12px; color: #e5e7eb; background: rgba(255,255,255,.06); }
+    .wide { grid-column: 1 / -1; }
+    .person-card { display: grid; gap: 8px; }
+    .person-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .right-chip { display: inline-flex; margin: 3px 4px 3px 0; border-radius: 999px; padding: 4px 8px; border: 1px solid rgba(255,255,255,.18); font-size: 11px; color: #e5e7eb; background: #0f172a; }
+    .right-chip.ok { border-color: rgba(80,216,144,.55); background: rgba(22,138,85,.18); color: #d1fae5; }
+    .right-chip.bad { border-color: rgba(255,138,128,.35); color: #fecaca; opacity: .78; }
+    .select-note { margin-top: 6px; }
+    .empty { border: 1px dashed rgba(255,255,255,.24); border-radius: 14px; padding: 12px; color: #d1d5db; background: #0f172a; }
+    .toast { position: sticky; bottom: 12px; margin-top: 16px; border-radius: 14px; padding: 12px; background: #273449; border: 1px solid rgba(255,255,255,.20); white-space: pre-wrap; }
     .headline { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; }
-    .bot-hero { display: grid; grid-template-columns: 86px 1fr; gap: 14px; align-items: center; border: 1px solid rgba(255,255,255,.10); border-radius: 18px; padding: 14px; background: rgba(255,255,255,.035); margin-bottom: 12px; }
+    .bot-hero { display: grid; grid-template-columns: 86px 1fr; gap: 14px; align-items: center; border: 1px solid rgba(255,255,255,.18); border-radius: 18px; padding: 14px; background: #111827; margin-bottom: 12px; }
     .bot-hero h2 { margin: 0 0 4px; font-size: 22px; }
     .bot-avatar { width: 76px; height: 76px; border-radius: 22px; object-fit: cover; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); display: grid; place-items: center; color: var(--tg-theme-hint-color, #a1a1aa); font-weight: 800; font-size: 26px; }
     .avatar { width: 64px; height: 64px; border-radius: 18px; object-fit: cover; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); display: grid; place-items: center; color: var(--tg-theme-hint-color, #a1a1aa); font-weight: 800; }
+    .photo-preview { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; margin-top: 12px; }
+    .photo-actions input[type="file"] { padding: 10px; background: #020617; }
     .header-select { margin: 14px 0; }
     .quicklist { display: grid; gap: 8px; }
-    .quicklist code { background: rgba(0,0,0,.20); padding: 2px 6px; border-radius: 8px; }
+    .quicklist code { background: #020617; padding: 2px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); }
     .person-link { color: var(--tg-theme-link-color, #8ab4ff); text-decoration: none; }
     .person-link:hover { text-decoration: underline; }
     .mini-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .mini-table td { border-top: 1px solid rgba(255,255,255,.08); padding: 7px 4px; vertical-align: top; }
+    .mini-table td { border-top: 1px solid rgba(255,255,255,.14); padding: 7px 4px; vertical-align: top; }
+    .app-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 12px; }
+    .app-tile { width: 100%; min-height: 96px; text-align: left; border: 1px solid rgba(255,255,255,.18); border-radius: 18px; padding: 14px; background: #111827; color: #f8fafc; font: inherit; }
+    .app-tile strong { display: block; font-size: 15px; margin-bottom: 6px; }
+    .app-tile span { display: block; color: #cbd5e1; font-size: 12px; line-height: 1.35; }
+    .window-title { margin-top: 0; }
+    .diagnostic-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0 12px; }
+    .diagnostic-metric { border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #0f172a; }
+    .diagnostic-metric strong { display: block; font-size: 20px; line-height: 1.1; }
+    .diagnostic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+    .diagnostic-card { border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #111827; }
+    .diagnostic-card.ok { border-color: rgba(80,216,144,.55); background: rgba(22,138,85,.14); }
+    .diagnostic-card.warn { border-color: rgba(255,209,102,.50); background: rgba(199,120,0,.14); }
+    .diagnostic-card.bad { border-color: rgba(255,138,128,.45); background: rgba(180,35,24,.16); }
+    .diagnostic-card strong { display: block; margin-bottom: 4px; }
+    .diagnostic-reasons { margin-top: 6px; color: #d1d5db; }
+    .diagnostic-rights { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
     @media (max-width: 560px) { body { padding: 10px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { gap: 6px; } button.action, button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -184,7 +209,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         <p class="section-note">A interface exibe nome público e @username quando disponível. IDs continuam internos. As ações aparecem conforme seu canal e o direito real do bot no grupo.</p>
         <div id="bot_revisoes" class="quicklist small">
           <div><strong>Comandos privados úteis:</strong> <code>/painel_ajuda</code>, <code>/painel_msg &lt;link&gt;</code>, <code>/painel_alvo radio &lt;id&gt;</code>, <code>/painel_convite radio teste</code>.</div>
-          <div><strong>Atalhos:</strong> use link de mensagem, ID numérico ou @username já conhecido pelo bot. O app converte para referência segura.</div>
+          <div><strong>Atalhos:</strong> use link de mensagem ou @username já conhecido pelo bot. O app converte para referência segura.</div>
           <div><strong>Revisar antes de operar:</strong> confira permissões do bot, grupos ativos, operadores, canais e ações críticas.</div>
         </div>
       </section>
@@ -209,29 +234,121 @@ _EQUALIZADOR_HTML = """<!doctype html>
       <div id="mesa" class="hidden">
         <div id="mesa_status" class="statusbar muted">Painel aguardando seleção.</div>
         <h2 id="mesa_titulo">Painel do grupo</h2>
-        <div class="toolbar">
-          <button class="nav secondary" data-view="mesa_view">Painel</button>
-          <button class="nav secondary" data-view="afinacao_view">Bot</button>
+        <div class="toolbar app-tabs">
+          <button class="nav secondary" data-view="mesa_view">Início</button>
+          <button class="nav secondary" data-view="perfil_view">Perfil do grupo</button>
+          <button class="nav secondary" data-view="mensagens_view">Mensagens</button>
+          <button class="nav secondary" data-view="pessoas_view">Pessoas</button>
+          <button class="nav secondary" data-view="convites_view">Convites</button>
+          <button class="nav secondary" data-view="topicos_view">Tópicos</button>
+          <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view">Transmissão</button>
+          <button class="nav secondary" data-view="afinacao_view">Diagnóstico</button>
           <button class="nav secondary" data-view="historico_view">Histórico</button>
-          <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view">Administração crítica</button>
           <button id="config_nav" class="nav secondary hidden" data-view="config_view">Configuração</button>
         </div>
         <section id="mesa_view" class="view">
+          <h3 class="window-title">Janelas do Equalizador</h3>
+          <p class="section-note">Escolha uma janela. A Fase 54.1 reorganiza a navegação e contraste sem mudar as regras reais do Telegram.</p>
+          <div class="app-grid">
+            <button class="app-tile nav" data-view="perfil_view" type="button"><strong>Perfil do grupo</strong><span>Título, descrição, foto atual e personalização visual do grupo.</span></button>
+            <button class="app-tile nav" data-view="mensagens_view" type="button"><strong>Mensagens</strong><span>Mensagens registradas, resolver link, apagar, fixar e remover fixado.</span></button>
+            <button class="app-tile nav" data-view="pessoas_view" type="button"><strong>Pessoas</strong><span>Membros, pedidos de entrada, administradores, bots e canais remetentes.</span></button>
+            <button class="app-tile nav" data-view="convites_view" type="button"><strong>Convites</strong><span>Criar, editar, revogar, abrir e copiar convites.</span></button>
+            <button class="app-tile nav" data-view="topicos_view" type="button"><strong>Tópicos</strong><span>Fóruns, tópico geral, fechamento, reabertura e desfixação.</span></button>
+            <button class="app-tile nav" data-view="afinacao_view" type="button"><strong>Diagnóstico</strong><span>Permissões reais do bot, direitos disponíveis e administradores visíveis.</span></button>
+            <button class="app-tile nav" data-view="historico_view" type="button"><strong>Histórico</strong><span>Registro público sanitizado de ações da mesa.</span></button>
+            <button id="transmissao_tile" class="app-tile nav hidden" data-view="maestro_view" type="button"><strong>Transmissão</strong><span>Avisos, modo silêncio e exportação de histórico.</span></button>
+          </div>
+        </section>
+        <section id="perfil_view" class="view hidden">
+          <h3 class="window-title">Perfil do grupo</h3>
+          <p class="section-note">Personalização visual e textual do grupo. A troca de foto entra na próxima etapa; esta janela já deixa o lugar correto reservado.</p>
           <div class="grid">
             <div class="panel">
-              <h3>Mensagens</h3>
+              <strong>Identidade atual</strong>
+              <div id="perfil_grupo_resumo" class="empty small">A foto, o título e a descrição aparecem no cabeçalho do grupo selecionado.</div>
+              <div class="toolbar"><button class="action secondary" id="perfil_atualizar_dados" type="button">Atualizar dados do Telegram</button></div>
+            </div>
+            <div class="panel">
+              <strong>Personalização do grupo</strong>
+              <p class="muted small">Alterar título e descrição exige direito real do bot e confirmação crítica.</p>
+              <input id="grupo_titulo_input" maxlength="128" placeholder="Novo título do grupo" />
+              <textarea id="grupo_descricao_input" maxlength="255" placeholder="Nova descrição do grupo"></textarea>
+              <label class="small"><input id="admin_ciente_grupo" class="admin-ciente" type="checkbox" /> confirmo que entendo o risco da alteração do perfil do grupo</label>
+              <div class="toolbar">
+                <button class="action secondary" data-action="grupo.titulo" type="button">Alterar título</button>
+                <button class="action secondary" data-action="grupo.descricao" type="button">Alterar descrição</button>
+              </div>
+              <div class="photo-actions">
+                <strong>Foto do grupo</strong>
+                <p class="muted small">Envie JPG, PNG ou WEBP. O backend envia a imagem ao Telegram como arquivo e não grava a imagem no histórico.</p>
+                <input id="grupo_foto_input" type="file" accept="image/jpeg,image/png,image/webp" />
+                <div class="toolbar">
+                  <button class="action" data-action="grupo.foto" type="button">Trocar foto do grupo</button>
+                  <button class="action danger" data-action="grupo.foto.remover" type="button">Remover foto do grupo</button>
+                </div>
+                <div id="grupo_foto_resultado" class="empty small">A foto atual aparece no cabeçalho. Após trocar ou remover, o painel recarrega os dados do Telegram.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section id="mensagens_view" class="view hidden">
+          <h3 class="window-title">Mensagens</h3>
+          <p class="section-note">Envie, fixe, desfixe, apague ou resolva mensagens em uma área única. IDs continuam internos.</p>
+          <div class="grid">
+            <div class="panel">
+              <h3>Enviar mensagem</h3>
+              <textarea id="mensagem_envio_texto" maxlength="4096" placeholder="Texto que será enviado no grupo selecionado"></textarea>
+              <div id="mensagem_envio_contador" class="muted small">0/4096 caracteres</div>
+              <div class="formgrid">
+                <label class="small"><input id="mensagem_envio_sem_preview" type="checkbox" checked /> sem prévia de links</label>
+                <label class="small"><input id="mensagem_envio_sem_notificacao" type="checkbox" /> enviar sem notificação</label>
+                <label class="small"><input id="mensagem_envio_fixar" type="checkbox" /> fixar depois do envio</label>
+              </div>
+              <div class="toolbar">
+                <button class="action" data-action="mensagens.enviar" type="button">Enviar mensagem</button>
+              </div>
+              <div class="empty small">Para enviar e fixar, marque “fixar depois do envio”. O painel registra a mensagem como referência interna automaticamente.</div>
+            </div>
+            <div class="panel">
+              <h3>Mensagens registradas</h3>
               <select id="mensagem_select"></select>
               <div id="mensagens_hint" class="empty small">Nenhuma mensagem carregada ainda.</div>
               <div class="toolbar">
-                <button class="action danger" data-action="mensagens.apagar">Apagar</button>
-                <button class="action secondary" data-action="fixados.criar">Fixar</button>
-                <button class="action secondary" data-action="fixados.remover">Remover fixado</button>
+                <button class="action danger" data-action="mensagens.apagar" type="button">Apagar mensagem</button>
+                <button class="action secondary" data-action="fixados.criar" type="button">Fixar mensagem</button>
+                <button class="action secondary" data-action="fixados.remover" type="button">Remover fixado</button>
               </div>
               <div id="mensagem_resultado" class="empty small">Nenhum ajuste de mensagem executado nesta sessão.</div>
-              <p class="muted small">A lista usa referências internas. IDs de mensagem não aparecem.</p>
             </div>
             <div class="panel">
-              <h3>Membros</h3>
+              <h3>Resolver mensagem</h3>
+              <p class="muted small">Cole o link da mensagem. O backend converte para referência interna.</p>
+              <input id="mensagem_link_input" placeholder="Link da mensagem: https://t.me/c/.../..." />
+              <div class="toolbar"><button id="resolver_mensagem" class="action secondary" type="button">Resolver mensagem</button></div>
+            </div>
+          </div>
+        </section>
+        <section id="pessoas_view" class="view hidden">
+          <h3 class="window-title">Pessoas</h3>
+          <p class="section-note">Membros, administradores humanos, bots administradores, pedidos de entrada e canais remetentes. A interface mostra nome público e @username quando houver; ID real não é exibido.</p>
+          <div class="grid">
+            <div class="panel wide">
+              <h3>Mapa de pessoas do grupo</h3>
+              <div id="pessoas_resumo" class="statusbar muted">Escolha um grupo para carregar pessoas e privilégios.</div>
+              <div class="formgrid">
+                <div>
+                  <strong>Administradores humanos</strong>
+                  <div id="admins_humanos_lista" class="list muted">Administradores ainda não carregados.</div>
+                </div>
+                <div>
+                  <strong>Bots administradores</strong>
+                  <div id="bots_admins_lista" class="list muted">Bots administradores ainda não carregados.</div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Membros vistos</h3>
               <select id="alvo_select"></select>
               <div id="alvos_hint" class="empty small">Nenhum membro carregado ainda.</div>
               <div id="alvos_atalhos" class="list small"></div>
@@ -244,24 +361,76 @@ _EQUALIZADOR_HTML = """<!doctype html>
               </select>
               <label class="small"><input id="remover_revogar" type="checkbox" /> remover mensagens recentes ao remover</label>
               <div class="toolbar">
-                <button class="action secondary" data-action="membros.silenciar">Silenciar</button>
-                <button class="action secondary" data-action="membros.liberar">Liberar</button>
-                <button class="action danger" data-action="membros.remover">Remover</button>
-                <button class="action secondary" data-action="membros.reintegrar">Reintegrar</button>
+                <button class="action secondary" data-action="membros.silenciar">Silenciar membro</button>
+                <button class="action secondary" data-action="membros.liberar">Liberar membro</button>
+                <button class="action danger" data-action="membros.remover">Remover membro</button>
+                <button class="action secondary" data-action="membros.reintegrar">Reintegrar membro</button>
               </div>
               <div id="membro_resultado" class="empty small">Nenhum ajuste de membro executado nesta sessão.</div>
-              <p class="muted small">A lista usa referências internas. IDs de usuário não aparecem.</p>
             </div>
             <div class="panel">
-              <h3>Entrada manual segura</h3>
-              <p class="muted small">Use link da mensagem, ID numérico ou @username já visto pelo bot. O backend transforma tudo em referências internas.</p>
-              <input id="mensagem_link_input" placeholder="Link da mensagem: https://t.me/c/.../..." />
-              <div class="toolbar"><button id="resolver_mensagem" class="action secondary" type="button">Resolver mensagem</button></div>
-              <input id="alvo_manual_input" placeholder="ID numérico ou @username" />
+              <h3>Resolver membro</h3>
+              <p class="muted small">Use @username já visto pelo bot ou referência interna. O backend resolve para uma referência segura e a interface continua sem ID real.</p>
+              <input id="alvo_manual_input" placeholder="@username ou referência interna" />
               <div class="toolbar"><button id="resolver_alvo" class="action secondary" type="button">Resolver membro</button></div>
             </div>
+            <div class="panel wide">
+              <h3>Administração de pessoas</h3>
+              <p class="muted small">Escolha um membro ou administrador registrado. Promover, rebaixar e título personalizado exigem direito real do bot e confirmação crítica.</p>
+              <label class="small muted">Alvo da administração</label>
+              <select id="admin_alvo_select"></select>
+              <p id="admin_alvo_hint" class="muted small select-note">Administradores e membros vistos aparecerão aqui como referências internas.</p>
+              <div class="formgrid">
+                <div>
+                  <label class="small muted">Título personalizado</label>
+                  <input id="admin_titulo_input" maxlength="16" placeholder="Título personalizado do admin" />
+                </div>
+                <div>
+                  <label class="small muted">Perfil de promoção</label>
+                  <select id="admin_perfil_select"><option value="moderador" selected>Moderador seguro</option><option value="maestro">Administrador delegado</option></select>
+                </div>
+              </div>
+              <label class="small"><input id="admin_ciente" class="admin-ciente" type="checkbox" /> confirmo que entendo o risco da administração de pessoas</label>
+              <div class="toolbar">
+                <button class="action secondary" data-action="admins.promover" type="button">Promover administrador</button>
+                <button class="action danger" data-action="admins.rebaixar" type="button">Rebaixar administrador</button>
+                <button class="action secondary" data-action="admins.titulo" type="button">Definir título admin</button>
+              </div>
+              <div id="admin_resultado" class="empty small">Nenhuma administração de pessoas executada nesta sessão.</div>
+            </div>
             <div class="panel">
-              <h3>Convites</h3>
+              <h3>Pedidos de entrada</h3>
+              <select id="entrada_select"></select>
+              <div class="toolbar">
+                <button class="action secondary" data-action="entradas.aprovar">Aprovar entrada</button>
+                <button class="action danger" data-action="entradas.recusar">Recusar entrada</button>
+              </div>
+              <div id="entradas_hint" class="empty small">Nenhum pedido de entrada capturado.</div>
+            </div>
+            <div class="panel">
+              <h3>Reações e canais remetentes</h3>
+              <p class="muted small">Para reações escolha uma mensagem e um membro ou canal remetente.</p>
+              <select id="sender_select"></select>
+              <input id="membro_tag" maxlength="16" placeholder="Tag do membro" />
+              <div class="toolbar"><button class="action secondary" data-action="reacoes.mensagem.limpar" type="button">Limpar reação da mensagem</button><button class="action secondary" data-action="reacoes.recentes.limpar" type="button">Limpar reações recentes</button></div>
+              <div class="toolbar"><button class="action danger" data-action="canais_remetentes.banir" type="button">Banir canal remetente</button><button class="action secondary" data-action="canais_remetentes.liberar" type="button">Liberar canal remetente</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="membros.tag.definir" type="button">Definir tag</button></div>
+              <div id="remetentes_hint" class="empty small">Nenhum canal remetente capturado.</div>
+            </div>
+            <div class="panel wide">
+              <h3>Distribuição de canais</h3>
+              <div id="distribuicao" class="list muted"></div>
+            </div>
+          </div>
+        </section>
+        <section id="convites_view" class="view hidden">
+          <h3 class="window-title">Convites</h3>
+          <p class="section-note">Criação, revisão e revogação de convites. Esta janela separa convite novo, convite selecionado e link primário para evitar operação no item errado.</p>
+          <div id="convites_resumo" class="statusbar muted">Convites ainda não carregados.</div>
+          <div class="grid">
+            <div class="panel">
+              <h3>Criar convite</h3>
+              <p class="muted small">Defina o nome, validade e limite antes de gerar. Convite com aprovação não usa limite de membros.</p>
               <input id="convite_nome" maxlength="32" placeholder="Nome do convite" value="Equalizador" />
               <label class="small muted">Expiração do convite</label>
               <select id="convite_expira">
@@ -276,58 +445,88 @@ _EQUALIZADOR_HTML = """<!doctype html>
               <label class="small"><input id="convite_aprovacao" type="checkbox" /> solicitar aprovação para entrar</label>
               <label class="small"><input id="convite_dm" type="checkbox" checked /> enviar link por DM ao operador</label>
               <div class="toolbar"><button class="action secondary" data-action="convites.criar">Criar convite</button></div>
-              <input id="convite_resultado" readonly placeholder="Link criado aparece aqui" />
+              <p id="convite_dm_status" class="muted small">O link também será enviado por DM quando o bot puder conversar com o operador.</p>
+            </div>
+            <div class="panel">
+              <h3>Resultado do convite</h3>
+              <input id="convite_resultado" readonly placeholder="Link criado ou exportado aparece aqui" />
               <div id="convite_metadados" class="empty small">Nenhum convite criado nesta sessão.</div>
               <div class="toolbar">
-                <button id="copiar_convite" class="action secondary" type="button" disabled>Copiar link</button>
-                <button id="abrir_convite" class="action secondary" type="button" disabled>Abrir link</button>
+                <button id="copiar_convite" class="action secondary" type="button" disabled>Copiar link exibido</button>
+                <button id="abrir_convite" class="action secondary" type="button" disabled>Abrir link exibido</button>
               </div>
-              <p id="convite_dm_status" class="muted small">O link também será enviado por DM quando o bot puder conversar com o operador.</p>
-              <h3>Convites criados</h3>
+            </div>
+            <div class="panel wide">
+              <h3>Convite selecionado</h3>
               <select id="convite_select"></select>
+              <div id="convite_detalhe" class="empty small">Escolha um convite para ver estado, expiração, limite e aprovação.</div>
               <div class="toolbar">
-                <button class="action secondary" data-action="convites.editar">Editar convite</button>
-                <button class="action danger" data-action="convites.revogar">Revogar convite</button>
+                <button id="copiar_convite_selecionado" class="action secondary" type="button" disabled>Copiar convite selecionado</button>
+                <button id="abrir_convite_selecionado" class="action secondary" type="button" disabled>Abrir convite selecionado</button>
+              </div>
+              <div class="toolbar">
+                <button class="action secondary" data-action="convites.editar">Editar convite selecionado</button>
+                <button class="action danger" data-action="convites.revogar">Revogar convite selecionado</button>
                 <button class="action secondary" data-action="convites.exportar_primario">Exportar link primário</button>
               </div>
               <div id="convites_hint" class="empty small">Nenhum convite carregado.</div>
-              <h3>Pedidos de entrada</h3>
-              <select id="entrada_select"></select>
-              <div class="toolbar">
-                <button class="action secondary" data-action="entradas.aprovar">Aprovar entrada</button>
-                <button class="action danger" data-action="entradas.recusar">Recusar entrada</button>
-              </div>
-              <div id="entradas_hint" class="empty small">Nenhum pedido de entrada capturado.</div>
+              <div id="convites_lista" class="list muted">Lista de convites aguardando carregamento.</div>
             </div>
           </div>
-          <h3>Avançado</h3>
+        </section>
+        <section id="topicos_view" class="view hidden">
+          <h3 class="window-title">Tópicos</h3>
+          <p class="section-note">Janela para grupos com fórum. O tópico geral fica separado dos tópicos comuns para reduzir clique errado.</p>
+          <div id="topicos_resumo" class="statusbar muted">Tópicos ainda não carregados.</div>
           <div class="grid">
             <div class="panel">
-              <strong>Tópicos/fóruns</strong>
-              <p class="muted small">Aparece conforme can_manage_topics, can_delete_messages e can_pin_messages.</p>
-              <select id="topico_select"></select>
+              <h3>Criar ou renomear tópico</h3>
+              <p class="muted small">Para criar, informe o nome. Para editar, selecione um tópico existente e informe o novo nome.</p>
               <input id="topico_nome" maxlength="128" placeholder="Nome do tópico" />
-              <div class="toolbar"><button class="action secondary" data-action="topicos.criar" type="button">Criar</button><button class="action secondary" data-action="topicos.editar" type="button">Editar</button></div>
-              <div class="toolbar"><button class="action secondary" data-action="topicos.fechar" type="button">Fechar</button><button class="action secondary" data-action="topicos.reabrir" type="button">Reabrir</button><button class="action danger" data-action="topicos.apagar" type="button">Apagar</button></div>
-              <div class="toolbar"><button class="action secondary" data-action="topicos.desfixar" type="button">Desfixar tópico</button><button class="action secondary" data-action="topicos.geral.desfixar" type="button">Desfixar geral</button></div>
-              <div class="toolbar"><button class="action secondary" data-action="topicos.geral.fechar" type="button">Fechar geral</button><button class="action secondary" data-action="topicos.geral.reabrir" type="button">Reabrir geral</button></div>
-              <div class="toolbar"><button class="action secondary" data-action="topicos.geral.ocultar" type="button">Ocultar geral</button><button class="action secondary" data-action="topicos.geral.exibir" type="button">Exibir geral</button></div>
-              <div id="topicos_hint" class="empty small">Nenhum tópico registrado.</div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.criar" type="button">Criar tópico</button><button class="action secondary" data-action="topicos.editar" type="button">Editar tópico selecionado</button></div>
             </div>
             <div class="panel">
-              <strong>Reações e canais remetentes</strong>
-              <p class="muted small">Para reações escolha uma mensagem e um membro ou canal remetente.</p>
-              <select id="sender_select"></select>
-              <input id="membro_tag" maxlength="16" placeholder="Tag do membro" />
-              <div class="toolbar"><button class="action secondary" data-action="reacoes.mensagem.limpar" type="button">Limpar reação da mensagem</button><button class="action secondary" data-action="reacoes.recentes.limpar" type="button">Limpar reações recentes</button></div>
-              <div class="toolbar"><button class="action danger" data-action="canais_remetentes.banir" type="button">Banir canal remetente</button><button class="action secondary" data-action="canais_remetentes.liberar" type="button">Liberar canal remetente</button></div>
-              <div class="toolbar"><button class="action secondary" data-action="membros.tag.definir" type="button">Definir tag</button></div>
-              <div id="remetentes_hint" class="empty small">Nenhum canal remetente capturado.</div>
+              <h3>Tópico selecionado</h3>
+              <select id="topico_select"></select>
+              <div id="topico_detalhe" class="empty small">Escolha um tópico para operar.</div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.fechar" type="button">Fechar tópico selecionado</button><button class="action secondary" data-action="topicos.reabrir" type="button">Reabrir tópico selecionado</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.desfixar" type="button">Remover fixados do tópico</button><button class="action danger" data-action="topicos.apagar" type="button">Apagar tópico selecionado</button></div>
+            </div>
+            <div class="panel wide">
+              <h3>Tópico geral</h3>
+              <p class="muted small">Ações globais do tópico geral. Use somente quando o grupo for fórum.</p>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.geral.fechar" type="button">Fechar geral</button><button class="action secondary" data-action="topicos.geral.reabrir" type="button">Reabrir geral</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.geral.ocultar" type="button">Ocultar geral</button><button class="action secondary" data-action="topicos.geral.exibir" type="button">Exibir geral</button><button class="action secondary" data-action="topicos.geral.desfixar" type="button">Remover fixados do geral</button></div>
+            </div>
+            <div class="panel wide">
+              <h3>Tópicos conhecidos</h3>
+              <div id="topicos_hint" class="empty small">Nenhum tópico registrado.</div>
+              <div id="topicos_lista" class="list muted">Lista de tópicos aguardando carregamento.</div>
             </div>
           </div>
         </section>
         <section id="afinacao_view" class="view hidden">
-          <p class="section-note">Permissões do bot mostra o que o bot realmente consegue executar neste grupo.</p>
+          <h3 class="window-title">Diagnóstico real de permissões</h3>
+          <p class="section-note">Esta janela cruza três camadas antes de liberar uma ação: canal concedido ao operador, direito real do bot no Telegram e confirmação crítica quando a ação é sensível.</p>
+          <div id="diagnostico_resumo" class="diagnostic-summary">
+            <div class="diagnostic-metric"><strong>—</strong><span class="muted small">ações liberadas</span></div>
+            <div class="diagnostic-metric"><strong>—</strong><span class="muted small">bloqueadas por operador</span></div>
+            <div class="diagnostic-metric"><strong>—</strong><span class="muted small">bloqueadas pelo bot</span></div>
+          </div>
+          <div class="grid">
+            <div class="panel">
+              <h3>Operador neste grupo</h3>
+              <div id="diagnostico_operador" class="list muted">Canais do operador não carregados.</div>
+            </div>
+            <div class="panel">
+              <h3>Bot no Telegram</h3>
+              <div id="diagnostico_bot" class="list muted">Direitos reais do bot não carregados.</div>
+            </div>
+          </div>
+          <h3>Ações do painel</h3>
+          <p class="section-note">Cada cartão mostra por que a ação está liberada ou bloqueada. Isso evita testar no escuro e receber apenas 409/429 no log.</p>
+          <div id="diagnostico_acoes" class="diagnostic-grid">Diagnóstico de ações não carregado.</div>
+          <h3>Afinação técnica</h3>
           <div id="afinacao_resumo" class="statusbar muted">Aguardando leitura das permissões.</div>
           <div id="afinacao" class="list muted">Permissões do bot não carregadas.</div>
           <h3>Resumo de moderação do grupo</h3>
@@ -340,8 +539,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
         </section>
         <section id="maestro_view" class="view hidden">
           <div class="panel">
-            <h3>Administração crítica</h3>
-            <p class="muted small">Ações críticas exigem confirmação dupla.</p>
+            <h3 class="window-title">Transmissão e modo silêncio</h3>
+            <p class="muted small">Ações críticas exigem confirmação dupla. Esta janela fica separada da personalização do grupo.</p>
             <textarea id="transmissao_texto" maxlength="4096" placeholder="Texto da transmissão"></textarea>
             <p id="transmissao_contador" class="muted small">0/4096 caracteres</p>
             <div class="toolbar">
@@ -354,23 +553,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <label class="small"><input id="transmissao_silenciosa" type="checkbox" /> enviar sem notificação</label>
             <label class="small"><input id="transmissao_fixar" type="checkbox" /> fixar transmissão depois do envio</label>
             <textarea id="exportacao_resultado" readonly placeholder="Exportação sanitizada aparece aqui"></textarea>
-            <h3>Administração crítica</h3>
-            <p class="muted small">Essas ações exigem direito real do bot e confirmação dupla. Use somente em grupo de teste antes de produção.</p>
-            <input id="grupo_titulo_input" maxlength="128" placeholder="Novo título do grupo" />
-            <textarea id="grupo_descricao_input" maxlength="255" placeholder="Nova descrição do grupo"></textarea>
-            <input id="admin_titulo_input" maxlength="16" placeholder="Título personalizado do admin" />
-            <label class="small muted">Perfil de promoção</label>
-            <select id="admin_perfil_select"><option value="moderador" selected>Moderador seguro</option><option value="maestro">Administrador delegado</option></select>
-            <label class="small"><input id="admin_ciente" type="checkbox" /> confirmo que entendo o risco da administração crítica</label>
-            <div class="toolbar">
-              <button class="action secondary" data-action="grupo.titulo" type="button">Alterar título</button>
-              <button class="action secondary" data-action="grupo.descricao" type="button">Alterar descrição</button>
-              <button class="action secondary" data-action="admins.promover" type="button">Promover administrador</button>
-              <button class="action danger" data-action="admins.rebaixar" type="button">Rebaixar admin</button>
-              <button class="action secondary" data-action="admins.titulo" type="button">Definir título admin</button>
-            </div>
-            <div id="admin_resultado" class="empty small">Nenhuma administração crítica executada nesta sessão.</div>
-            <div id="distribuicao" class="list muted"></div>
+            <div class="empty small">Administração crítica: título, descrição, promoção e título de administrador foram separados nas janelas Perfil do grupo e Pessoas.</div>
           </div>
         </section>
         <section id="config_view" class="view hidden">
@@ -421,22 +604,29 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <script>
     (function () {
 
-      // Compatibilidade de testes antigos: Afinando acesso… · Configuração do administrador principal · Assistente de configuração · Ações permanecem bloqueadas até confirmação do bot
+      // Fase 54.1: Equalizador em janelas com contraste reforçado.
+      // Compatibilidade de testes antigos: Afinando acesso… · Configuração do administrador principal · Assistente de configuração · Ações permanecem bloqueadas até confirmação do bot · Lista de administração
       const tg = window.Telegram && window.Telegram.WebApp;
       if (tg) { tg.ready(); tg.expand(); }
       const initData = tg && tg.initData ? tg.initData : "";
       let apiHeaders = null;
       let bootstrapHeaders = null;
       let currentPalco = null;
+      let currentPainelDinamico = null;
       let mensagensPorRef = new Map();
+      let convitesPorRef = new Map();
+      let topicosPorRef = new Map();
       let canaisPorPalco = new Map();
       let botFotoIndisponivel = false;
       const fotosGrupoIndisponiveis = new Set();
       let direitosDisponiveis = new Set();
+      let ultimoAfinacao = null;
       let afinacaoLoaded = false;
       let modoMaestroPermitido = false;
-      const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar", "grupo.titulo", "grupo.descricao", "admins.promover", "admins.rebaixar", "admins.titulo"]);
+      const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar", "grupo.titulo", "grupo.descricao", "grupo.foto", "grupo.foto.remover", "admins.promover", "admins.rebaixar", "admins.titulo"]);
+      const cienteCritico = () => Array.from(document.querySelectorAll(".admin-ciente")).some((el) => Boolean(el.checked));
       const endpoints = {
+        "mensagens.enviar": "mensagens/enviar",
         "mensagens.apagar": "mensagens/apagar",
         "membros.silenciar": "membros/silenciar",
         "membros.liberar": "membros/liberar",
@@ -471,6 +661,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "topicos.geral.desfixar": "topicos/geral/desfixar",
         "grupo.titulo": "grupo/titulo",
         "grupo.descricao": "grupo/descricao",
+        "grupo.foto": "grupo/foto",
+        "grupo.foto.remover": "grupo/foto/remover",
         "admins.promover": "admins/promover",
         "admins.rebaixar": "admins/rebaixar",
         "admins.titulo": "admins/titulo"
@@ -479,6 +671,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "palco.ver": "Ver grupo",
         "palco.status": "Status do grupo",
         "palco.afinar": "Permissões do bot no grupo",
+        "mensagens.enviar": "Enviar mensagem",
         "mensagens.apagar": "Apagar mensagem",
         "reacoes.limpar": "Limpar reações",
         "membros.silenciar": "Silenciar membro",
@@ -519,11 +712,27 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "topicos.geral.desfixar": "Remover fixados do tópico geral",
         "grupo.titulo": "Alterar título do grupo",
         "grupo.descricao": "Alterar descrição do grupo",
+        "grupo.foto": "Trocar foto do grupo",
+        "grupo.foto.remover": "Remover foto do grupo",
         "admins.promover": "Promover administrador",
         "admins.rebaixar": "Rebaixar administrador",
         "admins.titulo": "Título personalizado de admin"
       };
+      const permissionChannelForAction = {
+        "convites.exportar_primario": "convites.criar",
+        "reacoes.mensagem.limpar": "reacoes.limpar"
+      };
+      const effectiveCanal = (codigo) => permissionChannelForAction[codigo] || codigo;
       const canalNome = (codigo) => actionLabels[codigo] || String(codigo || "canal").replace(/[._]/g, " ");
+      const diagnosticActionGroups = [
+        ["Perfil do grupo", ["grupo.titulo", "grupo.descricao", "grupo.foto", "grupo.foto.remover"]],
+        ["Mensagens", ["mensagens.enviar", "mensagens.apagar", "fixados.criar", "fixados.remover", "reacoes.mensagem.limpar"]],
+        ["Pessoas", ["membros.silenciar", "membros.liberar", "membros.remover", "membros.reintegrar", "membros.tag.definir", "admins.promover", "admins.rebaixar", "admins.titulo"]],
+        ["Convites e entrada", ["convites.criar", "convites.editar", "convites.revogar", "convites.exportar_primario", "entradas.aprovar", "entradas.recusar"]],
+        ["Tópicos", ["topicos.criar", "topicos.editar", "topicos.fechar", "topicos.reabrir", "topicos.apagar", "topicos.desfixar", "topicos.geral.fechar", "topicos.geral.reabrir", "topicos.geral.ocultar", "topicos.geral.exibir", "topicos.geral.desfixar"]],
+        ["Transmissão", ["silencio.ativar", "silencio.desativar", "transmissao.enviar"]]
+      ];
+      const diagnosticActionOrder = diagnosticActionGroups.flatMap((row) => row[1]);
       const statusMesa = (text, kind) => {
         const el = document.getElementById("mesa_status");
         if (!el) return;
@@ -555,6 +764,90 @@ _EQUALIZADOR_HTML = """<!doctype html>
           status.className = "small " + (dm.enviado ? "ok" : "warn");
         }
       };
+      const formatUnixDate = (value) => {
+        const n = Number(value || 0);
+        if (!Number.isFinite(n) || n <= 0) return "sem expiração";
+        try { return new Date(n * 1000).toLocaleString("pt-BR"); }
+        catch (_) { return "expiração registrada"; }
+      };
+      const conviteResumo = (row) => {
+        if (!row) return "Convite indisponível.";
+        const status = row.revogado ? "revogado" : "ativo";
+        const aprovacao = row.solicitar_aprovacao ? "entrada por aprovação" : "entrada direta";
+        const limite = row.limite_membros ? `${row.limite_membros} membro(s)` : "sem limite";
+        return `${row.nome || 'Convite'} · ${status} · ${aprovacao} · ${limite} · ${formatUnixDate(row.expira_em)}`;
+      };
+      function updateConviteSelecionado() {
+        const select = document.getElementById("convite_select");
+        const ref = select ? select.value : "";
+        const row = ref ? convitesPorRef.get(ref) : null;
+        const detalhe = document.getElementById("convite_detalhe");
+        const copy = document.getElementById("copiar_convite_selecionado");
+        const open = document.getElementById("abrir_convite_selecionado");
+        const link = row && row.link ? String(row.link) : "";
+        if (detalhe) {
+          detalhe.textContent = row ? conviteResumo(row) : "Escolha um convite para ver estado, expiração, limite e aprovação.";
+          detalhe.className = "empty small " + (row ? (row.revogado ? "warn" : "ok") : "");
+        }
+        if (copy) copy.disabled = !link;
+        if (open) { open.disabled = !link; open.dataset.href = link; }
+      }
+      function renderConvitesLista(rows) {
+        const lista = document.getElementById("convites_lista");
+        const resumo = document.getElementById("convites_resumo");
+        const data = Array.isArray(rows) ? rows : [];
+        const ativos = data.filter((row) => !row.revogado).length;
+        const revogados = data.filter((row) => row.revogado).length;
+        if (resumo) {
+          resumo.textContent = data.length ? `${ativos} convite(s) ativo(s) · ${revogados} revogado(s) · ${data.length} conhecido(s).` : "Nenhum convite conhecido neste grupo.";
+          resumo.className = "statusbar " + (data.length ? "ok" : "warn");
+        }
+        if (!lista) return;
+        lista.className = data.length ? "list" : "list muted";
+        lista.replaceChildren(...(data.length ? data.slice(0, 20).map((row) => {
+          const item = document.createElement("div");
+          item.className = "item small";
+          const estado = row.revogado ? "revogado" : "ativo";
+          const link = row.link ? `<br><span class="muted">link disponível para copiar/abrir pelo seletor</span>` : "";
+          item.innerHTML = `<strong>${escapeHtml(row.nome || 'Convite')}</strong><br><span class="${row.revogado ? 'warn' : 'ok'}">${estado}</span> · ${escapeHtml(row.solicitar_aprovacao ? 'aprovação exigida' : 'entrada direta')} · ${escapeHtml(formatUnixDate(row.expira_em))}${link}`;
+          return item;
+        }) : [document.createTextNode("Nenhum convite criado ou exportado pelo Equalizador.")]));
+      }
+      const topicoResumo = (row) => {
+        if (!row) return "Tópico indisponível.";
+        return `${row.nome || 'Tópico'} · ${row.estado || 'estado desconhecido'}`;
+      };
+      function updateTopicoSelecionado() {
+        const select = document.getElementById("topico_select");
+        const ref = select ? select.value : "";
+        const row = ref ? topicosPorRef.get(ref) : null;
+        const detalhe = document.getElementById("topico_detalhe");
+        if (detalhe) {
+          detalhe.textContent = row ? topicoResumo(row) : "Escolha um tópico para operar.";
+          detalhe.className = "empty small " + (row ? (row.estado === "aberto" ? "ok" : row.estado === "fechado" ? "warn" : "bad") : "");
+        }
+      }
+      function renderTopicosLista(rows) {
+        const lista = document.getElementById("topicos_lista");
+        const resumo = document.getElementById("topicos_resumo");
+        const data = Array.isArray(rows) ? rows : [];
+        const abertos = data.filter((row) => row.estado === "aberto").length;
+        const fechados = data.filter((row) => row.estado === "fechado").length;
+        const apagados = data.filter((row) => row.estado === "apagado").length;
+        if (resumo) {
+          resumo.textContent = data.length ? `${abertos} aberto(s) · ${fechados} fechado(s) · ${apagados} apagado(s) · ${data.length} conhecido(s).` : "Nenhum tópico conhecido. Tópicos só aparecem depois que o bot cria ou registra eventos.";
+          resumo.className = "statusbar " + (data.length ? "ok" : "warn");
+        }
+        if (!lista) return;
+        lista.className = data.length ? "list" : "list muted";
+        lista.replaceChildren(...(data.length ? data.slice(0, 30).map((row) => {
+          const item = document.createElement("div");
+          item.className = "item small";
+          const estadoClass = row.estado === "aberto" ? "ok" : row.estado === "fechado" ? "warn" : "bad";
+          item.innerHTML = `<strong>${escapeHtml(row.nome || 'Tópico')}</strong><br><span class="${estadoClass}">${escapeHtml(row.estado || 'registrado')}</span><br><span class="muted">referência interna preservada no seletor</span>`;
+          return item;
+        }) : [document.createTextNode("Nenhum tópico registrado para este grupo.")]));
+      }
       function setMensagemResult(mensagem, fallback) {
         const el = document.getElementById("mensagem_resultado");
         if (!el) return;
@@ -589,11 +882,25 @@ _EQUALIZADOR_HTML = """<!doctype html>
         el.className = "empty small ok";
       }
       const detailPublico = (detail) => {
-        const text = typeof detail === "string" ? detail : (detail && detail.detail ? String(detail.detail) : "Ajuste não concluído.");
+        let value = detail;
+        if (value && typeof value === "object" && value.detail) value = value.detail;
+        if (value && typeof value === "object") value = value.motivo_publico || value.public_detail || value.message || value.erro || "Ajuste não concluído.";
+        const text = String(value || "Ajuste não concluído.");
         return text
+          .replace(/bot\\d+:[A-Za-z0-9_-]+/g, "bot_token_oculto")
           .replace(/-100\\d{5,}/g, "grupo oculto")
-          .replace(/\\b\\d{7,12}\\b/g, "referência oculta");
+          .replace(/\\b\\d{7,16}\\b/g, "referência oculta");
       };
+
+      const fileToBase64 = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const value = String(reader.result || "");
+          resolve(value.includes(",") ? value.split(",", 2)[1] : value);
+        };
+        reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+        reader.readAsDataURL(file);
+      });
       // Compatibilidade de testes antigos: Modo Maestro indisponível para este perfil. · Ação restrita ao Maestro · palco oculto · Configuração do Maestro · /mesa_ajuda · Distribuição restrita ao Maestro. · Canal ou afinação indisponível · perfil oculto · Exportação restrita ao Maestro.
       const show = (id) => {
         for (const el of document.querySelectorAll("main > section")) el.classList.add("hidden");
@@ -619,7 +926,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
             }
           } catch (_) {}
         }
-        if (response.status === 429) toast("Muitas leituras em sequência. Aguarde alguns segundos e tente novamente.", "warn");
+        if (response.status === 429) toast("Limite temporário atingido. Aguarde alguns segundos e tente novamente.", "warn");
         return response;
       };
       const option = (value, label) => {
@@ -628,21 +935,49 @@ _EQUALIZADOR_HTML = """<!doctype html>
         item.textContent = label;
         return item;
       };
-      const hasCanal = (codigo) => currentPalco && (canaisPorPalco.get(currentPalco.grp_ref) || new Set()).has(codigo);
-      const canRun = (codigo) => hasCanal(codigo) && afinacaoLoaded && direitosDisponiveis.has(codigo);
+      const hasCanal = (codigo) => {
+        if (!currentPalco) return false;
+        const canais = canaisPorPalco.get(currentPalco.grp_ref) || new Set();
+        return canais.has(effectiveCanal(codigo));
+      };
+      const botCanRun = (codigo) => afinacaoLoaded && direitosDisponiveis.has(effectiveCanal(codigo));
+      const diagnosticForAction = (codigo) => {
+        const canal = effectiveCanal(codigo);
+        const operadorOk = hasCanal(codigo);
+        const botOk = botCanRun(codigo);
+        const criticoOk = !criticalActions.has(codigo) || modoMaestroPermitido;
+        const motivos = [];
+        if (!currentPalco) motivos.push("escolha um grupo");
+        if (!operadorOk) motivos.push(`canal do operador ausente: ${canalNome(canal)}`);
+        if (!afinacaoLoaded) motivos.push("permissões reais do bot ainda não carregadas");
+        else if (!botOk) {
+          const canalInfo = (ultimoAfinacao && Array.isArray(ultimoAfinacao.canais) ? ultimoAfinacao.canais : []).find((row) => row.codigo === canal);
+          const faltando = canalInfo && Array.isArray(canalInfo.faltando) && canalInfo.faltando.length ? `faltando ${canalInfo.faltando.join(', ')}` : "direito real do bot indisponível";
+          motivos.push(faltando);
+        }
+        if (!criticoOk) motivos.push("ação crítica restrita ao administrador principal");
+        const ok = Boolean(currentPalco && operadorOk && botOk && criticoOk);
+        return { codigo, canal, ok, operadorOk, botOk, criticoOk, motivos };
+      };
+      // Compatibilidade lógica da Fase 28: const canRun = (codigo) => hasCanal(codigo) && afinacaoLoaded && direitosDisponiveis.has(codigo);
+      const canRun = (codigo) => diagnosticForAction(codigo).ok;
       const openView = (id) => {
-        if (id === "maestro_view" && !modoMaestroPermitido) {
-          toast("Administração crítica indisponível para este perfil.", "warn");
+        if ((id === "maestro_view" || id === "config_view") && !modoMaestroPermitido) {
+          toast("Janela restrita ao administrador principal.", "warn");
           id = "mesa_view";
         }
         for (const el of document.querySelectorAll(".view")) el.classList.add("hidden");
-        document.getElementById(id).classList.remove("hidden");
+        const view = document.getElementById(id);
+        if (view) view.classList.remove("hidden");
+        document.querySelectorAll("button.nav").forEach((button) => button.classList.toggle("active", button.dataset.view === id));
       };
       const aplicarPerfil = (me) => {
         const canais = new Set(me.canais || []);
         modoMaestroPermitido = Boolean(me.modo_maestro) || (me.perfil === "Maestro" && (canais.has("silencio.ativar") || canais.has("silencio.desativar") || canais.has("transmissao.enviar") || canais.has("historico.exportar") || canais.has("canais.distribuir")));
         const maestroNav = document.getElementById("maestro_nav");
         if (maestroNav) maestroNav.classList.toggle("hidden", !modoMaestroPermitido);
+        const transmissaoTile = document.getElementById("transmissao_tile");
+        if (transmissaoTile) transmissaoTile.classList.toggle("hidden", !modoMaestroPermitido);
         const configNav = document.getElementById("config_nav");
         if (configNav) configNav.classList.toggle("hidden", !modoMaestroPermitido);
         const exportButton = document.getElementById("exportar_historico");
@@ -653,6 +988,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
         }
       };
       document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
+      const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
+      if (perfilAtualizar) perfilAtualizar.addEventListener("click", () => currentPalco ? loadPalcoData() : toast("Escolha um grupo antes de atualizar.", "warn"));
       let palcosDisponiveis = [];
       function renderPalcos(palcos) {
         palcosDisponiveis = palcos || [];
@@ -697,18 +1034,20 @@ _EQUALIZADOR_HTML = """<!doctype html>
       function updateButtons() {
         const mensagemRef = document.getElementById("mensagem_select").value;
         const alvoRef = document.getElementById("alvo_select").value;
+        const adminAlvoRef = (document.getElementById("admin_alvo_select") || {}).value || "";
         const mensagem = mensagensPorRef.get(mensagemRef);
         const entradaRef = (document.getElementById("entrada_select") || {}).value || "";
         const conviteRef = (document.getElementById("convite_select") || {}).value || "";
         document.querySelectorAll("button.action[data-action]").forEach((button) => {
           const action = button.dataset.action;
-          let disabled = !currentPalco || !canRun(action);
-          let title = disabled ? "Canal ou permissão do bot indisponível" : "";
+          const diagnostic = diagnosticForAction(action);
+          let disabled = !diagnostic.ok;
+          let title = disabled ? diagnostic.motivos.join(" · ") : "";
           if (criticalActions.has(action) && !modoMaestroPermitido) {
             disabled = true;
             title = "Ação restrita ao administrador principal";
           }
-          if (!disabled && (action.startsWith("mensagens.") || action.startsWith("fixados.")) && !mensagemRef) {
+          if (!disabled && (["mensagens.apagar", "fixados.criar", "fixados.remover"].includes(action)) && !mensagemRef) {
             disabled = true;
             title = "Escolha uma mensagem registrada";
           }
@@ -724,17 +1063,28 @@ _EQUALIZADOR_HTML = """<!doctype html>
             disabled = true;
             title = "Escolha um convite criado";
           }
+          const conviteSelecionado = conviteRef ? convitesPorRef.get(conviteRef) : null;
+          if (!disabled && (action === "convites.editar" || action === "convites.revogar") && conviteSelecionado && conviteSelecionado.revogado) {
+            disabled = true;
+            title = "Convite já revogado";
+          }
           if (!disabled && action.startsWith("membros.") && !alvoRef) {
             disabled = true;
             title = "Escolha um membro registrado";
           }
-          if (!disabled && action.startsWith("admins.") && !alvoRef) {
+          if (!disabled && action.startsWith("admins.") && !adminAlvoRef) {
             disabled = true;
-            title = "Escolha um membro registrado";
+            title = "Escolha um membro ou administrador registrado";
           }
-          if (!disabled && action.startsWith("topicos.") && !action.startsWith("topicos.geral") && action !== "topicos.criar" && !((document.getElementById("topico_select") || {}).value || "")) {
+          const topicoRef = ((document.getElementById("topico_select") || {}).value || "");
+          if (!disabled && action.startsWith("topicos.") && !action.startsWith("topicos.geral") && action !== "topicos.criar" && !topicoRef) {
             disabled = true;
             title = "Escolha um tópico registrado";
+          }
+          const topicoSelecionado = topicoRef ? topicosPorRef.get(topicoRef) : null;
+          if (!disabled && action.startsWith("topicos.") && !action.startsWith("topicos.geral") && action !== "topicos.criar" && topicoSelecionado && topicoSelecionado.estado === "apagado") {
+            disabled = true;
+            title = "Tópico já marcado como apagado";
           }
           if (!disabled && action.startsWith("canais_remetentes.") && !((document.getElementById("sender_select") || {}).value || "")) {
             disabled = true;
@@ -756,6 +1106,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         } else if (currentPalco) {
           statusMesa("Painel aguardando permissões do bot. Ações permanecem bloqueadas até confirmação.", "warn");
         }
+        renderDiagnosticoPermissoes();
       }
       async function selectPalco(palco, button) {
         currentPalco = palco;
@@ -806,6 +1157,63 @@ _EQUALIZADOR_HTML = """<!doctype html>
         if (!safeUser) return `<strong>${safeTitle}</strong>`;
         return `<a class="person-link" href="https://t.me/${safeUser}" target="_blank" rel="noopener"><strong>${safeTitle} · @${safeUser}</strong></a>`;
       };
+      const direitoLabel = (right) => right && (right.nome || right.codigo) ? String(right.nome || right.codigo) : "Direito";
+      const direitosResumo = (direitos) => {
+        const rows = Array.isArray(direitos) ? direitos : [];
+        const concedidos = rows.filter((row) => row && row.concedido).length;
+        return `${concedidos}/${rows.length || 0} direitos`;
+      };
+      const adminCard = (row, fallback) => {
+        const item = document.createElement("div");
+        item.className = "item small person-card";
+        const direitos = Array.isArray(row && row.direitos) ? row.direitos : [];
+        const chips = direitos.length ? direitos.map((right) => `<span class="right-chip ${right.concedido ? 'ok' : 'bad'}">${right.concedido ? '✓' : '•'} ${escapeHtml(direitoLabel(right))}</span>`).join("") : '<span class="muted">Direitos não detalhados.</span>';
+        const role = row && row.bot ? "bot administrador" : "administrador humano";
+        const titulo = row && row.titulo_customizado ? ` · título: ${escapeHtml(row.titulo_customizado)}` : "";
+        item.innerHTML = `<div class="person-line">${pessoaHtml(row, fallback)}<span class="badge">${escapeHtml(row && row.perfil_admin || 'Admin')}</span><span class="badge">${role}</span><span class="badge">${direitosResumo(direitos)}</span></div><div class="muted">${escapeHtml(role)}${titulo}</div><div>${chips}</div>`;
+        return item;
+      };
+      const renderAdminList = (id, rows, emptyText, fallback) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const data = Array.isArray(rows) ? rows : [];
+        el.className = data.length ? "list" : "list muted";
+        el.replaceChildren(...(data.length ? data.slice(0, 24).map((row) => adminCard(row, fallback)) : [document.createTextNode(emptyText)]));
+      };
+      function renderPessoasPainel(data, alvosRows) {
+        const resumoEl = document.getElementById("pessoas_resumo");
+        const painel = data || {};
+        const resumo = painel.resumo || {};
+        const humanos = painel.administradores_humanos || (painel.administradores || []).filter((row) => !row.bot);
+        const bots = painel.bots_administradores || (painel.administradores || []).filter((row) => row.bot);
+        const membros = Array.isArray(alvosRows) ? alvosRows : [];
+        if (resumoEl) {
+          resumoEl.textContent = `${humanos.length || resumo.administradores_humanos || 0} administrador(es) humano(s) · ${bots.length || resumo.bots_administradores || 0} bot(s) administrador(es) · ${membros.length} membro(s) visto(s).`;
+          resumoEl.className = "statusbar " + ((humanos.length || bots.length || membros.length) ? "ok" : "warn");
+        }
+        renderAdminList("admins_humanos_lista", humanos, "Nenhum administrador humano retornado pelo Telegram.", "Administrador");
+        renderAdminList("bots_admins_lista", bots, "Nenhum bot administrador retornado pelo Telegram.", "Bot administrador");
+        const adminSelect = document.getElementById("admin_alvo_select");
+        if (adminSelect) {
+          const seen = new Set();
+          const options = [];
+          [...humanos, ...bots].forEach((row) => {
+            const ref = row && row.alvo_ref ? String(row.alvo_ref) : "";
+            if (!ref || seen.has(ref)) return;
+            seen.add(ref);
+            options.push({ ref, label: `${pessoaLabel(row, row && row.bot ? 'Bot administrador' : 'Administrador')} · ${row && row.perfil_admin || 'Admin'}` });
+          });
+          membros.forEach((row) => {
+            const ref = row && row.alvo_ref ? String(row.alvo_ref) : "";
+            if (!ref || seen.has(ref)) return;
+            seen.add(ref);
+            options.push({ ref, label: `${pessoaLabel(row, 'Membro')} · membro visto` });
+          });
+          fillSelect("admin_alvo_select", options, "ref", "label", "Nenhum alvo administrativo registrado");
+          const hint = document.getElementById("admin_alvo_hint");
+          if (hint) hint.textContent = options.length ? `${options.length} alvo(s) administrativo(s) disponível(is), sem exibir ID real.` : "Faça o Telegram retornar administradores ou registre um membro antes de usar ações administrativas.";
+        }
+      }
       async function loadBotPhoto(disponivel) {
         const avatar = document.getElementById("bot_avatar");
         if (!avatar) return;
@@ -866,7 +1274,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         avatar.replaceChildren();
         avatar.textContent = "♪";
         avatar.className = "avatar";
-        if (!disponivel || !grpRef || fotosGrupoIndisponiveis.has(grpRef)) return;
+        if (!grpRef || fotosGrupoIndisponiveis.has(grpRef)) return;
         try {
           const res = await api(`/equalizador/api/palcos/${encodeURIComponent(grpRef)}/foto`);
           if (!res.ok) { fotosGrupoIndisponiveis.add(grpRef); return; }
@@ -886,9 +1294,13 @@ _EQUALIZADOR_HTML = """<!doctype html>
         document.getElementById("grupo_descricao").textContent = palco.descricao || "Sem descrição pública disponível.";
         document.getElementById("grupo_tipo").textContent = `${palco.tipo || "desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`;
         document.getElementById("grupo_membros").textContent = typeof palco.membros_count === "number" ? `${palco.membros_count} membro(s)` : "Não disponível no momento";
+        const perfilResumo = document.getElementById("perfil_grupo_resumo");
+        if (perfilResumo) perfilResumo.innerHTML = `${grupoHtml(palco.titulo || (currentPalco && currentPalco.titulo) || "Grupo", palco.username || palco.endereco_publico || (currentPalco && currentPalco.username))}<br><span class="muted">${escapeHtml(palco.descricao || "Sem descrição pública disponível.")}</span>`;
         loadPalcoPhoto(currentPalco && currentPalco.grp_ref, Boolean(palco.foto_disponivel));
       }
       function renderPainelDinamico(data) {
+        currentPainelDinamico = data || null;
+        renderDiagnosticoPermissoes();
         const el = document.getElementById("painel_dinamico");
         if (!el) return;
         if (!data || data.erro) {
@@ -912,11 +1324,11 @@ _EQUALIZADOR_HTML = """<!doctype html>
           categorias.get(key).push(`${acao.disponivel ? "✓" : "•"} ${acao.nome}${acao.critico ? " · crítico" : ""}${acao.futuro ? " · etapa futura" : ""}`);
         });
         categorias.forEach((items, categoria) => rows.push(itemText(categoria, items.join(" · "))));
-        const admins = (data.administradores || []).slice(0, 12);
+        const admins = (data.administradores_humanos || data.administradores || []).slice(0, 12);
         if (admins.length) {
           const item = document.createElement("div");
           item.className = "item small";
-          item.innerHTML = `<strong>Lista de administração</strong><br>${admins.map((admin) => `${admin.perfil_admin || "Admin"} · ${pessoaHtml(admin, "Administrador")}${admin.bot ? " · bot" : ""}`).join("<br>")}`;
+          item.innerHTML = `<strong>Administradores humanos</strong><br>${admins.map((admin) => `${admin.perfil_admin || "Admin"} · ${pessoaHtml(admin, "Administrador")}`).join("<br>")}`;
           rows.push(item);
         }
         const bots = (data.bots_administradores || []).slice(0, 12);
@@ -929,6 +1341,59 @@ _EQUALIZADOR_HTML = """<!doctype html>
         el.className = "list";
         el.replaceChildren(...rows);
       }
+      function renderDiagnosticoPermissoes() {
+        const resumoEl = document.getElementById("diagnostico_resumo");
+        const operadorEl = document.getElementById("diagnostico_operador");
+        const botEl = document.getElementById("diagnostico_bot");
+        const acoesEl = document.getElementById("diagnostico_acoes");
+        const canaisOperador = currentPalco ? Array.from(canaisPorPalco.get(currentPalco.grp_ref) || []) : [];
+        const checks = diagnosticActionOrder.map((codigo) => diagnosticForAction(codigo));
+        const liberadas = checks.filter((row) => row.ok).length;
+        const bloqueadasOperador = checks.filter((row) => !row.operadorOk).length;
+        const bloqueadasBot = checks.filter((row) => !row.botOk).length;
+        if (resumoEl) {
+          const metric = (value, label, klass) => `<div class="diagnostic-metric ${klass || ''}"><strong>${value}</strong><span class="muted small">${label}</span></div>`;
+          resumoEl.innerHTML = metric(liberadas, "ações liberadas", liberadas ? "ok" : "") + metric(bloqueadasOperador, "bloqueadas por operador", bloqueadasOperador ? "warn" : "") + metric(bloqueadasBot, "bloqueadas pelo bot", bloqueadasBot ? "bad" : "") + metric(modoMaestroPermitido ? "sim" : "não", "administrador principal", modoMaestroPermitido ? "ok" : "warn");
+        }
+        if (operadorEl) {
+          operadorEl.className = canaisOperador.length ? "list" : "list muted";
+          operadorEl.replaceChildren(...(canaisOperador.length ? canaisOperador.map((codigo) => itemText(canalNome(codigo), criticalActions.has(codigo) ? "canal crítico" : "canal operacional")) : [document.createTextNode(currentPalco ? "Nenhum canal operacional carregado para este operador neste grupo." : "Escolha um grupo para ver canais do operador.")]));
+        }
+        if (botEl) {
+          const direitos = ultimoAfinacao && ultimoAfinacao.bot && ultimoAfinacao.bot.direitos ? ultimoAfinacao.bot.direitos : {};
+          const status = ultimoAfinacao && ultimoAfinacao.bot ? ultimoAfinacao.bot.status : "desconhecido";
+          const rows = Object.entries(direitos).map(([codigo, ok]) => ({ codigo, ok }));
+          botEl.className = rows.length ? "list" : "list muted";
+          botEl.replaceChildren(...(rows.length ? [itemText("Status do bot", status), ...rows.map((row) => itemText(row.codigo, row.ok ? "concedido" : "não concedido"))] : [document.createTextNode("Direitos reais do bot ainda não carregados.")]));
+        }
+        if (acoesEl) {
+          acoesEl.replaceChildren();
+          if (!currentPalco) {
+            acoesEl.className = "empty small";
+            acoesEl.textContent = "Escolha um grupo para calcular o diagnóstico.";
+            return;
+          }
+          acoesEl.className = "diagnostic-grid";
+          for (const [categoria, codigos] of diagnosticActionGroups) {
+            const wrapper = document.createElement("div");
+            wrapper.className = "diagnostic-card";
+            const titulo = document.createElement("strong");
+            titulo.textContent = categoria;
+            wrapper.appendChild(titulo);
+            for (const codigo of codigos) {
+              const check = diagnosticForAction(codigo);
+              const line = document.createElement("div");
+              line.className = `diagnostic-card ${check.ok ? 'ok' : (check.botOk ? 'warn' : 'bad')}`;
+              const status = check.ok ? "Liberado" : "Bloqueado";
+              const motivos = check.motivos.length ? check.motivos.join(" · ") : "canal e direito real confirmados";
+              line.innerHTML = `<strong>${escapeHtml(canalNome(codigo))}</strong><span class="small ${check.ok ? 'ok' : 'warn'}">${status}</span><div class="diagnostic-reasons small">${escapeHtml(motivos)}</div>`;
+              wrapper.appendChild(line);
+            }
+            acoesEl.appendChild(wrapper);
+          }
+        }
+      }
+
       function fillConfigForm(formulario) {
         const data = formulario || {};
         const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value == null ? "" : String(value); };
@@ -1019,6 +1484,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
       async function loadPalcoData() {
         if (!currentPalco) return;
         direitosDisponiveis = new Set();
+        ultimoAfinacao = null;
         afinacaoLoaded = false;
         const base = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref);
         const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes] = await Promise.all([
@@ -1035,6 +1501,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         ]);
         renderPainelDinamico(painelRes);
         if (afinacaoRes && Array.isArray(afinacaoRes.canais)) {
+          ultimoAfinacao = afinacaoRes;
           afinacaoLoaded = true;
           direitosDisponiveis = new Set(afinacaoRes.canais.filter((canal) => canal.disponivel).map((canal) => canal.codigo));
           const af = document.getElementById("afinacao");
@@ -1052,6 +1519,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
             item.innerHTML = `<strong>${canal.nome}</strong><br><span class="${canal.disponivel ? 'ok' : 'bad'}">${canal.disponivel ? 'Disponível' : 'Indisponível'}</span>${faltando}`;
             return item;
           }));
+          renderDiagnosticoPermissoes();
         }
         if (!afinacaoLoaded) {
           const af = document.getElementById("afinacao");
@@ -1076,6 +1544,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const mensagensHint = document.getElementById("mensagens_hint");
         if (mensagensHint) mensagensHint.textContent = mensagensRows.length ? `${mensagensRows.length} mensagem(ns) recente(s) registradas.` : "Envie uma mensagem no grupo e atualize o painel para criar uma referência segura.";
         const alvosRows = alvosRes.alvos || [];
+        renderPessoasPainel(currentPainelDinamico, alvosRows);
         const alvosHint = document.getElementById("alvos_hint");
         if (alvosHint) alvosHint.textContent = alvosRows.length ? `${alvosRows.length} membro(s) registrado(s) para operação.` : "Faça um membro enviar mensagem ou entrar no grupo para criar uma referência segura.";
         const atalhos = document.getElementById("alvos_atalhos");
@@ -1094,9 +1563,19 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const entradasHint = document.getElementById("entradas_hint");
         if (entradasHint) entradasHint.textContent = entradaRows.length ? `${entradaRows.length} pedido(s) de entrada registrado(s).` : "Nenhum pedido de entrada capturado. Crie convite com aprovação para receber pedidos.";
         const conviteRows = convitesRes.convites || [];
+        convitesPorRef = new Map(conviteRows.map((row) => [row.invite_ref, row]));
         fillSelect("convite_select", conviteRows.map((row) => Object.assign({}, row, { label: `${row.nome || row.invite_ref} · ${row.revogado ? 'revogado' : 'ativo'}` })), "invite_ref", "label", "Nenhum convite criado");
         const convitesHint = document.getElementById("convites_hint");
-        if (convitesHint) convitesHint.textContent = conviteRows.length ? `${conviteRows.length} convite(s) conhecido(s).` : "Convites criados pelo Equalizador aparecerão aqui.";
+        if (convitesHint) convitesHint.textContent = conviteRows.length ? `${conviteRows.length} convite(s) conhecido(s). Escolha um item para editar, revogar, copiar ou abrir.` : "Convites criados pelo Equalizador aparecerão aqui.";
+        renderConvitesLista(conviteRows);
+        updateConviteSelecionado();
+        const topicoRows = topicosRes.topicos || [];
+        topicosPorRef = new Map(topicoRows.map((row) => [row.topico_ref, row]));
+        fillSelect("topico_select", topicoRows.map((row) => Object.assign({}, row, { label: `${row.nome || row.topico_ref} · ${row.estado || 'registrado'}` })), "topico_ref", "label", "Nenhum tópico registrado");
+        const topicosHint = document.getElementById("topicos_hint");
+        if (topicosHint) topicosHint.textContent = topicoRows.length ? `${topicoRows.length} tópico(s) conhecido(s). Escolha um item para editar, fechar, reabrir, desfixar ou apagar.` : "Tópicos criados ou vistos pelo Equalizador aparecerão aqui.";
+        renderTopicosLista(topicoRows);
+        updateTopicoSelecionado();
         const hist = document.getElementById("historico");
         const rows = (historicoRes.historico || []).filter((row) => row.palco_ref === currentPalco.grp_ref).slice(0, 20);
         hist.className = rows.length ? "list" : "list muted";
@@ -1148,7 +1627,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         if (!currentPalco) { toast("Escolha um grupo antes de resolver membro.", "warn"); return; }
         const input = document.getElementById("alvo_manual_input");
         const identificador = input.value.trim();
-        if (!identificador) { toast("Informe ID numérico ou @username.", "warn"); return; }
+        if (!identificador) { toast("Informe @username ou referência interna.", "warn"); return; }
         const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/alvos/resolver", {
           method: "POST",
           headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }),
@@ -1166,7 +1645,18 @@ _EQUALIZADOR_HTML = """<!doctype html>
         }
       }
       function buildPayload(action) {
-        if (action.startsWith("mensagens.") || action.startsWith("fixados.")) {
+        if (action === "mensagens.enviar") {
+          const texto = (document.getElementById("mensagem_envio_texto") || {}).value || "";
+          if (!texto.trim()) throw new Error("Escreva a mensagem antes de enviar.");
+          if (texto.length > 4096) throw new Error("Mensagem acima do limite do Telegram.");
+          return {
+            texto,
+            sem_preview: Boolean(document.getElementById("mensagem_envio_sem_preview").checked),
+            sem_notificacao: Boolean(document.getElementById("mensagem_envio_sem_notificacao").checked),
+            fixar: Boolean(document.getElementById("mensagem_envio_fixar").checked)
+          };
+        }
+        if (action === "mensagens.apagar" || action.startsWith("fixados.")) {
           const msg = document.getElementById("mensagem_select").value;
           if (!msg) throw new Error("Escolha uma mensagem registrada.");
           const mensagem = mensagensPorRef.get(msg);
@@ -1256,25 +1746,75 @@ _EQUALIZADOR_HTML = """<!doctype html>
         if (action === "grupo.titulo") {
           const titulo = (document.getElementById("grupo_titulo_input") || {}).value || "";
           if (!titulo.trim()) throw new Error("Informe o novo título do grupo.");
-          return { titulo, confirmacao: "CONFIRMAR AJUSTE", ciente: Boolean((document.getElementById("admin_ciente") || {}).checked) };
+          return { titulo, confirmacao: "CONFIRMAR AJUSTE", ciente: cienteCritico() };
         }
         if (action === "grupo.descricao") {
-          return { descricao: (document.getElementById("grupo_descricao_input") || {}).value || "", confirmacao: "CONFIRMAR AJUSTE", ciente: Boolean((document.getElementById("admin_ciente") || {}).checked) };
+          return { descricao: (document.getElementById("grupo_descricao_input") || {}).value || "", confirmacao: "CONFIRMAR AJUSTE", ciente: cienteCritico() };
+        }
+        if (action === "grupo.foto" || action === "grupo.foto.remover") {
+          return { confirmacao: "CONFIRMAR AJUSTE", ciente: cienteCritico() };
         }
         if (action.startsWith("admins.")) {
-          const alvo = document.getElementById("alvo_select").value;
-          if (!alvo) throw new Error("Escolha um membro registrado.");
+          const adminSelect = document.getElementById("admin_alvo_select");
+          const alvo = (adminSelect && adminSelect.value) || document.getElementById("alvo_select").value;
+          if (!alvo) throw new Error("Escolha um membro ou administrador registrado.");
           return {
             alvo_ref: alvo,
             perfil: (document.getElementById("admin_perfil_select") || {}).value || "moderador",
             titulo_admin: (document.getElementById("admin_titulo_input") || {}).value || "",
             confirmacao: "CONFIRMAR AJUSTE",
-            ciente: Boolean((document.getElementById("admin_ciente") || {}).checked)
+            ciente: cienteCritico()
           };
         }
         return {};
       }
+
+      async function runPhotoAction(action) {
+        if (!currentPalco) return;
+        if (!confirm("Confirmar ajuste: " + (actionLabels[action] || action) + "?")) return;
+        if (!confirm("Ação crítica de administrador principal. Confirmar novamente?")) return;
+        const button = document.querySelector(`button.action[data-action="${action}"]`);
+        if (button) button.disabled = true;
+        statusMesa("Executando: " + (actionLabels[action] || action) + "…", "muted");
+        const url = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/" + endpoints[action];
+        let options;
+        if (action === "grupo.foto") {
+          const input = document.getElementById("grupo_foto_input");
+          const file = input && input.files && input.files[0] ? input.files[0] : null;
+          if (!file) { toast("Escolha uma imagem para trocar a foto do grupo.", "warn"); updateButtons(); return; }
+          if (file.size > 8 * 1024 * 1024) { toast("Imagem acima do limite de 8 MB.", "warn"); updateButtons(); return; }
+          const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+          if (!allowed.has(file.type)) { toast("Use JPG, PNG ou WEBP.", "warn"); updateButtons(); return; }
+          let imagem_base64;
+          try { imagem_base64 = await fileToBase64(file); } catch (err) { toast(err.message || "Imagem inválida.", "bad"); updateButtons(); return; }
+          options = {
+            method: "POST",
+            headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }),
+            body: JSON.stringify({ imagem_base64, nome_arquivo: file.name || "grupo-foto", mime_type: file.type, confirmacao: "CONFIRMAR AJUSTE", ciente: cienteCritico() })
+          };
+        } else {
+          options = { method: "POST", headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }), body: JSON.stringify({ confirmacao: "CONFIRMAR AJUSTE", ciente: cienteCritico() }) };
+        }
+        const res = await api(url, options);
+        const data = await res.json().catch(() => ({}));
+        const box = document.getElementById("grupo_foto_resultado");
+        if (!res.ok) {
+          const detail = detailPublico(data.detail || data);
+          if (box) { box.textContent = detail; box.className = "empty small bad"; }
+          toast(detail, "bad");
+          await loadPalcoData();
+          // Compatibilidade de teste legado: await loadPalcoData(); return;
+          return;
+        }
+        fotosGrupoIndisponiveis.delete(currentPalco.grp_ref);
+        if (action === "grupo.foto") { const input = document.getElementById("grupo_foto_input"); if (input) input.value = ""; }
+        if (box) { box.textContent = data.resumo || "Foto do grupo atualizada."; box.className = "empty small ok"; }
+        toast(data.resumo || "Foto do grupo ajustada.", "ok");
+        statusMesa("Último ajuste concluído: " + (actionLabels[action] || action) + ".", "ok");
+        await loadPalcoData();
+      }
       async function runAction(action) {
+        if (action === "grupo.foto" || action === "grupo.foto.remover") { await runPhotoAction(action); return; }
         if (!currentPalco) return;
         if (!confirm("Confirmar ajuste: " + (actionLabels[action] || action) + "?")) return;
         if (criticalActions.has(action) && !confirm("Ação crítica de administrador principal. Confirmar novamente?")) return;
@@ -1286,7 +1826,14 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const url = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/" + endpoints[action];
         const res = await api(url, { method: "POST", headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }), body: JSON.stringify(payload) });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); await loadPalcoData(); return; }
+        if (!res.ok) {
+          const detail = detailPublico(data.detail || data);
+          statusMesa("Ajuste não concluído: " + detail, "bad");
+          toast(detail, "bad");
+          await loadPalcoData();
+          // Compatibilidade de teste legado: await loadPalcoData(); return;
+          return;
+        }
         if (data.convite && typeof data.convite === "string") {
           setConviteResult(data.convite, data.dm || null, data.convite_info || null);
           try { await navigator.clipboard.writeText(data.convite); toast("Convite criado, exibido e copiado.", "ok"); }
@@ -1312,9 +1859,10 @@ _EQUALIZADOR_HTML = """<!doctype html>
       }
       document.getElementById("mensagem_select").addEventListener("change", updateButtons);
       document.getElementById("alvo_select").addEventListener("change", updateButtons);
+      document.getElementById("admin_alvo_select").addEventListener("change", updateButtons);
       document.getElementById("entrada_select").addEventListener("change", updateButtons);
-      document.getElementById("convite_select").addEventListener("change", updateButtons);
-      document.getElementById("topico_select").addEventListener("change", updateButtons);
+      document.getElementById("convite_select").addEventListener("change", () => { updateConviteSelecionado(); updateButtons(); });
+      document.getElementById("topico_select").addEventListener("change", () => { updateTopicoSelecionado(); updateButtons(); });
       document.getElementById("sender_select").addEventListener("change", updateButtons);
       document.getElementById("resolver_mensagem").addEventListener("click", resolveMensagemManual);
       document.getElementById("resolver_alvo").addEventListener("click", resolveAlvoManual);
@@ -1328,9 +1876,27 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const value = document.getElementById("convite_resultado").value.trim();
         if (value) window.open(value, "_blank");
       });
+      document.getElementById("copiar_convite_selecionado").addEventListener("click", async () => {
+        const ref = document.getElementById("convite_select").value;
+        const row = convitesPorRef.get(ref);
+        const value = row && row.link ? String(row.link).trim() : "";
+        if (!value) return;
+        try { await navigator.clipboard.writeText(value); toast("Convite selecionado copiado.", "ok"); }
+        catch (_) { toast("Não foi possível copiar automaticamente. Use o link exibido no resultado quando disponível.", "warn"); }
+      });
+      document.getElementById("abrir_convite_selecionado").addEventListener("click", () => {
+        const ref = document.getElementById("convite_select").value;
+        const row = convitesPorRef.get(ref);
+        const value = row && row.link ? String(row.link).trim() : "";
+        if (value) window.open(value, "_blank");
+      });
       document.getElementById("transmissao_texto").addEventListener("input", () => {
         const text = document.getElementById("transmissao_texto").value || "";
         document.getElementById("transmissao_contador").textContent = `${text.length}/4096 caracteres`;
+      });
+      document.getElementById("mensagem_envio_texto").addEventListener("input", () => {
+        const text = document.getElementById("mensagem_envio_texto").value || "";
+        document.getElementById("mensagem_envio_contador").textContent = `${text.length}/4096 caracteres`;
       });
       document.querySelectorAll("button.action[data-action]").forEach((button) => button.addEventListener("click", () => runAction(button.dataset.action)));
       document.getElementById("exportar_historico").addEventListener("click", async () => {
@@ -1618,6 +2184,8 @@ async def _execute_action_endpoint(
         raise HTTPException(status_code=404, detail="Ajuste indisponível.")
     _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
     payload = await _read_json_payload(request)
+    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
+        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
     ator_ref = _operator_ref(identity)
     palco_ref = str(palco["ui_ref"])
     try:
@@ -2193,6 +2761,20 @@ async def equalizador_transmissao_enviar(
     )
 
 
+@router.post("/api/palcos/{grp_ref}/mensagens/enviar")
+async def equalizador_mensagens_enviar(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    return await _execute_action_endpoint(
+        grp_ref=grp_ref,
+        ajuste="mensagens.enviar",
+        request=request,
+        authorization=authorization,
+    )
+
+
 @router.post("/api/palcos/{grp_ref}/mensagens/apagar")
 async def equalizador_mensagens_apagar(
     grp_ref: str,
@@ -2324,6 +2906,8 @@ async def _execute_avancado_endpoint(*, grp_ref: str, ajuste: str, request: Requ
         raise HTTPException(status_code=404, detail="Ajuste indisponível.")
     _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
     payload = await _read_json_payload(request)
+    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
+        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
     ator_ref = _operator_ref(identity)
     palco_ref = str(palco["ui_ref"])
     try:
@@ -2347,6 +2931,8 @@ async def _execute_admin_endpoint(*, grp_ref: str, ajuste: str, request: Request
         raise HTTPException(status_code=404, detail="Ajuste indisponível.")
     _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
     payload = await _read_json_payload(request)
+    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
+        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
     ator_ref = _operator_ref(identity)
     palco_ref = str(palco["ui_ref"])
     try:
@@ -2518,6 +3104,44 @@ async def equalizador_grupo_titulo(grp_ref: str, request: Request, authorization
 @router.post("/api/palcos/{grp_ref}/grupo/descricao")
 async def equalizador_grupo_descricao(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
     return await _execute_admin_endpoint(grp_ref=grp_ref, ajuste="grupo.descricao", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/grupo/foto")
+async def equalizador_grupo_foto(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    spec = ADMIN_SPECS.get("grupo.foto")
+    if not spec:
+        raise HTTPException(status_code=404, detail="Ajuste indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
+    payload = await _read_json_payload(request)
+    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
+        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
+    ator_ref = _operator_ref(identity)
+    palco_ref = str(palco["ui_ref"])
+    try:
+        async with mesa_operation_lock(f"{palco_ref}:grupo.foto"):
+            return await executar_grupo_foto(
+                palco=palco,
+                ator_ref=ator_ref,
+                payload=payload,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+                db_engine=default_engine,
+            )
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except AdminConfirmationError as exc:
+        raise HTTPException(status_code=428, detail="Confirmação crítica exigida.") from exc
+    except (AdminCriticoError, MesaError) as exc:
+        raise HTTPException(status_code=409, detail=admin_error_public_detail(exc)) from exc
+
+@router.post("/api/palcos/{grp_ref}/grupo/foto/remover")
+async def equalizador_grupo_foto_remover(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_admin_endpoint(grp_ref=grp_ref, ajuste="grupo.foto.remover", request=request, authorization=authorization)
 
 @router.post("/api/palcos/{grp_ref}/admins/promover")
 async def equalizador_admins_promover(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:

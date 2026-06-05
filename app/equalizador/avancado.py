@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
 from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
+from app.equalizador.erros_telegram import telegram_error_info_from_payload, telegram_error_payload
 from app.equalizador.mesa import (
     MesaError,
     MesaNotFoundError,
@@ -73,13 +74,14 @@ async def telegram_api_call(token: str, method: str, payload: dict[str, Any] | N
     except ValueError as exc:
         raise AvancadoError("Telegram retornou resposta inválida.") from exc
     if not response.is_success or data.get("ok") is not True:
-        raise MesaTelegramError(str(data.get("description") or "telegram_erro"))
+        info = telegram_error_info_from_payload(data=data, status_code=response.status_code)
+        raise MesaTelegramError(info.public_detail, error_info=info)
     return data.get("result")
 
 
 def avancado_error_public_detail(exc: BaseException) -> str:
     if isinstance(exc, MesaTelegramError):
-        return f"Telegram recusou: {_safe_error_text(exc.description, fallback='operação recusada')}"
+        return _safe_error_text(exc.description, fallback='operação recusada')
     if isinstance(exc, MesaRightError):
         return "Permissão real do bot insuficiente."
     if isinstance(exc, MesaNotFoundError):
@@ -325,7 +327,7 @@ async def executar_ajuste_avancado(
             ajuste=spec.ajuste,
             status="falhou",
             resumo_publico=f"{spec.ajuste} não concluído · {detail}",
-            payload_tecnico={"erro": _safe_error_text(exc, fallback=exc.__class__.__name__), "method": spec.telegram_method},
+            payload_tecnico={"erro": _safe_error_text(exc, fallback=exc.__class__.__name__), "motivo_publico": detail, "method": spec.telegram_method, **(telegram_error_payload(exc.info) if isinstance(exc, MesaTelegramError) and getattr(exc, "info", None) else {})},
             alias_secret=alias_secret,
             db_engine=db_engine,
         )

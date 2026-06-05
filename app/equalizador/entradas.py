@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
 from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
+from app.equalizador.erros_telegram import telegram_error_info_from_payload, telegram_error_payload
 from app.equalizador.mesa import (
     MesaTargetError,
     MesaTelegramError,
@@ -28,14 +29,16 @@ class EntradasError(RuntimeError):
 
 
 class EntradasTelegramError(EntradasError):
-    def __init__(self, description: str) -> None:
-        super().__init__(description)
-        self.description = _safe_error_text(description, fallback="telegram_erro")
+    def __init__(self, description: str, *, error_info: object | None = None) -> None:
+        public_detail = getattr(error_info, "public_detail", None) or _safe_error_text(description, fallback="telegram_erro")
+        super().__init__(public_detail)
+        self.description = public_detail
+        self.info = error_info
 
 
 def entradas_error_public_detail(exc: BaseException) -> str:
     if isinstance(exc, EntradasTelegramError):
-        return f"Telegram recusou: {_safe_error_text(exc.description, fallback='operação recusada')}"
+        return _safe_error_text(exc.description, fallback='operação recusada')
     if isinstance(exc, MesaTargetError):
         return _safe_error_text(exc.description, fallback="Referência indisponível.")
     return _safe_error_text(exc, fallback="Operação de entrada indisponível.")
@@ -107,7 +110,8 @@ async def telegram_api_call(token: str, method: str, payload: dict[str, Any] | N
     except ValueError as exc:
         raise EntradasError("Telegram retornou resposta inválida.") from exc
     if not response.is_success or data.get("ok") is not True:
-        raise EntradasTelegramError(str(data.get("description") or "telegram_erro"))
+        info = telegram_error_info_from_payload(data=data, status_code=response.status_code)
+        raise EntradasTelegramError(info.public_detail, error_info=info)
     return data.get("result")
 
 
@@ -265,7 +269,7 @@ async def executar_pedido_entrada(
             ajuste=f"entradas.{acao}",
             status="falhou",
             resumo_publico=f"Pedido de entrada não concluído · {detail}",
-            payload_tecnico={"method": method, "motivo_publico": detail},
+            payload_tecnico={"method": method, "motivo_publico": detail, **(telegram_error_payload(exc.info) if isinstance(exc, EntradasTelegramError) and getattr(exc, "info", None) else {})},
             alias_secret=alias_secret,
             db_engine=db_engine,
         )
@@ -374,7 +378,7 @@ async def editar_convite(*, palco: dict[str, object], ator_ref: str, invite_ref:
         return {"ok": True, "convite": str((result or {}).get("invite_link") or row["invite_link"]), "historico_ref": history["historico_ref"], "resumo": history["resumo"]}
     except Exception as exc:
         detail = entradas_error_public_detail(exc)
-        record_historico(ator_ref=ator_ref, palco_ref=palco_ref, alvo_ref=str(row["invite_ref"]), ajuste="convites.editar", status="falhou", resumo_publico=f"Convite não editado · {detail}", payload_tecnico={"method": "editChatInviteLink", "motivo_publico": detail}, alias_secret=alias_secret, db_engine=db_engine)
+        record_historico(ator_ref=ator_ref, palco_ref=palco_ref, alvo_ref=str(row["invite_ref"]), ajuste="convites.editar", status="falhou", resumo_publico=f"Convite não editado · {detail}", payload_tecnico={"method": "editChatInviteLink", "motivo_publico": detail, **(telegram_error_payload(exc.info) if isinstance(exc, EntradasTelegramError) and getattr(exc, "info", None) else {})}, alias_secret=alias_secret, db_engine=db_engine)
         raise
 
 
@@ -390,7 +394,7 @@ async def revogar_convite(*, palco: dict[str, object], ator_ref: str, invite_ref
         return {"ok": True, "convite": {"invite_ref": str(row["invite_ref"]), "revogado": True}, "historico_ref": history["historico_ref"], "resumo": history["resumo"]}
     except Exception as exc:
         detail = entradas_error_public_detail(exc)
-        record_historico(ator_ref=ator_ref, palco_ref=palco_ref, alvo_ref=str(row["invite_ref"]), ajuste="convites.revogar", status="falhou", resumo_publico=f"Convite não revogado · {detail}", payload_tecnico={"method": "revokeChatInviteLink", "motivo_publico": detail}, alias_secret=alias_secret, db_engine=db_engine)
+        record_historico(ator_ref=ator_ref, palco_ref=palco_ref, alvo_ref=str(row["invite_ref"]), ajuste="convites.revogar", status="falhou", resumo_publico=f"Convite não revogado · {detail}", payload_tecnico={"method": "revokeChatInviteLink", "motivo_publico": detail, **(telegram_error_payload(exc.info) if isinstance(exc, EntradasTelegramError) and getattr(exc, "info", None) else {})}, alias_secret=alias_secret, db_engine=db_engine)
         raise
 
 

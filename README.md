@@ -13,7 +13,7 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 Use volume em `/app/data` e variável:
 
 ```text
-TR3_DATABASE_URL=sqlite:////app/data/tr4_music.sqlite3
+TR3_DATABASE_URL=sqlite:////app/data/app.db
 ```
 
 ## Equalizador Mini App — fase 8
@@ -107,6 +107,8 @@ Sem `TR4_EQUALIZADOR_CANAIS`, o padrão é negar canais. `TR4_EQUALIZADOR_MAESTR
 
 ## Release operacional do Equalizador
 
+A Fase 54.8 consolida a reorganização visual e funcional do Equalizador para deploy final no Railway. A etapa não adiciona novo poder além das fases 54.1 a 54.7; ela fecha documentação, variáveis, validação e roteiro de aplicação.
+
 A Fase 8 não adiciona novos poderes de moderação. Ela consolida deploy, variáveis finais, smoke test, rollback e validação pré-release. O guia completo está em `docs/EQUALIZADOR_RELEASE_OPERACIONAL.md`.
 
 Checklist recomendado antes do deploy:
@@ -156,3 +158,12 @@ Esta fase consolida a auditoria visual: operador, administradores, bots, membros
 Os botões foram classificados por finalidade sem depender só de cor: verde para criar/aprovar/liberar, azul para organizar/editar/fixar/reabrir, laranja para atenção/configuração/transmissão e vermelho para apagar/remover/banir/rebaixar/recusar. O texto do botão permanece explícito.
 
 A foto do bot e a foto do grupo agora usam fallback visual e cache de indisponibilidade, evitando repetição de chamadas quando a Bot API ou o grupo não disponibiliza foto pública.
+
+
+### Fase 54.8 — Consolidação final Railway
+
+Esta etapa fecha o pacote das fases 54.1 a 54.7 para aplicação em GitHub/Railway. O Equalizador fica organizado em janelas internas, com maior contraste visual, perfil do grupo com foto, mensagens/fixação, pessoas/administradores, convites/tópicos, diagnóstico real de permissões e normalização sanitizada de erros Telegram.
+
+Para preservar tokens Spotify/Last.fm e sessões musicais existentes, use o SQLite persistente antigo no volume. O caminho recomendado é `TR3_DATABASE_URL=sqlite:////app/data/app.db`. Se o banco real antigo tiver outro nome, a variável deve apontar exatamente para esse arquivo, sem criar banco novo.
+
+Guia operacional: `docs/FASE54_8_CONSOLIDACAO_RAILWAY.md`.

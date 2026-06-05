@@ -39,6 +39,11 @@ RIGHT_FIELDS = (
 
 _CANAL_RULES: tuple[dict[str, object], ...] = (
     {
+        "codigo": "mensagens.enviar",
+        "nome": "Enviar mensagens",
+        "direitos": (),
+    },
+    {
         "codigo": "mensagens.apagar",
         "nome": "Apagar mensagens",
         "direitos": ("can_delete_messages",),
@@ -130,6 +135,8 @@ _CANAL_RULES: tuple[dict[str, object], ...] = (
     {"codigo": "topicos.geral.desfixar", "nome": "Remover fixados do tópico geral", "direitos": ("can_pin_messages",)},
     {"codigo": "grupo.titulo", "nome": "Alterar título do grupo", "direitos": ("can_change_info",), "critico": True},
     {"codigo": "grupo.descricao", "nome": "Alterar descrição do grupo", "direitos": ("can_change_info",), "critico": True},
+    {"codigo": "grupo.foto", "nome": "Trocar foto do grupo", "direitos": ("can_change_info",), "critico": True},
+    {"codigo": "grupo.foto.remover", "nome": "Remover foto do grupo", "direitos": ("can_change_info",), "critico": True},
     {"codigo": "admins.promover", "nome": "Promover administrador", "direitos": ("can_promote_members",), "critico": True},
     {"codigo": "admins.rebaixar", "nome": "Rebaixar administrador", "direitos": ("can_promote_members",), "critico": True},
     {"codigo": "admins.titulo", "nome": "Título personalizado de admin", "direitos": ("can_promote_members",), "critico": True},

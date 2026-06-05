@@ -9,6 +9,7 @@ from app.db.database import engine as default_engine
 from app.equalizador.afinacao import canais_from_bot_rights, get_palco_internal_by_ref, public_rights_from_member
 from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
 from app.equalizador.palcos import ensure_equalizador_tables
+from app.equalizador.mesa import register_alvo_ref
 
 
 class PainelDinamicoError(RuntimeError):
@@ -35,6 +36,7 @@ RIGHT_LABELS: dict[str, str] = {
 }
 
 ACTION_CATALOG: tuple[dict[str, object], ...] = (
+    {"codigo": "mensagens.enviar", "nome": "Enviar mensagem", "categoria": "Mensagens", "direitos": ()},
     {"codigo": "mensagens.apagar", "nome": "Apagar mensagem", "categoria": "Mensagens", "direitos": ("can_delete_messages",)},
     {"codigo": "fixados.criar", "nome": "Fixar mensagem", "categoria": "Mensagens", "direitos": ("can_pin_messages",)},
     {"codigo": "fixados.remover", "nome": "Remover fixado", "categoria": "Mensagens", "direitos": ("can_pin_messages",)},
@@ -51,6 +53,8 @@ ACTION_CATALOG: tuple[dict[str, object], ...] = (
     {"codigo": "entradas.recusar", "nome": "Recusar pedido de entrada", "categoria": "Entradas", "direitos": ("can_invite_users",)},
     {"codigo": "grupo.titulo", "nome": "Alterar título do grupo", "categoria": "Grupo", "direitos": ("can_change_info",), "critico": True},
     {"codigo": "grupo.descricao", "nome": "Alterar descrição do grupo", "categoria": "Grupo", "direitos": ("can_change_info",), "critico": True},
+    {"codigo": "grupo.foto", "nome": "Trocar foto do grupo", "categoria": "Grupo", "direitos": ("can_change_info",), "critico": True},
+    {"codigo": "grupo.foto.remover", "nome": "Remover foto do grupo", "categoria": "Grupo", "direitos": ("can_change_info",), "critico": True},
     {"codigo": "topicos.criar", "nome": "Criar tópico", "categoria": "Tópicos", "direitos": ("can_manage_topics",)},
     {"codigo": "topicos.editar", "nome": "Editar tópico", "categoria": "Tópicos", "direitos": ("can_manage_topics",)},
     {"codigo": "topicos.apagar", "nome": "Apagar tópico", "categoria": "Tópicos", "direitos": ("can_delete_messages",)},
@@ -124,13 +128,36 @@ def _admin_rights_public(member: dict[str, Any]) -> list[dict[str, object]]:
     return rows
 
 
-def _admin_public(member: dict[str, Any], *, alias_secret: str) -> dict[str, object]:
+def _admin_public(
+    member: dict[str, Any],
+    *,
+    alias_secret: str,
+    chat_id: int | None = None,
+    db_engine=default_engine,
+) -> dict[str, object]:
     user = member.get("user") if isinstance(member.get("user"), dict) else {}
     public_user = _user_public(user, alias_secret=alias_secret)
     custom_title = _safe_text(member.get("custom_title"), fallback="")
+    status = str(member.get("status") or "")
+    alvo_ref = ""
+    user_id = int(user.get("id") or 0) if isinstance(user, dict) else 0
+    if chat_id is not None and user_id > 0:
+        try:
+            alvo_ref = register_alvo_ref(
+                chat_id=int(chat_id),
+                user_id=user_id,
+                nome_publico=str(public_user.get("nome") or "Administrador"),
+                username=str(public_user.get("username") or "") or None,
+                telegram_status="creator" if status == "creator" else "administrator",
+                alias_secret=alias_secret,
+                db_engine=db_engine,
+            )
+        except Exception:
+            alvo_ref = ""
     return {
         **public_user,
-        "perfil_admin": "Criador" if str(member.get("status")) == "creator" else "Administrador",
+        "alvo_ref": alvo_ref or public_user.get("usr_ref") or "",
+        "perfil_admin": "Criador" if status == "creator" else "Administrador",
         "titulo_customizado": custom_title,
         "direitos": _admin_rights_public(member),
     }
@@ -241,8 +268,9 @@ async def montar_painel_dinamico_palco(
             chat_id=chat_id,
             telegram_api_call=telegram_api_call,
         )
-        admins = [_admin_public(member, alias_secret=alias_secret) for member in admins_raw]
+        admins = [_admin_public(member, alias_secret=alias_secret, chat_id=chat_id, db_engine=db_engine) for member in admins_raw]
         bots_admins = [row for row in admins if row.get("bot") is True]
+        admins_humanos = [row for row in admins if row.get("bot") is not True]
         direitos_bot = public_rights_from_member(bot_member)
         canais = canais_from_bot_rights(bot_member)
         acoes = dynamic_action_rows(bot_member)
@@ -254,9 +282,11 @@ async def montar_painel_dinamico_palco(
             "canais": canais,
             "acoes": acoes,
             "administradores": admins,
+            "administradores_humanos": admins_humanos,
             "bots_administradores": bots_admins,
             "resumo": {
                 "administradores": len(admins),
+                "administradores_humanos": len(admins_humanos),
                 "bots_administradores": len(bots_admins),
                 "acoes_disponiveis": sum(1 for row in acoes if row.get("disponivel")),
                 "acoes_totais": len(acoes),
@@ -271,7 +301,8 @@ async def montar_painel_dinamico_palco(
             "canais": [],
             "acoes": [],
             "administradores": [],
+            "administradores_humanos": [],
             "bots_administradores": [],
-            "resumo": {"administradores": 0, "bots_administradores": 0, "acoes_disponiveis": 0, "acoes_totais": 0},
+            "resumo": {"administradores": 0, "administradores_humanos": 0, "bots_administradores": 0, "acoes_disponiveis": 0, "acoes_totais": 0},
             "erro": _safe_error(exc),
         }

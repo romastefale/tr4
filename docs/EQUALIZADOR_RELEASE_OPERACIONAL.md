@@ -1,8 +1,8 @@
 # Equalizador — Release operacional
 
-Data de consolidação: 2026-06-04
+Data de consolidação: 2026-06-05
 
-Este documento fecha a Fase 8. Ele não adiciona novo poder operacional; organiza a implantação segura do Equalizador já criado nas fases anteriores.
+Este documento fecha a Fase 8 original e foi atualizado na Fase 54.8 para o pacote final do Equalizador em janelas. Ele não adiciona novo poder operacional; organiza a implantação segura do Equalizador já criado nas fases anteriores.
 
 ## Escopo fechado
 
@@ -23,7 +23,7 @@ O Equalizador deve ir para produção com estas condições:
 ```text
 TR3_TELEGRAM_BOT_TOKEN=
 TR3_BASE_URL=https://SEU-DOMINIO.railway.app
-TR3_DATABASE_URL=sqlite:////app/data/tr4_music.sqlite3
+TR3_DATABASE_URL=sqlite:////app/data/app.db
 SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
 LASTFM_API_KEY=
@@ -72,6 +72,23 @@ TR4_EQUALIZADOR_CANAIS=8505890439:*:*;123456789:-1001111111111:palco.ver,canais.
 
 Canais críticos continuam restritos ao Maestro mesmo quando um operador delegado recebe `*`.
 
+
+## Complemento Fase 54.8
+
+A Fase 54 reorganiza o Equalizador em janelas operacionais: Início, Perfil do grupo, Mensagens, Pessoas, Convites, Tópicos, Transmissão, Diagnóstico, Histórico e Configuração.
+
+O teste final no Railway deve ser feito somente depois de aplicar o pacote consolidado e conferir os logs reais. Antes do teste, valide que o banco antigo continua apontado no volume persistente. Se o TR3 usava `/app/data/app.db`, mantenha `TR3_DATABASE_URL=sqlite:////app/data/app.db`. Se usava outro arquivo, aponte exatamente para esse arquivo.
+
+Canais adicionados no ciclo 54:
+
+```text
+mensagens.enviar
+grupo.foto
+grupo.foto.remover
+```
+
+Quando usar `TR4_EQUALIZADOR_CANAIS=MAESTRO_ID:*:*`, esses canais já ficam incluídos. Para operador delegado sem `*`, adicione apenas o necessário.
+
 ## Configuração no Telegram
 
 1. Configure o Mini App do bot no BotFather com o nome público `equalizador`.
@@ -106,7 +123,7 @@ python -m app.bootstrap
 5. Use SQLite dentro do volume:
 
 ```text
-TR3_DATABASE_URL=sqlite:////app/data/tr4_music.sqlite3
+TR3_DATABASE_URL=sqlite:////app/data/app.db
 ```
 
 6. Defina variáveis pelo painel ou Raw Editor, sempre uma por linha no formato `KEY=VALUE`.

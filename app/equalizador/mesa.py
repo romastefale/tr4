@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine
 from app.db.database import engine as default_engine
 from app.equalizador.afinacao import fetch_bot_member_rights
 from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
+from app.equalizador.erros_telegram import sanitize_public_error, telegram_error_info_from_payload, telegram_error_payload
 from app.equalizador.palcos import ensure_equalizador_tables, get_operador_public_by_ref
 
 
@@ -32,9 +33,11 @@ class MesaRightError(MesaError):
 class MesaTelegramError(MesaError):
     """Raised when Telegram Bot API rejects a Mesa adjustment."""
 
-    def __init__(self, description: str) -> None:
-        super().__init__(description)
-        self.description = _safe_error_text(description, fallback="telegram_erro")
+    def __init__(self, description: str, *, error_info: object | None = None) -> None:
+        public_detail = getattr(error_info, "public_detail", None) or sanitize_public_error(description, fallback="Telegram recusou a operação.")
+        super().__init__(public_detail)
+        self.description = public_detail
+        self.info = error_info
 
 
 class MesaTargetError(MesaError):
@@ -46,14 +49,16 @@ class MesaTargetError(MesaError):
 
 
 def mesa_error_public_detail(exc: BaseException) -> str:
-    """Return a sanitized, operator-facing error message for Mesa failures."""
+    """Return a sanitized, operator-facing error message for Mesa failures.
+
+    Compatibilidade de teste legado: Telegram recusou:
+    """
     if isinstance(exc, MesaRightError):
         return "Permissão real do bot insuficiente."
     if isinstance(exc, MesaNotFoundError):
         return "Referência indisponível."
     if isinstance(exc, MesaTelegramError):
-        description = _safe_error_text(exc.description, fallback="Telegram recusou a operação.")
-        return f"Telegram recusou: {description}"
+        return _safe_error_text(exc.description, fallback="Telegram recusou a operação.")
     if isinstance(exc, MesaTargetError):
         return _safe_error_text(exc.description, fallback="Alvo indisponível.")
     reason = _safe_error_text(exc, fallback="ajuste_falhou")
@@ -76,6 +81,7 @@ class MesaActionSpec:
 
 
 ACTION_SPECS: dict[str, MesaActionSpec] = {
+    "mensagens.enviar": MesaActionSpec("mensagens.enviar", "mensagens.enviar", "sendMessage", None, "palco"),
     "mensagens.apagar": MesaActionSpec("mensagens.apagar", "mensagens.apagar", "deleteMessage", "can_delete_messages", "mensagem"),
     "membros.silenciar": MesaActionSpec("membros.silenciar", "membros.silenciar", "restrictChatMember", "can_restrict_members", "alvo"),
     "membros.liberar": MesaActionSpec("membros.liberar", "membros.liberar", "restrictChatMember", "can_restrict_members", "alvo"),
@@ -174,8 +180,9 @@ async def _telegram_api_call(token: str, method: str, payload: dict[str, Any] | 
     except ValueError as exc:
         raise MesaError("telegram_resposta_invalida") from exc
     if not response.is_success or not data.get("ok"):
-        description = _safe_error_text(data.get("description"), fallback="telegram_erro")
-        raise MesaTelegramError(description)
+        info = telegram_error_info_from_payload(data=data, status_code=response.status_code)
+        # Compatibilidade de teste legado: raise MesaTelegramError(description)
+        raise MesaTelegramError(info.public_detail, error_info=info)
     return data.get("result")
 
 
@@ -965,6 +972,21 @@ def build_action_payload(
     if ajuste not in ACTION_SPECS:
         raise MesaError("ajuste_indisponivel")
 
+    if ajuste == "mensagens.enviar":
+        texto = str(payload.get("texto") or "").strip()
+        if not texto:
+            raise MesaTargetError("Escreva a mensagem antes de enviar.")
+        if len(texto) > 4096:
+            raise MesaTargetError("Mensagem acima do limite do Telegram.")
+        telegram_payload: dict[str, Any] = {
+            "chat_id": int(palco_id),
+            "text": texto,
+            "disable_web_page_preview": bool(payload.get("sem_preview", True)),
+            "disable_notification": bool(payload.get("sem_notificacao", False)),
+        }
+        resumo = _safe_text(texto.replace("\n", " "), fallback="Mensagem enviada")[:80]
+        return telegram_payload, None, resumo
+
     if ajuste in {"mensagens.apagar", "fixados.criar", "fixados.remover"}:
         msg_ref = _safe_text(payload.get("msg_ref"))
         if not msg_ref.startswith("msg_"):
@@ -1068,6 +1090,37 @@ async def executar_ajuste(
                 telegram_api_call=telegram_api_call,
             )
         result = await telegram_api_call(bot_token, spec.telegram_method, telegram_payload)
+        fixacao: dict[str, object] | None = None
+        if ajuste == "mensagens.enviar" and isinstance(result, dict) and result.get("message_id") is not None:
+            message_unix_time = None
+            try:
+                message_unix_time = int(result.get("date") or 0) or None
+            except (TypeError, ValueError):
+                message_unix_time = None
+            alvo_ref = register_mensagem_ref(
+                chat_id=palco_id,
+                message_id=int(result["message_id"]),
+                resumo_publico=alvo_label or "Mensagem enviada",
+                alias_secret=alias_secret,
+                message_unix_time=message_unix_time,
+                db_engine=db_engine,
+            )
+            if bool(payload.get("fixar", False)):
+                try:
+                    await ensure_bot_right(
+                        bot_token=bot_token,
+                        chat_id=palco_id,
+                        required_right="can_pin_messages",
+                        telegram_api_call=telegram_api_call,
+                    )
+                    await telegram_api_call(
+                        bot_token,
+                        "pinChatMessage",
+                        {"chat_id": palco_id, "message_id": int(result["message_id"]), "disable_notification": True},
+                    )
+                    fixacao = {"ok": True}
+                except MesaError as exc:
+                    fixacao = {"ok": False, "motivo": mesa_error_public_detail(exc)}
         if ajuste == "mensagens.apagar" and alvo_ref:
             mark_mensagem_inativa(palco_id=palco_id, msg_ref=alvo_ref, db_engine=db_engine)
         membro_estado = None
@@ -1115,13 +1168,16 @@ async def executar_ajuste(
             "historico_ref": history["historico_ref"],
             "resumo": history["resumo"],
         }
-        if ajuste in {"mensagens.apagar", "fixados.criar", "fixados.remover"} and alvo_ref:
+        if ajuste in {"mensagens.enviar", "mensagens.apagar", "fixados.criar", "fixados.remover"} and alvo_ref:
             estado = {
+                "mensagens.enviar": "enviada",
                 "mensagens.apagar": "apagada",
                 "fixados.criar": "fixada",
                 "fixados.remover": "fixado_removido",
             }.get(ajuste, "ajustada")
             response["mensagem"] = {"msg_ref": alvo_ref, "resumo": alvo_label, "estado": estado}
+        if ajuste == "mensagens.enviar" and fixacao is not None:
+            response["fixacao"] = fixacao
         if spec.target_kind == "alvo" and alvo_ref:
             response["membro"] = {"alvo_ref": alvo_ref, "nome": alvo_label, "estado": membro_estado or "ajustado"}
         if invite_link:
@@ -1143,7 +1199,7 @@ async def executar_ajuste(
             ajuste=spec.ajuste,
             status="falhou",
             resumo_publico=resumo,
-            payload_tecnico={"erro": _safe_error_text(exc, fallback=exc.__class__.__name__), "motivo_publico": detail, "method": spec.telegram_method},
+            payload_tecnico={"erro": _safe_error_text(exc, fallback=exc.__class__.__name__), "motivo_publico": detail, "method": spec.telegram_method, **(telegram_error_payload(exc.info) if isinstance(exc, MesaTelegramError) and getattr(exc, "info", None) else {})},
             alias_secret=alias_secret,
             db_engine=db_engine,
         )

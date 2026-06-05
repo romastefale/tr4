@@ -17,6 +17,7 @@ _CANAL_NOMES: dict[str, str] = {
     "palco.ver": "Ver grupo",
     "palco.status": "Status do grupo",
     "palco.afinar": "Permissões do bot no grupo",
+    "mensagens.enviar": "Enviar mensagem",
     "mensagens.apagar": "Apagar mensagem",
     "reacoes.limpar": "Limpar reações",
     "membros.silenciar": "Silenciar membro",

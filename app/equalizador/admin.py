@@ -6,6 +6,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 
 from app.equalizador.maestro import MAESTRO_CONFIRMATION_PHRASE
+from app.equalizador.erros_telegram import telegram_error_info_from_payload, telegram_error_payload
 from app.equalizador.mesa import (
     MesaError,
     MesaRightError,
@@ -41,6 +42,8 @@ class AdminActionSpec:
 ADMIN_SPECS: dict[str, AdminActionSpec] = {
     "grupo.titulo": AdminActionSpec("grupo.titulo", "grupo.titulo", "setChatTitle", "can_change_info", "palco"),
     "grupo.descricao": AdminActionSpec("grupo.descricao", "grupo.descricao", "setChatDescription", "can_change_info", "palco"),
+    "grupo.foto": AdminActionSpec("grupo.foto", "grupo.foto", "setChatPhoto", "can_change_info", "palco"),
+    "grupo.foto.remover": AdminActionSpec("grupo.foto.remover", "grupo.foto.remover", "deleteChatPhoto", "can_change_info", "palco"),
     "admins.promover": AdminActionSpec("admins.promover", "admins.promover", "promoteChatMember", "can_promote_members", "alvo"),
     "admins.rebaixar": AdminActionSpec("admins.rebaixar", "admins.rebaixar", "promoteChatMember", "can_promote_members", "alvo"),
     "admins.titulo": AdminActionSpec("admins.titulo", "admins.titulo", "setChatAdministratorCustomTitle", "can_promote_members", "alvo"),
@@ -68,7 +71,8 @@ async def telegram_api_call(token: str, method: str, payload: dict[str, Any] | N
     except ValueError as exc:
         raise AdminCriticoError("Telegram retornou resposta inválida.") from exc
     if not response.is_success or data.get("ok") is not True:
-        raise MesaTelegramError(str(data.get("description") or "telegram_erro"))
+        info = telegram_error_info_from_payload(data=data, status_code=response.status_code)
+        raise MesaTelegramError(info.public_detail, error_info=info)
     return data.get("result")
 
 
@@ -76,7 +80,7 @@ def admin_error_public_detail(exc: BaseException) -> str:
     if isinstance(exc, AdminConfirmationError):
         return "Confirmação crítica exigida."
     if isinstance(exc, MesaTelegramError):
-        return f"Telegram recusou: {_safe_error_text(exc.description, fallback='operação recusada')}"
+        return _safe_error_text(exc.description, fallback='operação recusada')
     if isinstance(exc, MesaRightError):
         return "Afinação insuficiente."
     if isinstance(exc, MesaTargetError):
@@ -183,6 +187,8 @@ def build_admin_payload(
     if ajuste == "grupo.descricao":
         description = _safe_description(payload)
         return {"chat_id": int(palco_id), "description": description}, None, "Descrição atualizada" if description else "Descrição removida"
+    if ajuste == "grupo.foto.remover":
+        return {"chat_id": int(palco_id)}, None, "Foto removida"
 
     alvo_ref = _safe_text(payload.get("alvo_ref"), fallback="")
     if not alvo_ref:
@@ -201,6 +207,104 @@ def build_admin_payload(
     raise AdminCriticoError("Ação crítica indisponível.")
 
 
+async def executar_grupo_foto(
+    *,
+    palco: dict[str, Any],
+    ator_ref: str,
+    payload: dict[str, Any],
+    bot_token: str,
+    alias_secret: str,
+    db_engine: Any,
+    telegram_api_call_fn: TelegramApiCallable = telegram_api_call,
+) -> dict[str, object]:
+    """Upload a new group photo through Telegram setChatPhoto.
+
+    The frontend sends the image as base64 JSON to avoid adding a multipart
+    parser dependency to the web app. This function converts it to Telegram's
+    multipart upload and records only sanitized audit metadata.
+    """
+    spec = ADMIN_SPECS.get("grupo.foto")
+    if not spec:
+        raise AdminCriticoError("Ação crítica indisponível.")
+    palco_id = int(palco["telegram_chat_id"])
+    palco_ref = str(palco["ui_ref"])
+    try:
+        require_extreme_confirmation(payload)
+        await ensure_admin_right(bot_token=bot_token, chat_id=palco_id, required_right=spec.direito, telegram_api_call_fn=telegram_api_call_fn)
+
+        import base64
+        import binascii
+
+        raw_base64 = str(payload.get("imagem_base64") or "").strip()
+        if "," in raw_base64 and raw_base64.split(",", 1)[0].lower().startswith("data:"):
+            raw_base64 = raw_base64.split(",", 1)[1]
+        if not raw_base64:
+            raise AdminCriticoError("Escolha uma imagem para a foto do grupo.")
+        try:
+            image_bytes = base64.b64decode(raw_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise AdminCriticoError("Imagem inválida.") from exc
+        if not image_bytes:
+            raise AdminCriticoError("Imagem vazia.")
+        if len(image_bytes) > 8 * 1024 * 1024:
+            raise AdminCriticoError("Imagem acima do limite de 8 MB.")
+
+        mime = str(payload.get("mime_type") or "").strip().lower()
+        allowed_mimes = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+        if mime not in allowed_mimes:
+            raise AdminCriticoError("Use imagem JPG, PNG ou WEBP.")
+        filename = _safe_text(payload.get("nome_arquivo"), fallback="grupo-foto")[:80] or "grupo-foto"
+        if "." not in filename:
+            filename += ".jpg" if mime in {"image/jpeg", "image/jpg"} else ".png"
+
+        if not bot_token:
+            raise AdminCriticoError("Token do bot indisponível.")
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/setChatPhoto",
+                data={"chat_id": str(palco_id)},
+                files={"photo": (filename, image_bytes, mime)},
+            )
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise AdminCriticoError("Telegram retornou resposta inválida.") from exc
+        if not response.is_success or data.get("ok") is not True:
+            info = telegram_error_info_from_payload(data=data, status_code=response.status_code)
+            raise MesaTelegramError(info.public_detail, error_info=info)
+
+        historico = record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=None,
+            ajuste="grupo.foto",
+            status="ok",
+            resumo_publico="Foto do grupo atualizada.",
+            payload_tecnico={"telegram_method": "setChatPhoto", "target_kind": "palco", "mime_type": mime, "bytes": len(image_bytes)},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        return {
+            "resultado": {"ajuste": "grupo.foto", "estado": "concluido", "nome": "Foto do grupo atualizada"},
+            "historico": historico,
+            "resumo": "Foto do grupo atualizada.",
+        }
+    except Exception as exc:
+        detail = admin_error_public_detail(exc)
+        record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=None,
+            ajuste="grupo.foto",
+            status="falhou",
+            resumo_publico=f"Foto do grupo não atualizada · {detail}",
+            payload_tecnico={"method": "setChatPhoto", "motivo_publico": detail, **(telegram_error_payload(exc.info) if isinstance(exc, MesaTelegramError) and getattr(exc, "info", None) else {})},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        raise
+
+
 async def executar_admin_critico(
     *,
     ajuste: str,
@@ -217,22 +321,39 @@ async def executar_admin_critico(
         raise AdminCriticoError("Ação crítica indisponível.")
     palco_id = int(palco["telegram_chat_id"])
     palco_ref = str(palco["ui_ref"])
-    await ensure_admin_right(bot_token=bot_token, chat_id=palco_id, required_right=spec.direito, telegram_api_call_fn=telegram_api_call_fn)
-    api_payload, alvo_ref, label = build_admin_payload(ajuste=ajuste, palco_id=palco_id, payload=payload, db_engine=db_engine)
-    await telegram_api_call_fn(bot_token, spec.telegram_method, api_payload)
-    historico = record_historico(
-        ator_ref=ator_ref,
-        palco_ref=palco_ref,
-        alvo_ref=alvo_ref,
-        ajuste=ajuste,
-        status="ok",
-        resumo_publico=f"{label} concluído.",
-        payload_tecnico={"telegram_method": spec.telegram_method, "target_kind": spec.target_kind},
-        alias_secret=alias_secret,
-        db_engine=db_engine,
-    )
-    return {
-        "resultado": {"ajuste": ajuste, "estado": "concluido", "nome": label},
-        "historico": historico,
-        "resumo": f"{label} concluído.",
-    }
+    alvo_ref: str | None = None
+    label = spec.ajuste
+    try:
+        await ensure_admin_right(bot_token=bot_token, chat_id=palco_id, required_right=spec.direito, telegram_api_call_fn=telegram_api_call_fn)
+        api_payload, alvo_ref, label = build_admin_payload(ajuste=ajuste, palco_id=palco_id, payload=payload, db_engine=db_engine)
+        await telegram_api_call_fn(bot_token, spec.telegram_method, api_payload)
+        historico = record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=alvo_ref,
+            ajuste=ajuste,
+            status="ok",
+            resumo_publico=f"{label} concluído.",
+            payload_tecnico={"telegram_method": spec.telegram_method, "target_kind": spec.target_kind},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        return {
+            "resultado": {"ajuste": ajuste, "estado": "concluido", "nome": label},
+            "historico": historico,
+            "resumo": f"{label} concluído.",
+        }
+    except Exception as exc:
+        detail = admin_error_public_detail(exc)
+        record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=alvo_ref,
+            ajuste=ajuste,
+            status="falhou",
+            resumo_publico=f"{label} não concluído · {detail}",
+            payload_tecnico={"method": spec.telegram_method, "target_kind": spec.target_kind, "motivo_publico": detail, **(telegram_error_payload(exc.info) if isinstance(exc, MesaTelegramError) and getattr(exc, "info", None) else {})},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        raise
