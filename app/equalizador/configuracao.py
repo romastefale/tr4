@@ -20,6 +20,9 @@ _CANAL_NOMES: dict[str, str] = {
     "mensagens.enviar": "Enviar mensagem",
     "mensagens.apagar": "Apagar mensagem",
     "reacoes.limpar": "Limpar reações",
+    "reacoes.auditoria": "Auditar reações",
+    "reacoes.recentes.limpar": "Limpar reações recentes",
+    "reacoes.reactor.silenciar": "Silenciar reactor",
     "membros.silenciar": "Silenciar membro",
     "membros.liberar": "Liberar membro",
     "membros.remover": "Remover membro",
@@ -40,6 +43,16 @@ _CANAL_NOMES: dict[str, str] = {
     "silencio.ativar": "Ativar modo silêncio",
     "silencio.desativar": "Desativar modo silêncio",
     "transmissao.enviar": "Enviar transmissão",
+    "radio.agendar": "Agendar Radio",
+    "radio.quiet": "Silêncio do Radio",
+    "radio.broadcast": "Broadcast do Radio",
+    "ddx.imediato": "DDX imediato",
+    "ddx.temporario": "DDX 10 minutos",
+    "novos.ver": "Ver novos membros",
+    "novos.apagar": "Apagar link de novo membro",
+    "novos.silenciar": "Silenciar novo membro",
+    "novos.banir": "Banir novo membro",
+    "novos.ignorar": "Ignorar alerta de novo membro",
 }
 
 

@@ -41,6 +41,9 @@ from app.config.settings import (
 from app.db.database import engine, init_db, run_migrations
 from app.security.rate_limit import rate_limit_status
 from app.equalizador.hardening import equalizador_hardening_status
+from app.equalizador.ddx import equalizador_ddx_preprocess_update
+from app.equalizador.reacoes import record_reaction_update_payload
+from app.equalizador.novos_membros import equalizador_novos_membros_preprocess_update
 
 app = FastAPI(title="TR4 Music Only")
 if TR4_EQUALIZADOR_ENABLED:
@@ -55,6 +58,7 @@ _telegram_dispatcher_configured = False
 _telegram_ready = False
 _telegram_startup_task: asyncio.Task | None = None
 _telegram_startup_error: str | None = None
+_radio_scheduler_task: asyncio.Task | None = None
 
 
 def _message_from_update(update: Update):
@@ -102,7 +106,7 @@ async def _finish_telegram_startup() -> None:
         webhook_secret = telegram_webhook_secret()
         await bot.set_webhook(
             f"{BASE_URL}/webhook",
-            allowed_updates=dispatcher.resolve_used_update_types(),
+            allowed_updates=sorted(set(dispatcher.resolve_used_update_types()) | {"message_reaction", "message_reaction_count"}),
             secret_token=webhook_secret,
         )
         await setup_bot_commands(bot)
@@ -118,9 +122,33 @@ async def _finish_telegram_startup() -> None:
         bot = None
 
 
+async def _radio_scheduler_loop() -> None:
+    """Best-effort Equalizador Radio scheduler.
+
+    Runs due scheduled text publications without blocking Telegram startup. It is
+    intentionally quiet on missing token/config so Railway can still boot.
+    """
+    if not TR4_EQUALIZADOR_ENABLED or not TELEGRAM_BOT_TOKEN:
+        return
+    from app.equalizador.radio import run_due_radio_schedules
+
+    while True:
+        try:
+            await run_due_radio_schedules(
+                bot_token=TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+                limit=10,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("EQUALIZADOR_RADIO_SCHEDULER_TICK_FAILED", exc_info=True)
+        await asyncio.sleep(60)
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
-    global bot, _telegram_startup_task, _telegram_ready, _telegram_startup_error
+    global bot, _telegram_startup_task, _telegram_ready, _telegram_startup_error, _radio_scheduler_task
     missing_env = validate_required_env()
     if missing_env:
         logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
@@ -129,6 +157,9 @@ async def on_startup() -> None:
     ensure_music_group_tables()
     _telegram_ready = False
     _telegram_startup_error = None
+    if TR4_EQUALIZADOR_ENABLED and TELEGRAM_BOT_TOKEN and _radio_scheduler_task is None:
+        _radio_scheduler_task = asyncio.create_task(_radio_scheduler_loop())
+        logger.info("EQUALIZADOR_RADIO_SCHEDULER_SCHEDULED")
     if not TELEGRAM_BOT_TOKEN:
         logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
         return
@@ -148,13 +179,20 @@ async def on_startup() -> None:
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    global bot, _telegram_startup_task
+    global bot, _telegram_startup_task, _radio_scheduler_task
     if _telegram_startup_task and not _telegram_startup_task.done():
         _telegram_startup_task.cancel()
         try:
             await _telegram_startup_task
         except asyncio.CancelledError:
             pass
+    if _radio_scheduler_task and not _radio_scheduler_task.done():
+        _radio_scheduler_task.cancel()
+        try:
+            await _radio_scheduler_task
+        except asyncio.CancelledError:
+            pass
+    _radio_scheduler_task = None
     await shutdown_telegram_bot()
     if bot:
         await bot.session.close()
@@ -221,8 +259,12 @@ async def telegram_webhook(request: Request):
             return Response(status_code=403)
     try:
         payload = await request.json()
+        record_reaction_update_payload(payload, alias_secret=settings.equalizador_alias_secret())
         update = Update.model_validate(payload, context={"bot": bot})
         _remember_music_group_from_update(update)
+        await equalizador_novos_membros_preprocess_update(bot, update, alias_secret=settings.equalizador_alias_secret())
+        if await equalizador_ddx_preprocess_update(bot, update, alias_secret=settings.equalizador_alias_secret()):
+            return {"ok": True}
         await dispatcher.feed_update(bot, update)
     except Exception:
         logger.exception("WEBHOOK_ERROR_MUSIC_ONLY")

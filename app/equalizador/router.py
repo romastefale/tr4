@@ -12,11 +12,24 @@ from app.equalizador.afinacao import PalcoNotFoundError, get_palco_internal_by_r
 from app.equalizador.palcos import list_equalizador_palcos, upsert_operador
 from app.equalizador.permissions import (
     CRITICAL_CANAL_CODES,
+    CANAL_BY_CODE,
+    CANAL_DEFINITIONS,
     canal_codes_for_operator,
     canal_is_allowed,
     canais_for_palco,
     filter_palco_ids_by_canal,
 )
+from app.equalizador.rbac_runtime import (
+    canal_codes_for_operator_effective,
+    canal_is_allowed_effective,
+    canais_for_palco_effective,
+    filter_palco_ids_by_canal_effective,
+    grant_runtime_canal,
+    list_runtime_grants_public,
+    rbac_runtime_catalogo_publico,
+    revoke_runtime_canal,
+)
+from app.equalizador.session_store import cleanup_expired_sessions, session_store_status
 from app.equalizador.mesa import (
     ACTION_SPECS,
     MesaError,
@@ -33,6 +46,50 @@ from app.equalizador.mesa import (
     send_operator_dm,
 )
 from app.equalizador.papeis import matriz_permissoes_publica
+from app.equalizador.governanca import governantes_publicos
+from app.equalizador.ddx import (
+    DDXError,
+    DDXNotFoundError,
+    cancelar_ddx_agendado,
+    ddx_error_public_detail,
+    list_ddx_publico,
+    salvar_ddx_config,
+)
+from app.equalizador.reacoes import (
+    ReacoesError,
+    list_reacoes_publicas,
+    reacoes_error_public_detail,
+    silenciar_reactor,
+)
+from app.equalizador.novos_membros import (
+    NovosMembrosError,
+    NovosMembrosNotFoundError,
+    get_new_member_event,
+    list_novos_membros_publicos,
+    marcar_new_member_event,
+    novos_membros_error_public_detail,
+)
+from app.equalizador.radio import (
+    RadioError,
+    RadioNotFoundError,
+    apagar_template_radio,
+    cancelar_rascunho_radio,
+    criar_rascunho_de_template_radio,
+    criar_rascunho_radio,
+    criar_template_radio,
+    criar_radio_schedule,
+    cancelar_radio_schedule,
+    executar_radio_broadcast,
+    get_radio_quiet_policy_publico,
+    list_radio_drafts_publicos,
+    list_radio_history_publico,
+    list_radio_schedules_publicos,
+    list_radio_templates_publicos,
+    publicar_rascunho_radio,
+    radio_error_public_detail,
+    run_due_radio_schedules,
+    salvar_radio_quiet_policy,
+)
 from app.equalizador.maestro import (
     MaestroConfirmationError,
     MaestroError,
@@ -51,9 +108,21 @@ from app.equalizador.hardening import (
     create_equalizador_session,
     log_equalizador_event,
     mesa_operation_lock,
+    reset_equalizador_locks,
+    reset_equalizador_rate_limits,
     validate_equalizador_session,
 )
 from app.equalizador.security import InitDataError, TelegramWebAppIdentity, extract_tma_authorization, validate_init_data
+from app.equalizador.seguranca_avancada import (
+    assert_security_action_allowed,
+    cleanup_security_audit,
+    export_security_encrypted,
+    export_security_jsonl,
+    get_security_mode,
+    record_security_audit,
+    security_dashboard_public,
+    set_security_mode,
+)
 from app.equalizador.configuracao import configuracao_maestro_publica, raw_editor_from_form_payload
 from app.equalizador.painel import PainelDinamicoError, montar_painel_dinamico_palco
 from app.equalizador.entradas import (
@@ -114,14 +183,18 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,.08); padding-top: 10px; margin-top: 10px; }
     button, select, textarea, input { font: inherit; }
     button.action, button.nav { border: 0; border-radius: 14px; padding: 12px 14px; background: var(--tg-theme-button-color, #5b8cff); color: var(--tg-theme-button-text-color, white); font-weight: 650; }
+    .app-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+    .app-tabs button.nav { width: 100%; min-height: 54px; text-align: left; padding: 9px 10px; border-radius: 14px; line-height: 1.15; }
+    .app-tabs button.nav strong { display: block; font-size: 14px; color: #fff; margin-bottom: 2px; }
+    .app-tabs button.nav span { display: block; font-size: 11px; color: #d1d5db; font-weight: 500; }
     button.secondary { background: #263142; color: #f8fafc; border: 1px solid rgba(255,255,255,.20); }
     button.nav.active { background: #3b82f6; color: #fff; border-color: rgba(255,255,255,.36); }
     button.danger { background: #b42318; color: #fff; }
     button:disabled { opacity: .45; filter: grayscale(1); }
     button.action[data-action="convites.criar"], button.action[data-action="entradas.aprovar"], button.action[data-action="membros.liberar"], button.action[data-action="membros.reintegrar"], button.action[data-action="canais_remetentes.liberar"], button.action[data-action="admins.promover"], button.action[data-action="silencio.desativar"], button.action[data-action="grupo.foto"] { background: #168a55; color: #fff; }
     button.action[data-action="fixados.criar"], button.action[data-action="fixados.remover"], button.action[data-action="topicos.criar"], button.action[data-action="topicos.editar"], button.action[data-action="topicos.reabrir"], button.action[data-action="topicos.desfixar"], button.action[data-action="topicos.geral.reabrir"], button.action[data-action="topicos.geral.exibir"], button.action[data-action="topicos.geral.desfixar"], button.action[data-action="grupo.descricao"], button.action[data-action="admins.titulo"], button#resolver_mensagem, button#resolver_alvo { background: #2563eb; color: #fff; }
-    button.action[data-action="transmissao.enviar"], button.action[data-action="mensagens.enviar"], button.action[data-action="convites.editar"], button.action[data-action="convites.exportar_primario"], button.action[data-action="grupo.titulo"], button.action[data-action="membros.tag.definir"], button.action[data-action="membros.silenciar"], button.action[data-action="silencio.ativar"], button.action[data-action="topicos.fechar"], button.action[data-action="topicos.geral.fechar"], button.action[data-action="topicos.geral.ocultar"], button.action[data-action="reacoes.mensagem.limpar"], button.action[data-action="reacoes.recentes.limpar"], button#atualizar_configuracao, button#gerar_config_raw, button#resetar_config_form, button#copiar_config_raw, button#exportar_historico { background: #c77800; color: #fff; }
-    button.action[data-action="mensagens.apagar"], button.action[data-action="membros.remover"], button.action[data-action="entradas.recusar"], button.action[data-action="convites.revogar"], button.action[data-action="topicos.apagar"], button.action[data-action="canais_remetentes.banir"], button.action[data-action="admins.rebaixar"], button.action[data-action="grupo.foto.remover"] { background: #b42318; color: #fff; }
+    button.action[data-action="transmissao.enviar"], button.action[data-action="mensagens.enviar"], button#radio_schedule_criar, button#radio_quiet_salvar, button#radio_broadcast_enviar, button#radio_schedules_processar, button#ddx_hard_salvar, button#ddx_soft_salvar, button#reacoes_silenciar_reactor, button#novos_silenciar, button#novos_ignorar, button.action[data-action="convites.editar"], button.action[data-action="convites.exportar_primario"], button.action[data-action="grupo.titulo"], button.action[data-action="membros.tag.definir"], button.action[data-action="membros.silenciar"], button.action[data-action="silencio.ativar"], button.action[data-action="topicos.fechar"], button.action[data-action="topicos.geral.fechar"], button.action[data-action="topicos.geral.ocultar"], button.action[data-action="reacoes.mensagem.limpar"], button.action[data-action="reacoes.recentes.limpar"], button#seguranca_modo_alerta, button#seguranca_exportar_jsonl, button#seguranca_exportar_assinado, button#seguranca_exportar_criptografado, button#seguranca_limpar_auditoria, button#seguranca_limpar_locks, button#atualizar_configuracao, button#gerar_config_raw, button#resetar_config_form, button#copiar_config_raw, button#exportar_historico { background: #c77800; color: #fff; }
+    button.action[data-action="mensagens.apagar"], button#seguranca_modo_restrito, button#radio_schedule_cancelar, button#ddx_cancelar_agendado, button#novos_apagar, button#novos_banir, button.action[data-action="membros.remover"], button.action[data-action="entradas.recusar"], button.action[data-action="convites.revogar"], button.action[data-action="topicos.apagar"], button.action[data-action="canais_remetentes.banir"], button.action[data-action="admins.rebaixar"], button.action[data-action="grupo.foto.remover"] { background: #b42318; color: #fff; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
     select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.22); border-radius: 14px; padding: 12px; background: #0f172a; color: #f8fafc; }
     textarea { min-height: 92px; resize: vertical; }
@@ -157,10 +230,10 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .person-link:hover { text-decoration: underline; }
     .mini-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .mini-table td { border-top: 1px solid rgba(255,255,255,.14); padding: 7px 4px; vertical-align: top; }
-    .app-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 12px; }
-    .app-tile { width: 100%; min-height: 96px; text-align: left; border: 1px solid rgba(255,255,255,.18); border-radius: 18px; padding: 14px; background: #111827; color: #f8fafc; font: inherit; }
-    .app-tile strong { display: block; font-size: 15px; margin-bottom: 6px; }
-    .app-tile span { display: block; color: #cbd5e1; font-size: 12px; line-height: 1.35; }
+    .home-hint-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .home-hint { border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 10px; background: #0f172a; min-height: 68px; }
+    .home-hint strong { display: block; font-size: 13px; color: #fff; margin-bottom: 3px; }
+    .home-hint span { display: block; color: #d1d5db; font-size: 11px; line-height: 1.3; }
     .window-title { margin-top: 0; }
     .diagnostic-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0 12px; }
     .diagnostic-metric { border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #0f172a; }
@@ -173,7 +246,14 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .diagnostic-card strong { display: block; margin-bottom: 4px; }
     .diagnostic-reasons { margin-top: 6px; color: #d1d5db; }
     .diagnostic-rights { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    @media (max-width: 560px) { body { padding: 10px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { gap: 6px; } button.action, button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } }
+    .governance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    .governance-card { border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #0f172a; }
+    .governance-card strong { display: block; margin-bottom: 4px; }
+    .governance-role { border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 9px; background: #111827; margin-top: 8px; }
+    .governance-role.active { border-color: rgba(80,216,144,.52); background: rgba(22,138,85,.14); }
+    .governance-role.locked { opacity: .72; }
+    .governance-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+    @media (max-width: 560px) { body { padding: 10px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { gap: 6px; } button.action { width: 100%; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
 </head>
 <body>
@@ -235,34 +315,37 @@ _EQUALIZADOR_HTML = """<!doctype html>
         <div id="mesa_status" class="statusbar muted">Painel aguardando seleção.</div>
         <h2 id="mesa_titulo">Painel do grupo</h2>
         <div class="toolbar app-tabs">
-          <button class="nav secondary" data-view="mesa_view">Início</button>
-          <button class="nav secondary" data-view="perfil_view">Perfil do grupo</button>
-          <button class="nav secondary" data-view="mensagens_view">Mensagens</button>
-          <button class="nav secondary" data-view="pessoas_view">Pessoas</button>
-          <button class="nav secondary" data-view="convites_view">Convites</button>
-          <button class="nav secondary" data-view="topicos_view">Tópicos</button>
-          <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view">Transmissão</button>
-          <button class="nav secondary" data-view="afinacao_view">Diagnóstico</button>
-          <button class="nav secondary" data-view="historico_view">Histórico</button>
-          <button id="config_nav" class="nav secondary hidden" data-view="config_view">Configuração</button>
+          <button class="nav secondary" data-view="mesa_view"><strong>Início</strong><span>status e resumo</span></button>
+          <button class="nav secondary" data-view="perfil_view"><strong>Perfil</strong><span>nome, descrição e foto</span></button>
+          <button class="nav secondary" data-view="mensagens_view"><strong>Mensagens</strong><span>enviar, fixar e apagar</span></button>
+          <button class="nav secondary" data-view="radio_view"><strong>Radio</strong><span>rascunho e mídia</span></button>
+          <button class="nav secondary" data-view="ddx_view"><strong>Filtros</strong><span>DDX e 10 min</span></button>
+          <button class="nav secondary" data-view="reacoes_view"><strong>Reações</strong><span>auditoria e reactors</span></button>
+          <button class="nav secondary" data-view="pessoas_view"><strong>Pessoas</strong><span>membros, admins e bots</span></button>
+          <button class="nav secondary" data-view="convites_view"><strong>Convites</strong><span>criar, copiar e revogar</span></button>
+          <button class="nav secondary" data-view="topicos_view"><strong>Tópicos</strong><span>fórum e tópico geral</span></button>
+          <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view"><strong>Transmissão</strong><span>avisos e silêncio</span></button>
+          <button class="nav secondary" data-view="afinacao_view"><strong>Diagnóstico</strong><span>permissões reais</span></button>
+          <button class="nav secondary" data-view="historico_view"><strong>Histórico</strong><span>ações sanitizadas</span></button>
+          <button id="seguranca_nav" class="nav secondary hidden" data-view="seguranca_view"><strong>Segurança</strong><span>modo, auditoria e exports</span></button>
+          <button id="config_nav" class="nav secondary hidden" data-view="config_view"><strong>Configuração</strong><span>operadores e canais</span></button>
         </div>
         <section id="mesa_view" class="view">
-          <h3 class="window-title">Janelas do Equalizador</h3>
-          <p class="section-note">Escolha uma janela. A Fase 54.1 reorganiza a navegação e contraste sem mudar as regras reais do Telegram.</p>
-          <div class="app-grid">
-            <button class="app-tile nav" data-view="perfil_view" type="button"><strong>Perfil do grupo</strong><span>Título, descrição, foto atual e personalização visual do grupo.</span></button>
-            <button class="app-tile nav" data-view="mensagens_view" type="button"><strong>Mensagens</strong><span>Mensagens registradas, resolver link, apagar, fixar e remover fixado.</span></button>
-            <button class="app-tile nav" data-view="pessoas_view" type="button"><strong>Pessoas</strong><span>Membros, pedidos de entrada, administradores, bots e canais remetentes.</span></button>
-            <button class="app-tile nav" data-view="convites_view" type="button"><strong>Convites</strong><span>Criar, editar, revogar, abrir e copiar convites.</span></button>
-            <button class="app-tile nav" data-view="topicos_view" type="button"><strong>Tópicos</strong><span>Fóruns, tópico geral, fechamento, reabertura e desfixação.</span></button>
-            <button class="app-tile nav" data-view="afinacao_view" type="button"><strong>Diagnóstico</strong><span>Permissões reais do bot, direitos disponíveis e administradores visíveis.</span></button>
-            <button class="app-tile nav" data-view="historico_view" type="button"><strong>Histórico</strong><span>Registro público sanitizado de ações da mesa.</span></button>
-            <button id="transmissao_tile" class="app-tile nav hidden" data-view="maestro_view" type="button"><strong>Transmissão</strong><span>Avisos, modo silêncio e exportação de histórico.</span></button>
+          <h3 class="window-title">Resumo do grupo</h3>
+          <p class="section-note">Use a navegação compacta acima. A tela inicial não repete mais a lista de janelas para reduzir peso visual no iPhone.</p>
+          <div class="home-hint-grid">
+            <div class="home-hint"><strong>Perfil</strong><span>nome, descrição e foto do grupo.</span></div>
+            <div class="home-hint"><strong>Mensagens</strong><span>envio, fixação, desfixação e exclusão.</span></div>
+            <div class="home-hint"><strong>Pessoas</strong><span>membros, administradores humanos e bots.</span></div>
+            <div class="home-hint"><strong>Diagnóstico</strong><span>motivo real de bloqueios antes da ação.</span></div>
           </div>
+          <h3>Governantes deste grupo</h3>
+          <p class="section-note">Mapa de delegação por janela: quem pode atuar, com nome público e @username quando já visto pelo bot.</p>
+          <div id="governantes_palco" class="governance-grid muted">Governantes ainda não carregados.</div>
         </section>
         <section id="perfil_view" class="view hidden">
           <h3 class="window-title">Perfil do grupo</h3>
-          <p class="section-note">Personalização visual e textual do grupo. A troca de foto entra na próxima etapa; esta janela já deixa o lugar correto reservado.</p>
+          <p class="section-note">Personalização visual e textual do grupo. Título, descrição e foto ficam concentrados aqui.</p>
           <div class="grid">
             <div class="panel">
               <strong>Identidade atual</strong>
@@ -326,6 +409,209 @@ _EQUALIZADOR_HTML = """<!doctype html>
               <p class="muted small">Cole o link da mensagem. O backend converte para referência interna.</p>
               <input id="mensagem_link_input" placeholder="Link da mensagem: https://t.me/c/.../..." />
               <div class="toolbar"><button id="resolver_mensagem" class="action secondary" type="button">Resolver mensagem</button></div>
+            </div>
+          </div>
+        </section>
+        <section id="radio_view" class="view hidden">
+          <h3 class="window-title">Radio seguro</h3>
+          <p class="section-note">Crie rascunho, confira a prévia e publique somente depois da confirmação. Texto e mídia usam referência interna após envio.</p>
+          <div class="grid">
+            <div class="panel">
+              <h3>Novo rascunho</h3>
+              <textarea id="radio_texto" maxlength="4096" placeholder="Texto da publicação ou legenda da mídia"></textarea>
+              <div id="radio_contador" class="muted small">0/4096 caracteres</div>
+              <label class="small">Mídia opcional: foto, vídeo ou documento até 8 MB</label>
+              <input id="radio_media_input" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf,.pdf,.txt,.doc,.docx,.zip" />
+              <div class="formgrid">
+                <label class="small"><input id="radio_sem_preview" type="checkbox" checked /> sem prévia de links</label>
+                <label class="small"><input id="radio_sem_notificacao" type="checkbox" /> enviar sem notificação</label>
+                <label class="small"><input id="radio_fixar" type="checkbox" /> fixar depois de publicar</label>
+              </div>
+              <div class="toolbar">
+                <button id="radio_criar_rascunho" class="action" type="button">Criar rascunho</button>
+              </div>
+              <div id="radio_resultado" class="empty small">Nenhum rascunho criado nesta sessão.</div>
+            </div>
+            <div class="panel">
+              <h3>Prévia e confirmação</h3>
+              <select id="radio_draft_select"></select>
+              <div id="radio_preview" class="empty small">Escolha um rascunho para revisar antes de publicar.</div>
+              <div class="toolbar">
+                <button id="radio_publicar" class="action" type="button">Publicar rascunho</button>
+                <button id="radio_cancelar" class="action danger" type="button">Cancelar rascunho</button>
+              </div>
+              <div class="empty small">Publicar é a etapa final. Se “fixar” estiver marcado, o bot também precisa ter direito real de fixar mensagens.</div>
+            </div>
+            <div class="panel">
+              <h3>Modelos do Radio</h3>
+              <p class="muted small">Salve textos frequentes como modelo. O uso cria um novo rascunho para revisão antes de publicar.</p>
+              <input id="radio_template_nome" placeholder="Nome do modelo" maxlength="80" />
+              <select id="radio_template_select"></select>
+              <div class="toolbar">
+                <button id="radio_template_salvar" class="action secondary" type="button">Salvar modelo</button>
+                <button id="radio_template_usar" class="action" type="button">Usar como rascunho</button>
+                <button id="radio_template_apagar" class="action danger" type="button">Apagar modelo</button>
+              </div>
+              <div id="radio_templates" class="list muted">Nenhum modelo carregado.</div>
+            </div>
+            <div class="panel">
+              <h3>Histórico do Radio</h3>
+              <p class="muted small">Publicações feitas pelo Radio, separadas do histórico técnico do Equalizador.</p>
+              <div id="radio_history" class="list muted">Nenhuma publicação registrada.</div>
+            </div>
+            <div class="panel wide">
+              <h3>Rascunhos recentes</h3>
+              <div id="radio_drafts" class="list muted">Nenhum rascunho carregado.</div>
+            </div>
+            <div class="panel">
+              <h3>Agendamento</h3>
+              <p class="muted small">Agenda texto ou modelo para publicar depois. Mídia continua exigindo rascunho manual nesta etapa.</p>
+              <input id="radio_schedule_datetime" type="datetime-local" />
+              <label class="small"><input id="radio_schedule_respeitar_silencio" type="checkbox" checked /> respeitar janela de silêncio</label>
+              <select id="radio_schedule_select"></select>
+              <div class="toolbar">
+                <button id="radio_schedule_criar" class="action" type="button">Agendar publicação</button>
+                <button id="radio_schedule_cancelar" class="action danger" type="button">Cancelar agendamento</button>
+                <button id="radio_schedules_processar" class="action secondary" type="button">Processar vencidos</button>
+              </div>
+              <div id="radio_schedules" class="list muted">Nenhum agendamento carregado.</div>
+            </div>
+            <div class="panel">
+              <h3>Janela de silêncio</h3>
+              <p class="muted small">Impede agendamentos e broadcast de publicar durante o período configurado, quando a opção de respeitar silêncio estiver marcada.</p>
+              <label class="small"><input id="radio_quiet_enabled" type="checkbox" /> ativar silêncio operacional do Radio</label>
+              <div class="formgrid">
+                <div><label class="small muted">Início</label><input id="radio_quiet_start" placeholder="22:00" maxlength="5" /></div>
+                <div><label class="small muted">Fim</label><input id="radio_quiet_end" placeholder="08:00" maxlength="5" /></div>
+              </div>
+              <label class="small muted">Fuso</label>
+              <input id="radio_quiet_tz" placeholder="America/Sao_Paulo" />
+              <div class="toolbar"><button id="radio_quiet_salvar" class="action" type="button">Salvar janela</button></div>
+              <div id="radio_quiet_status" class="empty small">Janela ainda não carregada.</div>
+            </div>
+            <div class="panel wide">
+              <h3>Broadcast multi-grupo</h3>
+              <p class="muted small">Envia o texto atual ou modelo selecionado para grupos em que você tem canal do Radio. Limite seguro: 25 grupos por execução.</p>
+              <div class="formgrid">
+                <label class="small"><input id="radio_broadcast_todos" type="checkbox" /> enviar para todos os grupos permitidos</label>
+                <label class="small"><input id="radio_broadcast_respeitar_silencio" type="checkbox" checked /> respeitar silêncio por grupo</label>
+              </div>
+              <div class="toolbar"><button id="radio_broadcast_enviar" class="action" type="button">Executar broadcast</button></div>
+              <div id="radio_broadcast_resultado" class="list muted">Nenhum broadcast executado nesta sessão.</div>
+            </div>
+          </div>
+        </section>
+        <section id="ddx_view" class="view hidden">
+          <h3 class="window-title">Filtros DDX</h3>
+          <p class="section-note">DDX imediato apaga mensagens no ato. DDX 10 minutos agenda apagamento silencioso para 10 minutos depois. Use palavras ou frases separadas por linha, vírgula ou ponto e vírgula.</p>
+          <div class="grid">
+            <div class="panel">
+              <h3>DDX imediato</h3>
+              <p class="muted small">Use para termos que devem ser removidos assim que forem detectados. Exige direito real de apagar mensagens.</p>
+              <label class="small"><input id="ddx_hard_enabled" type="checkbox" /> ativar DDX imediato neste grupo</label>
+              <textarea id="ddx_hard_words" maxlength="12000" placeholder="palavra proibida
+frase proibida"></textarea>
+              <div class="toolbar">
+                <button id="ddx_hard_salvar" class="action" type="button">Salvar DDX imediato</button>
+              </div>
+              <div id="ddx_hard_status" class="empty small">Filtro imediato ainda não carregado.</div>
+            </div>
+            <div class="panel">
+              <h3>DDX 10 minutos</h3>
+              <p class="muted small">A mensagem permanece visível por 10 minutos e depois é apagada. O agendamento pode ser cancelado enquanto estiver pendente.</p>
+              <label class="small"><input id="ddx_soft_enabled" type="checkbox" /> ativar DDX 10 minutos neste grupo</label>
+              <textarea id="ddx_soft_words" maxlength="12000" placeholder="palavra para apagar em 10 minutos
+frase temporária"></textarea>
+              <div class="toolbar">
+                <button id="ddx_soft_salvar" class="action" type="button">Salvar DDX 10 minutos</button>
+              </div>
+              <div id="ddx_soft_status" class="empty small">Filtro temporário ainda não carregado.</div>
+            </div>
+            <div class="panel">
+              <h3>Agendados para apagar</h3>
+              <select id="ddx_pending_select"></select>
+              <div class="toolbar"><button id="ddx_cancelar_agendado" class="action danger" type="button">Cancelar apagamento</button></div>
+              <div id="ddx_pending" class="list muted">Nenhum apagamento pendente.</div>
+            </div>
+            <div class="panel">
+              <h3>Eventos recentes</h3>
+              <div id="ddx_events" class="list muted">Nenhum evento DDX registrado.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="reacoes_view" class="view hidden">
+          <h3 class="window-title">Reações</h3>
+          <p class="section-note">Auditoria de reactions capturadas pelo webhook. Use o seletor para limpar reações recentes ou aplicar silêncio de interação ao reactor sem expor ID real.</p>
+          <div class="grid">
+            <div class="panel">
+              <h3>Resumo</h3>
+              <div id="reacoes_resumo" class="statusbar muted">Escolha um grupo para carregar auditoria de reações.</div>
+              <div class="toolbar"><button id="reacoes_atualizar" class="action secondary" type="button">Atualizar reações</button></div>
+            </div>
+            <div class="panel">
+              <h3>Reactor selecionado</h3>
+              <select id="reactor_select"></select>
+              <label class="small muted">Duração do silêncio de interação</label>
+              <select id="reactor_silencio_minutos">
+                <option value="10">10 minutos</option>
+                <option value="60" selected>1 hora</option>
+                <option value="1440">24 horas</option>
+                <option value="10080">7 dias</option>
+              </select>
+              <div class="toolbar">
+                <button class="action secondary" data-action="reacoes.recentes.limpar" type="button">Limpar reações recentes</button>
+                <button id="reacoes_silenciar_reactor" class="action" type="button">Silenciar reactor</button>
+              </div>
+              <div id="reactor_hint" class="empty small">Nenhum reactor recente carregado.</div>
+              <p class="muted small">O silêncio de reactor usa a permissão individual mais estreita disponível no Bot API e preserva mensagens comuns quando possível.</p>
+            </div>
+            <div class="panel wide">
+              <h3>Reactors recentes</h3>
+              <div id="reacoes_recentes" class="list muted">Nenhum reactor recente registrado.</div>
+            </div>
+            <div class="panel wide">
+              <h3>Eventos de reação</h3>
+              <div id="reacoes_eventos" class="list muted">Nenhum evento de reação registrado.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="novos_view" class="view hidden">
+          <h3 class="window-title">Novos membros</h3>
+          <p class="section-note">Monitora recém-chegados por janela curta. Quando um novo membro envia link nas primeiras mensagens, o painel registra alerta com nome público e @username, sem mostrar ID real.</p>
+          <div class="grid">
+            <div class="panel">
+              <h3>Resumo</h3>
+              <div id="novos_resumo" class="statusbar muted">Escolha um grupo para carregar o monitor.</div>
+              <div class="toolbar"><button id="novos_atualizar" class="action secondary" type="button">Atualizar novos membros</button></div>
+              <div class="empty small">O watcher começa quando o Telegram envia evento de entrada de membro. As ações exigem os canais próprios e direitos reais do bot.</div>
+            </div>
+            <div class="panel">
+              <h3>Alerta selecionado</h3>
+              <select id="novos_evento_select"></select>
+              <label class="small muted">Duração do silêncio</label>
+              <select id="novos_silencio_segundos">
+                <option value="600">10 minutos</option>
+                <option value="3600" selected>1 hora</option>
+                <option value="86400">24 horas</option>
+                <option value="604800">7 dias</option>
+              </select>
+              <div class="toolbar">
+                <button id="novos_apagar" class="action danger" type="button">Apagar mensagem</button>
+                <button id="novos_silenciar" class="action" type="button">Silenciar membro</button>
+                <button id="novos_banir" class="action danger" type="button">Banir membro</button>
+                <button id="novos_ignorar" class="action secondary" type="button">Ignorar alerta</button>
+              </div>
+              <div id="novos_evento_hint" class="empty small">Nenhum alerta selecionado.</div>
+            </div>
+            <div class="panel wide">
+              <h3>Alertas de link</h3>
+              <div id="novos_eventos" class="list muted">Nenhum alerta registrado.</div>
+            </div>
+            <div class="panel wide">
+              <h3>Recém-chegados monitorados</h3>
+              <div id="novos_recentes" class="list muted">Nenhum novo membro monitorado.</div>
             </div>
           </div>
         </section>
@@ -556,6 +842,48 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <div class="empty small">Administração crítica: título, descrição, promoção e título de administrador foram separados nas janelas Perfil do grupo e Pessoas.</div>
           </div>
         </section>
+        <section id="seguranca_view" class="view hidden">
+          <h3 class="window-title">Segurança avançada</h3>
+          <p class="section-note">Modo alerta/restrito, auditoria exportável, diagnóstico de sessões e limpeza operacional. Janela restrita ao dono do código.</p>
+          <div class="grid">
+            <div class="panel">
+              <h3>Modo de segurança</h3>
+              <div id="seguranca_modo_atual" class="statusbar muted">Modo não carregado.</div>
+              <label class="small muted">Motivo público<br><input id="seguranca_motivo" maxlength="180" placeholder="ex.: manutenção, incidente, revisão de permissões" /></label>
+              <div class="toolbar">
+                <button id="seguranca_modo_normal" class="action" type="button">Retomar normal</button>
+                <button id="seguranca_modo_alerta" class="action" type="button">Ativar alerta</button>
+                <button id="seguranca_modo_restrito" class="action danger" type="button">Ativar restrito</button>
+              </div>
+              <p class="muted small">Alerta registra o estado sem bloquear. Restrito bloqueia ações de governantes e deixa o dono atuar.</p>
+            </div>
+            <div class="panel">
+              <h3>Exportações</h3>
+              <p class="muted small">Exporta linhas sanitizadas das ações, Radio, DDX, reações, novos membros e auditoria de segurança.</p>
+              <input id="seguranca_senha_export" type="password" minlength="8" placeholder="Senha para exportação criptografada" />
+              <div class="toolbar">
+                <button id="seguranca_exportar_jsonl" class="action secondary" type="button">Exportar JSONL</button>
+                <button id="seguranca_exportar_assinado" class="action secondary" type="button">Exportar assinado</button>
+                <button id="seguranca_exportar_criptografado" class="action secondary" type="button">Exportar criptografado</button>
+              </div>
+              <textarea id="seguranca_export_result" readonly placeholder="O conteúdo exportado aparece aqui"></textarea>
+            </div>
+            <div class="panel">
+              <h3>Limpeza e locks</h3>
+              <label class="small muted">Remover auditoria mais antiga que<br><input id="seguranca_limpar_dias" type="number" min="1" max="3650" value="180" /></label>
+              <div class="toolbar">
+                <button id="seguranca_limpar_auditoria" class="action secondary" type="button">Limpar auditoria antiga</button>
+                <button id="seguranca_limpar_locks" class="action secondary" type="button">Limpar locks e rate-limit</button>
+              </div>
+              <div id="seguranca_diagnostico" class="empty small">Diagnóstico não carregado.</div>
+            </div>
+            <div class="panel wide">
+              <h3>Auditoria recente</h3>
+              <div id="seguranca_resumo" class="empty small">Resumo não carregado.</div>
+              <div id="seguranca_auditoria" class="list muted">Auditoria não carregada.</div>
+            </div>
+          </div>
+        </section>
         <section id="config_view" class="view hidden">
           <div class="panel">
             <h3>Configuração do administrador principal</h3>
@@ -587,6 +915,28 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <div id="config_palcos_ocultos" class="list muted">Configuração não carregada.</div>
             <h3>Operadores e canais</h3>
             <div id="config_operadores" class="list muted">Configuração não carregada.</div>
+            <h3>Governantes por janela</h3>
+            <p class="muted small">Leitura operacional para o dono do código delegar governantes sem expor ID real na interface.</p>
+            <div id="config_governantes_resumo" class="empty small">Governança não carregada.</div>
+            <div id="config_governantes" class="governance-grid muted">Governança não carregada.</div>
+            <h3>Delegação runtime</h3>
+            <p class="muted small">Concessões salvas no banco persistente. Use para delegar governantes sem editar Railway a cada ajuste. As variáveis continuam como base estável.</p>
+            <div class="formgrid">
+              <label class="small muted">Governante<br><select id="rbac_usr_ref"></select></label>
+              <label class="small muted">Grupo<br><select id="rbac_grp_ref"></select></label>
+              <label class="small muted">Canal<br><select id="rbac_canal_codigo"></select></label>
+              <label class="small muted">Motivo público<br><input id="rbac_motivo" placeholder="ex.: governante de mensagens" /></label>
+            </div>
+            <div class="toolbar">
+              <button id="rbac_conceder" class="action" type="button">Conceder canal</button>
+              <button id="rbac_revogar" class="action danger" type="button">Revogar selecionado</button>
+              <button id="sessoes_limpar" class="action secondary" type="button">Limpar sessões expiradas</button>
+            </div>
+            <select id="rbac_grant_ref"></select>
+            <div id="rbac_runtime_resumo" class="empty small">Delegação runtime não carregada.</div>
+            <div id="rbac_runtime_lista" class="list muted">Delegação runtime não carregada.</div>
+            <h3>Sessões persistentes</h3>
+            <div id="sessoes_persistentes" class="empty small">Sessões não carregadas.</div>
             <h3>Matriz completa de permissões</h3>
             <p class="muted small">Leitura de segurança por operador, grupo e canal. Canais críticos ficam marcados e operadores comuns permanecem bloqueados.</p>
             <div id="config_matriz_resumo" class="empty small">Matriz não carregada.</div>
@@ -606,6 +956,11 @@ _EQUALIZADOR_HTML = """<!doctype html>
 
       // Fase 54.1: Equalizador em janelas com contraste reforçado.
       // Compatibilidade de testes antigos: Afinando acesso… · Configuração do administrador principal · Assistente de configuração · Ações permanecem bloqueadas até confirmação do bot · Lista de administração
+      // Compatibilidade fase 46: const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes] = await Promise.all([
+      /*
+api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] }).catch(() => ({ remetentes: [] }))
+        ]);
+      */
       const tg = window.Telegram && window.Telegram.WebApp;
       if (tg) { tg.ready(); tg.expand(); }
       const initData = tg && tg.initData ? tg.initData : "";
@@ -614,6 +969,18 @@ _EQUALIZADOR_HTML = """<!doctype html>
       let currentPalco = null;
       let currentPainelDinamico = null;
       let mensagensPorRef = new Map();
+      let radioDraftsPorRef = new Map();
+      let radioTemplatesPorRef = new Map();
+      let radioHistoryRows = [];
+      let radioSchedulesPorRef = new Map();
+      let radioQuietAtual = null;
+      let ddxPendentesPorRef = new Map();
+      let ddxEventosRows = [];
+      let reacoesRecentesPorRef = new Map();
+      let reacoesEventosRows = [];
+      let novosEventosPorRef = new Map();
+      let novosEventosRows = [];
+      let novosRecentesRows = [];
       let convitesPorRef = new Map();
       let topicosPorRef = new Map();
       let canaisPorPalco = new Map();
@@ -623,6 +990,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
       let ultimoAfinacao = null;
       let afinacaoLoaded = false;
       let modoMaestroPermitido = false;
+      let carregandoPalco = false;
       const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar", "grupo.titulo", "grupo.descricao", "grupo.foto", "grupo.foto.remover", "admins.promover", "admins.rebaixar", "admins.titulo"]);
       const cienteCritico = () => Array.from(document.querySelectorAll(".admin-ciente")).some((el) => Boolean(el.checked));
       const endpoints = {
@@ -645,6 +1013,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "transmissao.enviar": "transmissao/enviar",
         "reacoes.mensagem.limpar": "reacoes/mensagem/limpar",
         "reacoes.recentes.limpar": "reacoes/recentes/limpar",
+        "reacoes.reactor.silenciar": "reacoes/reactor/silenciar",
         "canais_remetentes.banir": "canais-remetentes/banir",
         "canais_remetentes.liberar": "canais-remetentes/liberar",
         "membros.tag.definir": "membros/tag/definir",
@@ -674,6 +1043,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "mensagens.enviar": "Enviar mensagem",
         "mensagens.apagar": "Apagar mensagem",
         "reacoes.limpar": "Limpar reações",
+        "reacoes.auditoria": "Auditar reações",
+        "reacoes.reactor.silenciar": "Silenciar reactor",
         "membros.silenciar": "Silenciar membro",
         "membros.liberar": "Liberar membro",
         "membros.remover": "Remover membro",
@@ -694,8 +1065,16 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "silencio.ativar": "Ativar modo silêncio",
         "silencio.desativar": "Desativar modo silêncio",
         "transmissao.enviar": "Enviar transmissão",
+        "ddx.imediato": "Gerenciar DDX imediato",
+        "ddx.temporario": "Gerenciar DDX 10 minutos",
         "reacoes.mensagem.limpar": "Limpar reação da mensagem",
         "reacoes.recentes.limpar": "Limpar reações recentes",
+        "reacoes.reactor.silenciar": "Silenciar reactor",
+        "novos.ver": "Ver novos membros",
+        "novos.apagar": "Apagar link de novo membro",
+        "novos.silenciar": "Silenciar novo membro",
+        "novos.banir": "Banir novo membro",
+        "novos.ignorar": "Ignorar alerta de novo membro",
         "canais_remetentes.banir": "Banir canal remetente",
         "canais_remetentes.liberar": "Liberar canal remetente",
         "membros.tag.definir": "Definir tag de membro",
@@ -720,17 +1099,20 @@ _EQUALIZADOR_HTML = """<!doctype html>
       };
       const permissionChannelForAction = {
         "convites.exportar_primario": "convites.criar",
-        "reacoes.mensagem.limpar": "reacoes.limpar"
+        "reacoes.mensagem.limpar": "reacoes.limpar",
+        "reacoes.reactor.silenciar": "reacoes.reactor.silenciar"
       };
       const effectiveCanal = (codigo) => permissionChannelForAction[codigo] || codigo;
       const canalNome = (codigo) => actionLabels[codigo] || String(codigo || "canal").replace(/[._]/g, " ");
       const diagnosticActionGroups = [
         ["Perfil do grupo", ["grupo.titulo", "grupo.descricao", "grupo.foto", "grupo.foto.remover"]],
         ["Mensagens", ["mensagens.enviar", "mensagens.apagar", "fixados.criar", "fixados.remover", "reacoes.mensagem.limpar"]],
+        ["Reações", ["reacoes.auditoria", "reacoes.recentes.limpar", "reacoes.reactor.silenciar"]],
         ["Pessoas", ["membros.silenciar", "membros.liberar", "membros.remover", "membros.reintegrar", "membros.tag.definir", "admins.promover", "admins.rebaixar", "admins.titulo"]],
         ["Convites e entrada", ["convites.criar", "convites.editar", "convites.revogar", "convites.exportar_primario", "entradas.aprovar", "entradas.recusar"]],
         ["Tópicos", ["topicos.criar", "topicos.editar", "topicos.fechar", "topicos.reabrir", "topicos.apagar", "topicos.desfixar", "topicos.geral.fechar", "topicos.geral.reabrir", "topicos.geral.ocultar", "topicos.geral.exibir", "topicos.geral.desfixar"]],
-        ["Transmissão", ["silencio.ativar", "silencio.desativar", "transmissao.enviar"]]
+        ["Transmissão", ["silencio.ativar", "silencio.desativar", "transmissao.enviar"]],
+        ["Filtros DDX", ["ddx.imediato", "ddx.temporario", "novos.ver", "novos.apagar", "novos.silenciar", "novos.banir", "novos.ignorar"]]
       ];
       const diagnosticActionOrder = diagnosticActionGroups.flatMap((row) => row[1]);
       const statusMesa = (text, kind) => {
@@ -962,7 +1344,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
       // Compatibilidade lógica da Fase 28: const canRun = (codigo) => hasCanal(codigo) && afinacaoLoaded && direitosDisponiveis.has(codigo);
       const canRun = (codigo) => diagnosticForAction(codigo).ok;
       const openView = (id) => {
-        if ((id === "maestro_view" || id === "config_view") && !modoMaestroPermitido) {
+        if ((id === "maestro_view" || id === "config_view" || id === "seguranca_view") && !modoMaestroPermitido) {
           toast("Janela restrita ao administrador principal.", "warn");
           id = "mesa_view";
         }
@@ -976,15 +1358,16 @@ _EQUALIZADOR_HTML = """<!doctype html>
         modoMaestroPermitido = Boolean(me.modo_maestro) || (me.perfil === "Maestro" && (canais.has("silencio.ativar") || canais.has("silencio.desativar") || canais.has("transmissao.enviar") || canais.has("historico.exportar") || canais.has("canais.distribuir")));
         const maestroNav = document.getElementById("maestro_nav");
         if (maestroNav) maestroNav.classList.toggle("hidden", !modoMaestroPermitido);
-        const transmissaoTile = document.getElementById("transmissao_tile");
-        if (transmissaoTile) transmissaoTile.classList.toggle("hidden", !modoMaestroPermitido);
         const configNav = document.getElementById("config_nav");
         if (configNav) configNav.classList.toggle("hidden", !modoMaestroPermitido);
+        const segurancaNav = document.getElementById("seguranca_nav");
+        if (segurancaNav) segurancaNav.classList.toggle("hidden", !modoMaestroPermitido);
         const exportButton = document.getElementById("exportar_historico");
         if (exportButton) exportButton.disabled = !modoMaestroPermitido;
         if (!modoMaestroPermitido) {
           document.getElementById("maestro_view").classList.add("hidden");
           document.getElementById("config_view").classList.add("hidden");
+          const segView = document.getElementById("seguranca_view"); if (segView) segView.classList.add("hidden");
         }
       };
       document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
@@ -1038,6 +1421,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const mensagem = mensagensPorRef.get(mensagemRef);
         const entradaRef = (document.getElementById("entrada_select") || {}).value || "";
         const conviteRef = (document.getElementById("convite_select") || {}).value || "";
+        const reactorRef = (document.getElementById("reactor_select") || {}).value || "";
         document.querySelectorAll("button.action[data-action]").forEach((button) => {
           const action = button.dataset.action;
           const diagnostic = diagnosticForAction(action);
@@ -1094,9 +1478,13 @@ _EQUALIZADOR_HTML = """<!doctype html>
             disabled = true;
             title = "Escolha uma mensagem registrada";
           }
-          if (!disabled && action === "reacoes.mensagem.limpar" && !alvoRef && !((document.getElementById("sender_select") || {}).value || "")) {
+          if (!disabled && action === "reacoes.mensagem.limpar" && !alvoRef && !((document.getElementById("sender_select") || {}).value || "") && !reactorRef) {
             disabled = true;
-            title = "Escolha um membro ou canal remetente";
+            title = "Escolha um membro, canal remetente ou reactor recente";
+          }
+          if (!disabled && action === "reacoes.recentes.limpar" && !alvoRef && !((document.getElementById("sender_select") || {}).value || "") && !reactorRef) {
+            disabled = true;
+            title = "Escolha um membro, canal remetente ou reactor recente";
           }
           button.disabled = disabled;
           button.title = title;
@@ -1180,6 +1568,40 @@ _EQUALIZADOR_HTML = """<!doctype html>
         el.className = data.length ? "list" : "list muted";
         el.replaceChildren(...(data.length ? data.slice(0, 24).map((row) => adminCard(row, fallback)) : [document.createTextNode(emptyText)]));
       };
+      function governancaCard(row, palcoFilter) {
+        const item = document.createElement("div");
+        item.className = "governance-card small";
+        const palcos = Array.isArray(row && row.palcos) ? row.palcos : [];
+        const palco = palcoFilter ? (palcos.find((p) => String(p.grp_ref || "") === String(palcoFilter)) || palcos[0]) : palcos[0];
+        const perfis = Array.isArray(palco && palco.perfis) ? palco.perfis : [];
+        const ativos = perfis.filter((perfil) => perfil && perfil.ativo);
+        const nome = pessoaHtml(row, row && row.perfil || "Governante");
+        const perfilBase = escapeHtml(row && row.perfil || "Governante");
+        const grupoTitulo = palco && palco.titulo ? `<div class="muted">Grupo: ${escapeHtml(palco.titulo)}</div>` : "";
+        const roles = ativos.length ? ativos.map((perfil) => {
+          const canais = Array.isArray(perfil.concedidos) ? perfil.concedidos : [];
+          const chips = canais.slice(0, 8).map((canal) => `<span class="badge">${escapeHtml(canal.nome || canal.codigo)}</span>`).join("");
+          return `<div class="governance-role active"><strong>${escapeHtml(perfil.nome || perfil.codigo)}</strong><span class="muted">${escapeHtml(perfil.descricao || "")}</span><div class="governance-chips">${chips || '<span class="muted">sem canal detalhado</span>'}</div></div>`;
+        }).join("") : '<div class="governance-role locked"><strong>Sem janela ativa neste grupo</strong><span class="muted">Nenhum canal concedido para as janelas principais.</span></div>';
+        item.innerHTML = `<div class="person-line">${nome}<span class="badge">${perfilBase}</span>${row && row.modo_maestro ? '<span class="badge">dono</span>' : ''}</div>${grupoTitulo}${roles}`;
+        return item;
+      }
+      function renderGovernanca(containerId, data, opts) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        const payload = data || {};
+        const rows = Array.isArray(payload.governantes) ? payload.governantes : [];
+        const palcoRef = opts && opts.palcoRef ? String(opts.palcoRef) : "";
+        const onlyActive = opts && opts.onlyActive;
+        const filtered = rows.filter((row) => {
+          if (!onlyActive) return true;
+          const palcos = Array.isArray(row && row.palcos) ? row.palcos : [];
+          const palco = palcoRef ? (palcos.find((p) => String(p.grp_ref || "") === palcoRef) || palcos[0]) : palcos[0];
+          return Array.isArray(palco && palco.perfis) && palco.perfis.some((perfil) => perfil && perfil.ativo);
+        });
+        el.className = filtered.length ? "governance-grid" : "governance-grid muted";
+        el.replaceChildren(...(filtered.length ? filtered.map((row) => governancaCard(row, palcoRef)) : [document.createTextNode("Nenhum governante com janela ativa carregado.")]));
+      }
       function renderPessoasPainel(data, alvosRows) {
         const resumoEl = document.getElementById("pessoas_resumo");
         const painel = data || {};
@@ -1394,6 +1816,614 @@ _EQUALIZADOR_HTML = """<!doctype html>
         }
       }
 
+      function radioDraftLabel(row) {
+        if (!row) return "Rascunho";
+        const tipo = row.media_kind ? (row.media_kind === "photo" ? "foto" : row.media_kind === "video" ? "vídeo" : "documento") : "texto";
+        const status = row.status === "published" ? "publicado" : row.status === "cancelled" ? "cancelado" : "rascunho";
+        return `${status} · ${tipo} · ${safeText(row.resumo || row.draft_ref, "Rascunho")}`;
+      }
+      function renderRadioDrafts(rows) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        radioDraftsPorRef = new Map(safeRows.map((row) => [row.draft_ref, row]));
+        fillSelect("radio_draft_select", safeRows, "draft_ref", "resumo", "Nenhum rascunho");
+        const list = document.getElementById("radio_drafts");
+        if (list) {
+          list.className = safeRows.length ? "list" : "list muted";
+          list.replaceChildren(...(safeRows.length ? safeRows.map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            const media = row.media_kind ? ` · ${escapeHtml(row.media_kind)}${row.media_filename ? ` · ${escapeHtml(row.media_filename)}` : ""}` : "";
+            item.innerHTML = `<strong>${escapeHtml(radioDraftLabel(row))}</strong><br><span class="muted">${escapeHtml(row.previa || "sem texto")}${media}</span>`;
+            return item;
+          }) : [document.createTextNode("Nenhum rascunho carregado.")]));
+        }
+        updateRadioPreview();
+      }
+      function updateRadioPreview() {
+        const select = document.getElementById("radio_draft_select");
+        const preview = document.getElementById("radio_preview");
+        const ref = select ? select.value : "";
+        const row = ref ? radioDraftsPorRef.get(ref) : null;
+        if (!preview) return;
+        if (!row) {
+          preview.textContent = "Escolha um rascunho para revisar antes de publicar.";
+          preview.className = "empty small";
+          return;
+        }
+        const flags = [];
+        if (row.sem_preview) flags.push("sem prévia de links");
+        if (row.sem_notificacao) flags.push("sem notificação");
+        if (row.fixar) flags.push("fixar após publicar");
+        if (row.media_kind) flags.push(`mídia: ${row.media_kind}`);
+        preview.innerHTML = `<strong>${escapeHtml(radioDraftLabel(row))}</strong><br><span>${escapeHtml(row.previa || "sem texto")}</span><br><span class="muted">${escapeHtml(flags.join(" · ") || "sem opções adicionais")}</span>`;
+        preview.className = row.status === "draft" ? "empty small ok" : "empty small muted";
+      }
+      function inferRadioMediaKind(file) {
+        if (!file) return "";
+        const type = String(file.type || "").toLowerCase();
+        if (type.startsWith("image/")) return "photo";
+        if (type.startsWith("video/")) return "video";
+        return "document";
+      }
+      function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          if (!file) { resolve(""); return; }
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("Não foi possível ler o arquivo."));
+          reader.readAsDataURL(file);
+        });
+      }
+      function radioTemplateLabel(row) {
+        const nome = row && row.nome ? row.nome : "Modelo";
+        return `${nome}`;
+      }
+      function renderRadioTemplates(rows) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        radioTemplatesPorRef = new Map(safeRows.map((row) => [row.template_ref, row]));
+        fillSelect("radio_template_select", safeRows, "template_ref", "nome", "Nenhum modelo");
+        const list = document.getElementById("radio_templates");
+        if (!list) return;
+        if (!safeRows.length) { list.innerHTML = '<div class="empty">Nenhum modelo salvo.</div>'; return; }
+        list.innerHTML = "";
+        safeRows.slice(0, 12).forEach((row) => {
+          const item = document.createElement("div");
+          item.className = "listitem";
+          const flags = [];
+          if (row.sem_preview) flags.push("sem prévia");
+          if (row.sem_notificacao) flags.push("silencioso");
+          if (row.fixar) flags.push("fixar");
+          item.innerHTML = `<strong>${escapeHtml(radioTemplateLabel(row))}</strong><br><span class="muted">${escapeHtml(row.previa || "sem texto")}</span><br><span class="muted small">${escapeHtml(flags.join(" · ") || "publicação simples")}</span>`;
+          list.appendChild(item);
+        });
+      }
+      function renderRadioHistory(rows) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        radioHistoryRows = safeRows;
+        const list = document.getElementById("radio_history");
+        if (!list) return;
+        if (!safeRows.length) { list.innerHTML = '<div class="empty">Nenhuma publicação Radio registrada.</div>'; return; }
+        list.innerHTML = "";
+        safeRows.slice(0, 20).forEach((row) => {
+          const item = document.createElement("div");
+          item.className = "listitem";
+          const flags = [];
+          if (row.media_kind) flags.push(row.media_kind);
+          if (row.fixar) flags.push(row.fixado ? "fixado" : "fixação solicitada");
+          if (row.msg_ref) flags.push(row.msg_ref);
+          item.innerHTML = `<strong>${escapeHtml(row.resumo || "Publicação Radio")}</strong><br><span class="muted small">${escapeHtml(flags.join(" · ") || "texto")} · ${escapeHtml(row.created_at || "")}</span>`;
+          list.appendChild(item);
+        });
+      }
+      async function reloadRadioTudo() {
+        await Promise.all([reloadRadioDrafts(), reloadRadioTemplates(), reloadRadioHistory(), reloadRadioSchedules(), reloadRadioQuiet()]);
+      }
+      function radioScheduleLabel(row) {
+        const when = row && row.scheduled_for ? new Date(row.scheduled_for).toLocaleString() : "sem data";
+        return `${when} · ${safeText(row && row.status, "scheduled")}`;
+      }
+      function renderRadioSchedules(rows) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        radioSchedulesPorRef = new Map(safeRows.map((row) => [row.schedule_ref, row]));
+        fillSelect("radio_schedule_select", safeRows, "schedule_ref", "resumo", "Nenhum agendamento");
+        const list = document.getElementById("radio_schedules");
+        if (!list) return;
+        list.className = safeRows.length ? "list" : "list muted";
+        list.replaceChildren(...(safeRows.length ? safeRows.map((row) => {
+          const item = document.createElement("div");
+          item.className = "item small";
+          const flags = [];
+          if (row.fixar) flags.push("fixar");
+          if (row.respeitar_silencio) flags.push("respeita silêncio");
+          if (row.last_error) flags.push("erro: " + row.last_error);
+          item.innerHTML = `<strong>${escapeHtml(radioScheduleLabel(row))}</strong><br><span class="muted">${escapeHtml(row.resumo || "sem texto")}</span><br><span class="muted small">${escapeHtml(flags.join(" · ") || "publicação simples")}</span>`;
+          return item;
+        }) : [document.createTextNode("Nenhum agendamento carregado.")]));
+      }
+      function renderRadioQuiet(row) {
+        radioQuietAtual = row || null;
+        const quiet = row || {};
+        const enabled = Boolean(quiet.enabled);
+        const elEnabled = document.getElementById("radio_quiet_enabled");
+        const elStart = document.getElementById("radio_quiet_start");
+        const elEnd = document.getElementById("radio_quiet_end");
+        const elTz = document.getElementById("radio_quiet_tz");
+        if (elEnabled) elEnabled.checked = enabled;
+        if (elStart) elStart.value = quiet.start_hhmm || "22:00";
+        if (elEnd) elEnd.value = quiet.end_hhmm || "08:00";
+        if (elTz) elTz.value = quiet.timezone_name || "America/Sao_Paulo";
+        const status = document.getElementById("radio_quiet_status");
+        if (status) {
+          status.className = "empty small " + (enabled ? (quiet.ativo_agora ? "warn" : "ok") : "");
+          status.textContent = enabled ? `Silêncio ${quiet.ativo_agora ? "ativo agora" : "fora do período"}: ${quiet.start_hhmm || "22:00"} até ${quiet.end_hhmm || "08:00"} · ${quiet.timezone_name || "America/Sao_Paulo"}` : "Silêncio operacional desativado.";
+        }
+      }
+      function ddxFilterByMode(data, mode) {
+        const rows = data && Array.isArray(data.filtros) ? data.filtros : [];
+        return rows.find((row) => row.modo === mode) || { palavras: [], enabled: false, total_palavras: 0 };
+      }
+      function ddxWordsText(words) {
+        return (Array.isArray(words) ? words : []).join("
+");
+      }
+      function ddxPendingLabel(row) {
+        if (!row) return "Agendamento";
+        const autor = pessoaLabel({ nome: row.autor_nome, username: row.autor_username }, "Membro");
+        const when = row.due_at ? new Date(row.due_at).toLocaleString("pt-BR") : "sem horário";
+        return `${when} · ${autor}`;
+      }
+      function renderDDX(data) {
+        const payload = data || {};
+        const hard = ddxFilterByMode(payload, "hard");
+        const soft = ddxFilterByMode(payload, "soft");
+        const hardEnabled = document.getElementById("ddx_hard_enabled");
+        const softEnabled = document.getElementById("ddx_soft_enabled");
+        const hardWords = document.getElementById("ddx_hard_words");
+        const softWords = document.getElementById("ddx_soft_words");
+        if (hardEnabled) hardEnabled.checked = Boolean(hard.enabled);
+        if (softEnabled) softEnabled.checked = Boolean(soft.enabled);
+        if (hardWords) hardWords.value = ddxWordsText(hard.palavras);
+        if (softWords) softWords.value = ddxWordsText(soft.palavras);
+        const hardStatus = document.getElementById("ddx_hard_status");
+        const softStatus = document.getElementById("ddx_soft_status");
+        if (hardStatus) {
+          hardStatus.textContent = hard.enabled ? `Ativo com ${hard.total_palavras || 0} filtro(s).` : `Inativo com ${hard.total_palavras || 0} filtro(s) salvo(s).`;
+          hardStatus.className = "empty small " + (hard.enabled ? "ok" : "muted");
+        }
+        if (softStatus) {
+          softStatus.textContent = soft.enabled ? `Ativo com ${soft.total_palavras || 0} filtro(s).` : `Inativo com ${soft.total_palavras || 0} filtro(s) salvo(s).`;
+          softStatus.className = "empty small " + (soft.enabled ? "ok" : "muted");
+        }
+        const pendentes = Array.isArray(payload.pendentes) ? payload.pendentes : [];
+        ddxPendentesPorRef = new Map(pendentes.map((row) => [row.scheduled_ref, row]));
+        fillSelect("ddx_pending_select", pendentes.map((row) => Object.assign({}, row, { label: ddxPendingLabel(row) })), "scheduled_ref", "label", "Nenhum apagamento pendente");
+        const pendingBox = document.getElementById("ddx_pending");
+        if (pendingBox) {
+          pendingBox.className = pendentes.length ? "list" : "list muted";
+          pendingBox.replaceChildren(...(pendentes.length ? pendentes.map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            const autor = pessoaHtml({ nome: row.autor_nome, username: row.autor_username }, "Membro");
+            const words = (row.palavras || []).join(", ") || "filtro";
+            item.innerHTML = `<strong>${escapeHtml(ddxPendingLabel(row))}</strong><br>${autor}<br><span class="muted">${escapeHtml(words)} · ${escapeHtml(row.preview || "sem prévia")}</span>`;
+            return item;
+          }) : [document.createTextNode("Nenhum apagamento DDX 10 minutos pendente.")]));
+        }
+        const eventos = Array.isArray(payload.eventos) ? payload.eventos : [];
+        ddxEventosRows = eventos;
+        const eventsBox = document.getElementById("ddx_events");
+        if (eventsBox) {
+          eventsBox.className = eventos.length ? "list" : "list muted";
+          eventsBox.replaceChildren(...(eventos.length ? eventos.slice(0, 20).map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            const autor = pessoaHtml({ nome: row.autor_nome, username: row.autor_username }, "Membro");
+            const words = (row.palavras || []).join(", ") || "filtro";
+            item.innerHTML = `<strong>${escapeHtml(row.nome || "DDX")} · ${escapeHtml(row.status || "evento")}</strong><br>${autor}<br><span class="muted">${escapeHtml(words)} · ${escapeHtml(row.preview || "sem prévia")}</span>`;
+            return item;
+          }) : [document.createTextNode("Nenhum evento DDX registrado.")]));
+        }
+      }
+      async function reloadDDX() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/ddx");
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) renderDDX(data);
+      }
+
+      function reactionActorLabel(row) {
+        const tipo = row && row.actor_kind === "sender_chat" ? "canal" : "membro";
+        return `${pessoaLabel(row || {}, tipo === "canal" ? "Canal" : "Membro")} · ${tipo}`;
+      }
+      function renderReacoes(data) {
+        const payload = data || {};
+        const recentes = Array.isArray(payload.recentes) ? payload.recentes : [];
+        const eventos = Array.isArray(payload.eventos) ? payload.eventos : [];
+        reacoesRecentesPorRef = new Map(recentes.map((row) => [row.recent_ref, row]));
+        reacoesEventosRows = eventos;
+        fillSelect("reactor_select", recentes.map((row) => Object.assign({}, row, { label: `${reactionActorLabel(row)} · ${row.last_summary || 'sem reação'}` })), "recent_ref", "label", "Nenhum reactor recente");
+        const resumoEl = document.getElementById("reacoes_resumo");
+        if (resumoEl) {
+          const resumo = payload.resumo || {};
+          resumoEl.textContent = `${resumo.eventos || eventos.length} evento(s) · ${resumo.reactors_recentes || recentes.length} reactor(es) recente(s)`;
+          resumoEl.className = "statusbar " + (eventos.length || recentes.length ? "ok" : "warn");
+        }
+        const hint = document.getElementById("reactor_hint");
+        if (hint) hint.textContent = recentes.length ? "Escolha um reactor recente para limpar reações ou silenciar interação." : "Nenhum reactor recente. O bot precisa receber updates de reação pelo webhook.";
+        const recentBox = document.getElementById("reacoes_recentes");
+        if (recentBox) {
+          recentBox.className = recentes.length ? "list" : "list muted";
+          recentBox.replaceChildren(...(recentes.length ? recentes.slice(0, 30).map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            const mute = row.silenciado_ate ? ` · silenciado até ${new Date(row.silenciado_ate).toLocaleString("pt-BR")}` : "";
+            item.innerHTML = `<strong>${reactionActorLabel(row)}</strong><br><span class="muted">${escapeHtml(row.last_summary || "sem reação")} · ${Number(row.seen_count || 0)} evento(s)${escapeHtml(mute)}</span>`;
+            return item;
+          }) : [document.createTextNode("Nenhum reactor recente registrado.")]));
+        }
+        const eventsBox = document.getElementById("reacoes_eventos");
+        if (eventsBox) {
+          eventsBox.className = eventos.length ? "list" : "list muted";
+          eventsBox.replaceChildren(...(eventos.length ? eventos.slice(0, 40).map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            item.innerHTML = `<strong>${reactionActorLabel(row)} · ${escapeHtml(row.status || "registrou")}</strong><br><span class="muted">${escapeHtml(row.old_summary || "sem reação")} → ${escapeHtml(row.new_summary || "sem reação")} · ${escapeHtml(row.msg_ref || "mensagem")}</span>`;
+            return item;
+          }) : [document.createTextNode("Nenhum evento de reação registrado.")]));
+        }
+        updateButtons();
+      }
+      async function reloadReacoes() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/reacoes/auditoria");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderReacoes(data);
+      }
+      async function silenciarReactor() {
+        if (!currentPalco) { toast("Escolha um grupo antes de silenciar reactor.", "warn"); return; }
+        const diag = diagnosticForAction("reacoes.reactor.silenciar");
+        if (!diag.ok) { toast("Silenciar reactor bloqueado: " + diag.motivos.join(" · "), "warn"); return; }
+        const recentRef = (document.getElementById("reactor_select") || {}).value || "";
+        if (!recentRef) { toast("Escolha um reactor recente.", "warn"); return; }
+        const minutos = Number((document.getElementById("reactor_silencio_minutos") || {}).value || 60);
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/reacoes/reactor/silenciar", {
+          method: "POST",
+          headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders),
+          body: JSON.stringify({ recent_ref: recentRef, duracao_minutos: minutos })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast(data.resumo || "Reactor silenciado.", "ok");
+        await reloadReacoes();
+      }
+
+      function novoEventoLabel(row) {
+        const links = Array.isArray(row.links) && row.links.length ? row.links.join(", ") : "link detectado";
+        return `${pessoaLabel(row || {}, "Membro")} · ${row.status || "pendente"} · ${links}`;
+      }
+      function renderNovosMembros(data) {
+        const payload = data || {};
+        const recentes = Array.isArray(payload.recentes) ? payload.recentes : [];
+        const eventos = Array.isArray(payload.eventos) ? payload.eventos : [];
+        novosRecentesRows = recentes;
+        novosEventosRows = eventos;
+        novosEventosPorRef = new Map(eventos.map((row) => [row.event_ref, row]));
+        fillSelect("novos_evento_select", eventos.map((row) => Object.assign({}, row, { label: novoEventoLabel(row) })), "event_ref", "label", "Nenhum alerta pendente");
+        const resumoEl = document.getElementById("novos_resumo");
+        if (resumoEl) {
+          const resumo = payload.resumo || {};
+          resumoEl.textContent = `${resumo.ativos || 0} monitorado(s) ativo(s) · ${resumo.alertas_pendentes || 0} alerta(s) pendente(s) · ${resumo.monitorados || recentes.length} recém-chegado(s) conhecido(s)`;
+          resumoEl.className = "statusbar " + ((resumo.alertas_pendentes || eventos.length) ? "warn" : (recentes.length ? "ok" : "muted"));
+        }
+        const selected = (document.getElementById("novos_evento_select") || {}).value || "";
+        const hint = document.getElementById("novos_evento_hint");
+        if (hint) {
+          const row = novosEventosPorRef.get(selected);
+          hint.textContent = row ? `${pessoaLabel(row, "Membro")} · ${row.preview || "sem prévia"}` : "Escolha um alerta para agir.";
+        }
+        const eventosBox = document.getElementById("novos_eventos");
+        if (eventosBox) {
+          eventosBox.className = eventos.length ? "list" : "list muted";
+          eventosBox.replaceChildren(...(eventos.length ? eventos.slice(0, 40).map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            const links = Array.isArray(row.links) && row.links.length ? row.links.join(", ") : "link detectado";
+            item.innerHTML = `<strong>${pessoaHtml(row, "Membro")} · ${escapeHtml(row.status || "pendente")}</strong><br><span class="muted">${escapeHtml(links)} · ${escapeHtml(row.preview || "sem prévia")}</span>`;
+            return item;
+          }) : [document.createTextNode("Nenhum alerta de novo membro registrado.")]));
+        }
+        const recentesBox = document.getElementById("novos_recentes");
+        if (recentesBox) {
+          recentesBox.className = recentes.length ? "list" : "list muted";
+          recentesBox.replaceChildren(...(recentes.length ? recentes.slice(0, 40).map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            item.innerHTML = `<strong>${pessoaHtml(row, "Membro")}</strong><br><span class="muted">${escapeHtml(row.status || "monitorado")} · ${Number(row.mensagens_vistas || 0)} mensagem(ns) observada(s)</span>`;
+            return item;
+          }) : [document.createTextNode("Nenhum recém-chegado monitorado.")]));
+        }
+        updateButtons();
+      }
+      async function reloadNovosMembros() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/novos-membros");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderNovosMembros(data);
+      }
+      async function acaoNovoMembro(acao) {
+        if (!currentPalco) { toast("Escolha um grupo antes de agir sobre novos membros.", "warn"); return; }
+        const canal = ({ apagar: "novos.apagar", silenciar: "novos.silenciar", banir: "novos.banir", ignorar: "novos.ignorar" })[acao] || "novos.ver";
+        const diag = diagnosticForAction(canal);
+        if (!diag.ok) { toast("Ação bloqueada: " + diag.motivos.join(" · "), "warn"); return; }
+        const ref = (document.getElementById("novos_evento_select") || {}).value || "";
+        if (!ref) { toast("Escolha um alerta de novo membro.", "warn"); return; }
+        const payload = { duracao_segundos: Number((document.getElementById("novos_silencio_segundos") || {}).value || 3600) };
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/novos-membros/" + encodeURIComponent(ref) + "/" + acao, {
+          method: "POST",
+          headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders),
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast(data.resumo || "Alerta atualizado.", "ok");
+        await reloadNovosMembros();
+      }
+
+      async function salvarDDX(mode) {
+        if (!currentPalco) { toast("Escolha um grupo antes de salvar DDX.", "warn"); return; }
+        const isSoft = mode === "soft";
+        const words = (document.getElementById(isSoft ? "ddx_soft_words" : "ddx_hard_words") || {}).value || "";
+        const enabled = Boolean((document.getElementById(isSoft ? "ddx_soft_enabled" : "ddx_hard_enabled") || {}).checked);
+        const canal = isSoft ? "ddx.temporario" : "ddx.imediato";
+        const diag = diagnosticForAction(canal);
+        if (!diag.ok) { toast("DDX bloqueado: " + diag.motivos.join(" · "), "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/ddx", {
+          method: "POST",
+          headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders),
+          body: JSON.stringify({ modo: mode, palavras: words, enabled })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast(isSoft ? "DDX 10 minutos salvo." : "DDX imediato salvo.", "ok");
+        await reloadDDX();
+      }
+      async function cancelarDDXAgendado() {
+        if (!currentPalco) return;
+        const ref = (document.getElementById("ddx_pending_select") || {}).value || "";
+        if (!ref) { toast("Escolha um apagamento pendente.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/ddx/agendados/" + encodeURIComponent(ref) + "/cancelar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast(data.resumo || "Apagamento cancelado.", "ok");
+        await reloadDDX();
+      }
+      async function reloadRadioSchedules() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/agendamentos");
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) renderRadioSchedules(data.agendamentos || []);
+      }
+      async function reloadRadioQuiet() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/silencio");
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) renderRadioQuiet(data.quiet || {});
+      }
+      async function criarRadioAgendamento() {
+        if (!currentPalco) { toast("Escolha um grupo antes de agendar.", "warn"); return; }
+        const texto = (document.getElementById("radio_texto") || {}).value || "";
+        const templateRef = (document.getElementById("radio_template_select") || {}).value || "";
+        const scheduledFor = (document.getElementById("radio_schedule_datetime") || {}).value || "";
+        if (!texto.trim() && !templateRef) { toast("Escreva texto ou escolha um modelo antes de agendar.", "warn"); return; }
+        const payload = {
+          texto,
+          template_ref: templateRef,
+          scheduled_for: scheduledFor,
+          sem_preview: Boolean(document.getElementById("radio_sem_preview").checked),
+          sem_notificacao: Boolean(document.getElementById("radio_sem_notificacao").checked),
+          fixar: Boolean(document.getElementById("radio_fixar").checked),
+          respeitar_silencio: Boolean(document.getElementById("radio_schedule_respeitar_silencio").checked)
+        };
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/agendamentos", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders), body: JSON.stringify(payload) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast("Agendamento criado.", "ok");
+        await reloadRadioSchedules();
+      }
+      async function cancelarRadioAgendamento() {
+        if (!currentPalco) return;
+        const ref = (document.getElementById("radio_schedule_select") || {}).value || "";
+        if (!ref) { toast("Escolha um agendamento.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/agendamentos/" + encodeURIComponent(ref) + "/cancelar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast("Agendamento cancelado.", "ok");
+        await reloadRadioSchedules();
+      }
+      async function processarRadioAgendamentos() {
+        const res = await api("/equalizador/api/radio/agendamentos/processar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast(`Agendamentos: ${data.enviados || 0} enviados, ${data.adiados || 0} adiados, ${data.falhas || 0} falhas.`, data.falhas ? "warn" : "ok");
+        await reloadRadioSchedules();
+        await reloadRadioHistory();
+      }
+      async function salvarRadioQuiet() {
+        if (!currentPalco) return;
+        const payload = {
+          enabled: Boolean(document.getElementById("radio_quiet_enabled").checked),
+          start_hhmm: (document.getElementById("radio_quiet_start") || {}).value || "22:00",
+          end_hhmm: (document.getElementById("radio_quiet_end") || {}).value || "08:00",
+          timezone_name: (document.getElementById("radio_quiet_tz") || {}).value || "America/Sao_Paulo"
+        };
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/silencio", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders), body: JSON.stringify(payload) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderRadioQuiet(data.quiet || {});
+        toast("Janela de silêncio salva.", "ok");
+      }
+      async function executarRadioBroadcast() {
+        if (!currentPalco) return;
+        const texto = (document.getElementById("radio_texto") || {}).value || "";
+        const templateRef = (document.getElementById("radio_template_select") || {}).value || "";
+        if (!texto.trim() && !templateRef) { toast("Escreva texto ou escolha modelo antes do broadcast.", "warn"); return; }
+        const todos = Boolean(document.getElementById("radio_broadcast_todos").checked);
+        if (!todos && !confirm("Enviar broadcast somente para o grupo atual?")) return;
+        const payload = {
+          texto,
+          template_ref: templateRef,
+          todos,
+          sem_preview: Boolean(document.getElementById("radio_sem_preview").checked),
+          sem_notificacao: Boolean(document.getElementById("radio_sem_notificacao").checked),
+          fixar: Boolean(document.getElementById("radio_fixar").checked),
+          respeitar_silencio: Boolean(document.getElementById("radio_broadcast_respeitar_silencio").checked)
+        };
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/broadcast", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders), body: JSON.stringify(payload) });
+        const data = await res.json().catch(() => ({}));
+        const box = document.getElementById("radio_broadcast_resultado");
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        if (box) {
+          box.className = "list";
+          const rows = (data.resultados || []).map((row) => {
+            const item = document.createElement("div"); item.className = "item small";
+            item.textContent = `${row.status || "registrado"}${row.motivo ? " · " + row.motivo : ""}`;
+            return item;
+          });
+          box.replaceChildren(document.createTextNode(data.resumo || "Broadcast concluído."), ...rows);
+        }
+        toast(data.resumo || "Broadcast concluído.", (data.falhas || 0) ? "warn" : "ok");
+        await reloadRadioHistory();
+      }
+      async function reloadRadioTemplates() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/templates");
+        if (!res.ok) { renderRadioTemplates([]); return; }
+        const data = await res.json().catch(() => ({}));
+        renderRadioTemplates(data.templates || []);
+      }
+      async function reloadRadioHistory() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/historico");
+        if (!res.ok) { renderRadioHistory([]); return; }
+        const data = await res.json().catch(() => ({}));
+        renderRadioHistory(data.historico || []);
+      }
+      async function salvarRadioTemplate() {
+        if (!currentPalco) return;
+        const texto = (document.getElementById("radio_texto") || {}).value || "";
+        const nome = (document.getElementById("radio_template_nome") || {}).value || "";
+        if (!nome.trim()) { toast("Informe o nome do modelo.", "warn"); return; }
+        if (!texto.trim()) { toast("Escreva o texto do modelo.", "warn"); return; }
+        const payload = {
+          nome,
+          texto,
+          sem_preview: Boolean(document.getElementById("radio_sem_preview").checked),
+          sem_notificacao: Boolean(document.getElementById("radio_sem_notificacao").checked),
+          fixar: Boolean(document.getElementById("radio_fixar").checked)
+        };
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/templates", {
+          method: "POST",
+          headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }),
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast("Modelo salvo.", "ok");
+        await reloadRadioTemplates();
+      }
+      async function usarRadioTemplate() {
+        if (!currentPalco) return;
+        const ref = (document.getElementById("radio_template_select") || {}).value || "";
+        const row = ref ? radioTemplatesPorRef.get(ref) : null;
+        if (!ref || !row) { toast("Escolha um modelo.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/templates/" + encodeURIComponent(ref) + "/usar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast("Modelo convertido em rascunho.", "ok");
+        await reloadRadioDrafts();
+      }
+      async function apagarRadioTemplate() {
+        if (!currentPalco) return;
+        const ref = (document.getElementById("radio_template_select") || {}).value || "";
+        const row = ref ? radioTemplatesPorRef.get(ref) : null;
+        if (!ref || !row) { toast("Escolha um modelo.", "warn"); return; }
+        if (!confirm(`Apagar o modelo "${radioTemplateLabel(row)}"?`)) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/templates/" + encodeURIComponent(ref), { method: "DELETE", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast("Modelo apagado.", "ok");
+        await reloadRadioTemplates();
+      }
+
+      async function reloadRadioDrafts() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/rascunhos");
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) renderRadioDrafts(data.rascunhos || []);
+      }
+      async function criarRadioRascunho() {
+        if (!currentPalco) { toast("Escolha um grupo antes de criar rascunho.", "warn"); return; }
+        const texto = (document.getElementById("radio_texto") || {}).value || "";
+        const fileInput = document.getElementById("radio_media_input");
+        const file = fileInput && fileInput.files && fileInput.files.length ? fileInput.files[0] : null;
+        if (file && file.size > 8 * 1024 * 1024) { toast("Arquivo acima do limite seguro: 8 MB.", "bad"); return; }
+        if (!texto.trim() && !file) { toast("Escreva um texto ou anexe mídia.", "warn"); return; }
+        const payload = {
+          texto,
+          sem_preview: Boolean(document.getElementById("radio_sem_preview").checked),
+          sem_notificacao: Boolean(document.getElementById("radio_sem_notificacao").checked),
+          fixar: Boolean(document.getElementById("radio_fixar").checked)
+        };
+        if (file) {
+          payload.media_kind = inferRadioMediaKind(file);
+          payload.media_filename = file.name || "arquivo";
+          payload.media_mime = file.type || "application/octet-stream";
+          payload.media_base64 = await fileToDataUrl(file);
+        }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/rascunhos", {
+          method: "POST",
+          headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }),
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        const box = document.getElementById("radio_resultado");
+        if (box) box.textContent = "Rascunho criado: " + radioDraftLabel(data.rascunho || {});
+        toast("Rascunho criado para revisão.", "ok");
+        await reloadRadioDrafts();
+      }
+      async function publicarRadioRascunho() {
+        if (!currentPalco) return;
+        const ref = (document.getElementById("radio_draft_select") || {}).value || "";
+        const row = ref ? radioDraftsPorRef.get(ref) : null;
+        if (!ref || !row) { toast("Escolha um rascunho.", "warn"); return; }
+        if (row.status !== "draft") { toast("Somente rascunhos abertos podem ser publicados.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/rascunhos/" + encodeURIComponent(ref) + "/publicar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        if (data.fixacao && data.fixacao.ok === false) toast("Publicado, mas não fixado: " + (data.fixacao.motivo || "permissão insuficiente"), "warn");
+        else toast("Rascunho publicado.", "ok");
+        if (data.mensagem && data.mensagem.msg_ref) {
+          mensagensPorRef.set(data.mensagem.msg_ref, data.mensagem);
+        }
+        await loadPalcoData();
+        await reloadRadioHistory();
+      }
+      async function cancelarRadioRascunho() {
+        if (!currentPalco) return;
+        const ref = (document.getElementById("radio_draft_select") || {}).value || "";
+        const row = ref ? radioDraftsPorRef.get(ref) : null;
+        if (!ref || !row) { toast("Escolha um rascunho.", "warn"); return; }
+        if (row.status !== "draft") { toast("Somente rascunhos abertos podem ser cancelados.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/rascunhos/" + encodeURIComponent(ref) + "/cancelar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        toast("Rascunho cancelado.", "ok");
+        await reloadRadioDrafts();
+      }
+
       function fillConfigForm(formulario) {
         const data = formulario || {};
         const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value == null ? "" : String(value); };
@@ -1450,6 +2480,141 @@ _EQUALIZADOR_HTML = """<!doctype html>
         }
         toast("Raw Editor final gerado para conferência.", "ok");
       }
+      function renderRbacRuntime(data) {
+        const payload = data || {};
+        const rbac = payload.rbac_runtime || payload;
+        const operadores = Array.isArray(rbac.operadores) ? rbac.operadores : [];
+        const palcos = Array.isArray(rbac.palcos) ? rbac.palcos : [];
+        const canais = Array.isArray(rbac.canais) ? rbac.canais : [];
+        const grants = Array.isArray(rbac.concessoes) ? rbac.concessoes : [];
+        const usrSelect = document.getElementById("rbac_usr_ref");
+        if (usrSelect) {
+          usrSelect.replaceChildren(...(operadores.length ? operadores.map((row) => option(row.usr_ref || row.ui_ref, pessoaLabel(row, row.perfil || "Governante"))) : [option("", "Nenhum governante conhecido")]));
+        }
+        const grpSelect = document.getElementById("rbac_grp_ref");
+        if (grpSelect) {
+          grpSelect.replaceChildren(...(palcos.length ? palcos.map((row) => option(row.grp_ref, row.titulo || row.grp_ref)) : [option("*", "Todos os grupos autorizados")]));
+        }
+        const canalSelect = document.getElementById("rbac_canal_codigo");
+        if (canalSelect) {
+          canalSelect.replaceChildren(...(canais.length ? canais.map((row) => option(row.codigo, `${row.nome || row.codigo}${row.critico ? " · crítico" : ""}`)) : [option("", "Nenhum canal disponível")]));
+        }
+        const grantSelect = document.getElementById("rbac_grant_ref");
+        if (grantSelect) {
+          grantSelect.replaceChildren(...(grants.length ? grants.map((row) => option(row.grant_ref, `${pessoaLabel(row.operador || {}, "Governante")} · ${(row.palco || {}).titulo || "Grupo"} · ${(row.canal || {}).nome || "canal"}`)) : [option("", "Nenhuma concessão runtime ativa")]));
+        }
+        const resumo = document.getElementById("rbac_runtime_resumo");
+        const rr = rbac.resumo || {};
+        if (resumo) resumo.textContent = `${rr.ativas || grants.length || 0} concessão(ões) runtime ativa(s) · ${rr.canais_criticos || 0} crítica(s)`;
+        fillList("rbac_runtime_lista", grants, (row) => {
+          const operador = pessoaLabel(row.operador || {}, "Governante");
+          const palco = (row.palco || {}).titulo || "Grupo";
+          const canal = (row.canal || {}).nome || (row.canal || {}).codigo || "canal";
+          const critico = row.canal && row.canal.critico ? " · crítico" : "";
+          return itemText(`${operador} · ${palco}`, `${canal}${critico} · origem: runtime${row.motivo ? " · " + row.motivo : ""}`);
+        }, "Nenhuma concessão runtime ativa.");
+        const sessoes = payload.sessoes_persistentes || {};
+        const sessoesEl = document.getElementById("sessoes_persistentes");
+        if (sessoesEl) sessoesEl.textContent = `${sessoes.ativas || 0} sessão(ões) ativa(s) · ${sessoes.expiradas || 0} expirada(s) · ${sessoes.total || 0} total`;
+      }
+      async function concederRbacRuntime() {
+        if (!modoMaestroPermitido) { toast("Delegação restrita ao dono do código.", "warn"); return; }
+        const payload = {
+          usr_ref: (document.getElementById("rbac_usr_ref") || {}).value || "",
+          grp_ref: (document.getElementById("rbac_grp_ref") || {}).value || "*",
+          canal_codigo: (document.getElementById("rbac_canal_codigo") || {}).value || "",
+          motivo: (document.getElementById("rbac_motivo") || {}).value || "",
+        };
+        const res = await api("/equalizador/api/rbac/runtime", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}), body: JSON.stringify(payload) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderRbacRuntime({ rbac_runtime: data });
+        toast("Canal concedido em runtime.", "ok");
+        await loadConfiguracaoMaestro();
+      }
+      async function revogarRbacRuntime() {
+        if (!modoMaestroPermitido) { toast("Revogação restrita ao dono do código.", "warn"); return; }
+        const ref = (document.getElementById("rbac_grant_ref") || {}).value || "";
+        if (!ref) { toast("Escolha uma concessão runtime ativa.", "warn"); return; }
+        const res = await api("/equalizador/api/rbac/runtime/" + encodeURIComponent(ref), { method: "DELETE", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderRbacRuntime({ rbac_runtime: data });
+        toast("Concessão runtime revogada.", "ok");
+        await loadConfiguracaoMaestro();
+      }
+      async function limparSessoesExpiradas() {
+        if (!modoMaestroPermitido) { toast("Limpeza restrita ao dono do código.", "warn"); return; }
+        const res = await api("/equalizador/api/sessoes/limpar-expiradas", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderRbacRuntime(data);
+        toast(`Sessões expiradas removidas: ${data.removidas || 0}.`, "ok");
+      }
+      function renderSeguranca(data) {
+        const payload = data && data.seguranca_avancada ? data.seguranca_avancada : (data || {});
+        const modo = payload.modo || {};
+        const modoEl = document.getElementById("seguranca_modo_atual");
+        if (modoEl) modoEl.textContent = `Modo atual: ${modo.nome || modo.modo || "Normal"}${modo.motivo ? " · " + modo.motivo : ""}`;
+        const resumo = payload.resumo || {};
+        const resumoEl = document.getElementById("seguranca_resumo");
+        if (resumoEl) resumoEl.textContent = `${resumo.eventos_recentes || 0} evento(s) recente(s) · ${resumo.linhas_exportaveis || 0} linha(s) exportáveis · sha256 ${resumo.sha256 || "—"}`;
+        const diagnostico = payload.diagnostico || {};
+        const diagEl = document.getElementById("seguranca_diagnostico");
+        if (diagEl) diagEl.textContent = `Fontes auditáveis: ${(diagnostico.tabelas || []).join(", ") || "nenhuma fonte carregada"}`;
+        fillList("seguranca_auditoria", payload.auditoria || [], (row) => {
+          const meta = row.meta ? Object.entries(row.meta).map(([k, v]) => `${k}: ${v}`).join(" · ") : "";
+          return itemText(`${row.tipo || "evento"} · ${row.status || "status"}`, `${row.resumo || "Evento"} · ${row.created_at || ""}${meta ? " · " + meta : ""}`);
+        }, "Nenhum evento de segurança registrado.");
+      }
+      async function loadSeguranca() {
+        if (!modoMaestroPermitido) return;
+        const res = await api("/equalizador/api/seguranca", { headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderSeguranca(data);
+      }
+      async function alterarModoSeguranca(modo) {
+        if (!modoMaestroPermitido) { toast("Segurança restrita ao dono do código.", "warn"); return; }
+        const motivo = (document.getElementById("seguranca_motivo") || {}).value || "";
+        const res = await api("/equalizador/api/seguranca/modo", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}), body: JSON.stringify({ modo, motivo }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderSeguranca(data);
+        toast(`Modo de segurança: ${modo}.`, "ok");
+      }
+      async function exportarSeguranca(tipo) {
+        if (!modoMaestroPermitido) { toast("Exportação restrita ao dono do código.", "warn"); return; }
+        let res;
+        if (tipo === "criptografado") {
+          const senha = (document.getElementById("seguranca_senha_export") || {}).value || "";
+          res = await api("/equalizador/api/seguranca/auditoria/exportar-criptografada", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}), body: JSON.stringify({ senha }) });
+        } else {
+          res = await api("/equalizador/api/seguranca/auditoria/exportar?tipo=" + encodeURIComponent(tipo), { headers: apiHeaders });
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        const out = document.getElementById("seguranca_export_result");
+        if (out) out.value = JSON.stringify(data.exportacao || data, null, 2);
+        toast("Exportação de segurança gerada.", "ok");
+      }
+      async function limparAuditoriaSeguranca() {
+        if (!modoMaestroPermitido) { toast("Limpeza restrita ao dono do código.", "warn"); return; }
+        const dias = Number((document.getElementById("seguranca_limpar_dias") || {}).value || 180);
+        const res = await api("/equalizador/api/seguranca/auditoria/limpar", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}), body: JSON.stringify({ dias }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderSeguranca(data);
+        toast(`Auditoria antiga removida: ${data.removidas || 0}.`, "ok");
+      }
+      async function limparLocksSeguranca() {
+        if (!modoMaestroPermitido) { toast("Locks restritos ao dono do código.", "warn"); return; }
+        const res = await api("/equalizador/api/seguranca/locks/limpar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        renderSeguranca(data);
+        toast("Locks e rate-limit em memória foram limpos.", "ok");
+      }
       async function loadConfiguracaoMaestro() {
         if (!modoMaestroPermitido) return;
         const res = await api("/equalizador/api/configuracao");
@@ -1461,8 +2626,15 @@ _EQUALIZADOR_HTML = """<!doctype html>
         fillList("config_palcos_ocultos", data.palcos_ocultos || [], (row) => itemText(row.titulo || "Grupo oculto", `${row.estado || "oculto"} · ${row.grp_ref || ""}`), "Nenhum grupo antigo fora da variável ativa.");
         fillList("config_operadores", data.operadores || [], (row) => {
           const canais = (row.canais || []).map((canal) => canal.nome || canal.codigo).join(", ") || "sem canais";
-          return itemText(`${row.perfil || "Operador"} · ${pessoaLabel(row, row.perfil || "Operador")}`, canais);
+          return itemText(`Participante com permissão · ${row.perfil || "Operador"} · ${pessoaLabel(row, row.perfil || "Operador")}`, `canais concedidos: ${canais}`);
         }, "Nenhum operador configurado.");
+        const gov = data.governanca || {};
+        const govResumo = (gov && gov.resumo) || {};
+        const govResumoEl = document.getElementById("config_governantes_resumo");
+        if (govResumoEl) govResumoEl.textContent = `${govResumo.governantes || 0} governante(s) · ${govResumo.palcos || 0} grupo(s) · ${govResumo.janelas_ativas || 0} janela(s) ativa(s)`;
+        renderGovernanca("config_governantes", gov, { onlyActive: true });
+        renderRbacRuntime(data);
+        renderSeguranca(data);
         const matriz = data.matriz_permissoes || {};
         const resumo = matriz.resumo || {};
         const resumoEl = document.getElementById("config_matriz_resumo");
@@ -1473,7 +2645,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
             const concedidos = (palco.canais || []).filter((canal) => canal.concedido).map((canal) => canal.nome || canal.codigo);
             const negadosCriticos = (palco.canais || []).filter((canal) => canal.critico && !canal.concedido).length;
             matrizRows.push({
-              titulo: `${operador.perfil || "Operador"} · ${pessoaLabel(operador, operador.perfil || "Operador")} · ${palco.titulo || "Grupo"}`,
+              titulo: `Participante com permissão · ${operador.perfil || "Operador"} · ${pessoaLabel(operador, operador.perfil || "Operador")} · ${palco.titulo || "Grupo"}`,
               detalhe: `${concedidos.length ? concedidos.join(", ") : "sem canais concedidos"}${negadosCriticos ? ` · ${negadosCriticos} críticos bloqueados` : ""}`,
             });
           });
@@ -1482,12 +2654,14 @@ _EQUALIZADOR_HTML = """<!doctype html>
       }
 
       async function loadPalcoData() {
-        if (!currentPalco) return;
+        if (!currentPalco || carregandoPalco) return;
+        carregandoPalco = true;
         direitosDisponiveis = new Set();
         ultimoAfinacao = null;
         afinacaoLoaded = false;
+        try {
         const base = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref);
-        const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes] = await Promise.all([
+        const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes, governantesRes, radioRes, radioTemplatesRes, radioHistoryRes, radioSchedulesRes, radioQuietRes, ddxRes, reacoesRes, novosRes] = await Promise.all([
           api(base + "/afinacao").then((r) => r.ok ? r.json() : null).catch(() => null),
           api(base + "/mensagens").then((r) => r.ok ? r.json() : { mensagens: [] }).catch(() => ({ mensagens: [] })),
           api(base + "/alvos").then((r) => r.ok ? r.json() : { alvos: [] }).catch(() => ({ alvos: [] })),
@@ -1497,8 +2671,26 @@ _EQUALIZADOR_HTML = """<!doctype html>
           api(base + "/entradas").then((r) => r.ok ? r.json() : { entradas: [] }).catch(() => ({ entradas: [] })),
           api(base + "/convites").then((r) => r.ok ? r.json() : { convites: [] }).catch(() => ({ convites: [] })),
           api(base + "/topicos").then((r) => r.ok ? r.json() : { topicos: [] }).catch(() => ({ topicos: [] })),
-          api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] }).catch(() => ({ remetentes: [] }))
+          api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] }).catch(() => ({ remetentes: [] })),
+          api(base + "/governantes").then((r) => r.ok ? r.json() : { governantes: [] }).catch(() => ({ governantes: [] })),
+          api(base + "/radio/rascunhos").then((r) => r.ok ? r.json() : { rascunhos: [] }).catch(() => ({ rascunhos: [] })),
+          api(base + "/radio/templates").then((r) => r.ok ? r.json() : { templates: [] }).catch(() => ({ templates: [] })),
+          api(base + "/radio/historico").then((r) => r.ok ? r.json() : { historico: [] }).catch(() => ({ historico: [] })),
+          api(base + "/radio/agendamentos").then((r) => r.ok ? r.json() : { agendamentos: [] }).catch(() => ({ agendamentos: [] })),
+          api(base + "/radio/silencio").then((r) => r.ok ? r.json() : { quiet: {} }).catch(() => ({ quiet: {} })),
+          api(base + "/ddx").then((r) => r.ok ? r.json() : { filtros: [], eventos: [], pendentes: [] }).catch(() => ({ filtros: [], eventos: [], pendentes: [] })),
+          api(base + "/reacoes/auditoria").then((r) => r.ok ? r.json() : { eventos: [], recentes: [], resumo: {} }).catch(() => ({ eventos: [], recentes: [], resumo: {} })),
+          api(base + "/novos-membros").then((r) => r.ok ? r.json() : { eventos: [], recentes: [], resumo: {} }).catch(() => ({ eventos: [], recentes: [], resumo: {} }))
         ]);
+        renderGovernanca("governantes_palco", governantesRes, { palcoRef: currentPalco && currentPalco.grp_ref, onlyActive: true });
+        renderRadioDrafts((radioRes && radioRes.rascunhos) || []);
+        renderRadioTemplates((radioTemplatesRes && radioTemplatesRes.templates) || []);
+        renderRadioHistory((radioHistoryRes && radioHistoryRes.historico) || []);
+        renderRadioSchedules((radioSchedulesRes && radioSchedulesRes.agendamentos) || []);
+        renderRadioQuiet((radioQuietRes && radioQuietRes.quiet) || {});
+        renderDDX(ddxRes || { filtros: [], eventos: [], pendentes: [] });
+        renderReacoes(reacoesRes || { eventos: [], recentes: [], resumo: {} });
+        renderNovosMembros(novosRes || { eventos: [], recentes: [], resumo: {} });
         renderPainelDinamico(painelRes);
         if (afinacaoRes && Array.isArray(afinacaoRes.canais)) {
           ultimoAfinacao = afinacaoRes;
@@ -1600,6 +2792,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         }) : [document.createTextNode(modoMaestroPermitido ? "Nenhuma distribuição disponível." : "Distribuição restrita ao administrador principal.")]));
         if (modoMaestroPermitido) loadConfiguracaoMaestro().catch(() => null);
         updateButtons();
+        } finally { carregandoPalco = false; }
       }
       async function resolveMensagemManual() {
         if (!currentPalco) { toast("Escolha um grupo antes de resolver mensagem.", "warn"); return; }
@@ -1728,14 +2921,18 @@ _EQUALIZADOR_HTML = """<!doctype html>
           return { sender_ref: sender };
         }
         if (action === "reacoes.mensagem.limpar" || action === "reacoes.recentes.limpar") {
-          const msg = document.getElementById("mensagem_select").value;
-          const alvo = document.getElementById("alvo_select").value;
+          const msg = (document.getElementById("mensagem_select") || {}).value || "";
+          const alvo = (document.getElementById("alvo_select") || {}).value || "";
           const sender = (document.getElementById("sender_select") || {}).value || "";
+          const reactorRef = (document.getElementById("reactor_select") || {}).value || "";
+          const reactor = reactorRef ? reacoesRecentesPorRef.get(reactorRef) : null;
           const base = {};
           if (action === "reacoes.mensagem.limpar") { if (!msg) throw new Error("Escolha uma mensagem registrada."); base.msg_ref = msg; }
-          if (alvo) base.alvo_ref = alvo;
+          if (reactor && reactor.actor_kind === "sender_chat") base.sender_ref = reactor.actor_ref;
+          else if (reactor && reactor.actor_ref) base.alvo_ref = reactor.actor_ref;
+          else if (alvo) base.alvo_ref = alvo;
           else if (sender) base.sender_ref = sender;
-          else throw new Error("Escolha um membro ou canal remetente.");
+          else throw new Error("Escolha um membro, canal remetente ou reactor recente.");
           return base;
         }
         if (action === "membros.tag.definir") {
@@ -1802,7 +2999,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
           const detail = detailPublico(data.detail || data);
           if (box) { box.textContent = detail; box.className = "empty small bad"; }
           toast(detail, "bad");
-          await loadPalcoData();
+          updateButtons();
           // Compatibilidade de teste legado: await loadPalcoData(); return;
           return;
         }
@@ -1830,8 +3027,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
           const detail = detailPublico(data.detail || data);
           statusMesa("Ajuste não concluído: " + detail, "bad");
           toast(detail, "bad");
-          await loadPalcoData();
-          // Compatibilidade de teste legado: await loadPalcoData(); return;
+          updateButtons();
           return;
         }
         if (data.convite && typeof data.convite === "string") {
@@ -1864,6 +3060,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
       document.getElementById("convite_select").addEventListener("change", () => { updateConviteSelecionado(); updateButtons(); });
       document.getElementById("topico_select").addEventListener("change", () => { updateTopicoSelecionado(); updateButtons(); });
       document.getElementById("sender_select").addEventListener("change", updateButtons);
+      document.getElementById("reactor_select").addEventListener("change", updateButtons);
       document.getElementById("resolver_mensagem").addEventListener("click", resolveMensagemManual);
       document.getElementById("resolver_alvo").addEventListener("click", resolveAlvoManual);
       document.getElementById("copiar_convite").addEventListener("click", async () => {
@@ -1898,6 +3095,43 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const text = document.getElementById("mensagem_envio_texto").value || "";
         document.getElementById("mensagem_envio_contador").textContent = `${text.length}/4096 caracteres`;
       });
+      document.getElementById("radio_texto").addEventListener("input", () => {
+        const text = document.getElementById("radio_texto").value || "";
+        const mediaInput = document.getElementById("radio_media_input");
+        const hasMedia = mediaInput && mediaInput.files && mediaInput.files.length;
+        const max = hasMedia ? 1024 : 4096;
+        document.getElementById("radio_contador").textContent = `${text.length}/${max} caracteres`;
+      });
+      document.getElementById("radio_media_input").addEventListener("change", () => {
+        const text = document.getElementById("radio_texto").value || "";
+        const file = document.getElementById("radio_media_input").files[0];
+        const max = file ? 1024 : 4096;
+        document.getElementById("radio_contador").textContent = `${text.length}/${max} caracteres`;
+        if (file && file.size > 8 * 1024 * 1024) toast("Arquivo acima do limite seguro: 8 MB.", "bad");
+      });
+      document.getElementById("radio_draft_select").addEventListener("change", updateRadioPreview);
+      document.getElementById("radio_criar_rascunho").addEventListener("click", criarRadioRascunho);
+      document.getElementById("radio_publicar").addEventListener("click", publicarRadioRascunho);
+      document.getElementById("radio_cancelar").addEventListener("click", cancelarRadioRascunho);
+      document.getElementById("radio_template_salvar").addEventListener("click", salvarRadioTemplate);
+      document.getElementById("radio_template_usar").addEventListener("click", usarRadioTemplate);
+      document.getElementById("radio_template_apagar").addEventListener("click", apagarRadioTemplate);
+      document.getElementById("radio_schedule_criar").addEventListener("click", criarRadioAgendamento);
+      document.getElementById("radio_schedule_cancelar").addEventListener("click", cancelarRadioAgendamento);
+      document.getElementById("radio_schedules_processar").addEventListener("click", processarRadioAgendamentos);
+      document.getElementById("radio_quiet_salvar").addEventListener("click", salvarRadioQuiet);
+      document.getElementById("radio_broadcast_enviar").addEventListener("click", executarRadioBroadcast);
+      document.getElementById("ddx_hard_salvar").addEventListener("click", () => salvarDDX("hard"));
+      document.getElementById("ddx_soft_salvar").addEventListener("click", () => salvarDDX("soft"));
+      document.getElementById("ddx_cancelar_agendado").addEventListener("click", cancelarDDXAgendado);
+      document.getElementById("reacoes_atualizar").addEventListener("click", reloadReacoes);
+      document.getElementById("reacoes_silenciar_reactor").addEventListener("click", silenciarReactor);
+      document.getElementById("novos_atualizar").addEventListener("click", reloadNovosMembros);
+      document.getElementById("novos_evento_select").addEventListener("change", () => renderNovosMembros({ eventos: novosEventosRows, recentes: novosRecentesRows, resumo: {} }));
+      document.getElementById("novos_apagar").addEventListener("click", () => acaoNovoMembro("apagar"));
+      document.getElementById("novos_silenciar").addEventListener("click", () => acaoNovoMembro("silenciar"));
+      document.getElementById("novos_banir").addEventListener("click", () => acaoNovoMembro("banir"));
+      document.getElementById("novos_ignorar").addEventListener("click", () => acaoNovoMembro("ignorar"));
       document.querySelectorAll("button.action[data-action]").forEach((button) => button.addEventListener("click", () => runAction(button.dataset.action)));
       document.getElementById("exportar_historico").addEventListener("click", async () => {
         if (!modoMaestroPermitido) { toast("Exportação restrita ao administrador principal.", "warn"); return; }
@@ -1913,6 +3147,17 @@ _EQUALIZADOR_HTML = """<!doctype html>
       document.getElementById("atualizar_configuracao").addEventListener("click", () => loadConfiguracaoMaestro());
       document.getElementById("gerar_config_raw").addEventListener("click", () => gerarConfigRaw());
       document.getElementById("resetar_config_form").addEventListener("click", () => loadConfiguracaoMaestro());
+      document.getElementById("rbac_conceder").addEventListener("click", () => concederRbacRuntime());
+      document.getElementById("rbac_revogar").addEventListener("click", () => revogarRbacRuntime());
+      document.getElementById("sessoes_limpar").addEventListener("click", () => limparSessoesExpiradas());
+      document.getElementById("seguranca_modo_normal").addEventListener("click", () => alterarModoSeguranca("normal"));
+      document.getElementById("seguranca_modo_alerta").addEventListener("click", () => alterarModoSeguranca("alerta"));
+      document.getElementById("seguranca_modo_restrito").addEventListener("click", () => alterarModoSeguranca("restrito"));
+      document.getElementById("seguranca_exportar_jsonl").addEventListener("click", () => exportarSeguranca("jsonl"));
+      document.getElementById("seguranca_exportar_assinado").addEventListener("click", () => exportarSeguranca("assinado"));
+      document.getElementById("seguranca_exportar_criptografado").addEventListener("click", () => exportarSeguranca("criptografado"));
+      document.getElementById("seguranca_limpar_auditoria").addEventListener("click", () => limparAuditoriaSeguranca());
+      document.getElementById("seguranca_limpar_locks").addEventListener("click", () => limparLocksSeguranca());
       document.getElementById("copiar_config_raw").addEventListener("click", async () => {
         const value = document.getElementById("config_raw").value || "";
         if (!value) return;
@@ -2016,7 +3261,7 @@ def _public_operator_payload(identity: TelegramWebAppIdentity) -> dict[str, obje
         perfil=perfil,
         alias_secret=settings.equalizador_alias_secret(),
     )
-    canais = canal_codes_for_operator(
+    canais = canal_codes_for_operator_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2128,7 +3373,7 @@ async def _bot_public_summary() -> dict[str, object]:
     }
 
 def _has_canal_for_palco(identity: TelegramWebAppIdentity, *, palco_id: int, canal_codigo: str) -> bool:
-    return canal_is_allowed(
+    return canal_is_allowed_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_id=palco_id,
@@ -2140,10 +3385,22 @@ def _has_canal_for_palco(identity: TelegramWebAppIdentity, *, palco_id: int, can
 def _require_canal_for_palco(identity: TelegramWebAppIdentity, *, palco_id: int, canal_codigo: str) -> None:
     if not _has_canal_for_palco(identity, palco_id=palco_id, canal_codigo=canal_codigo):
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    read_only_codes = {"palco.ver", "palco.status", "historico.ver", "convites.ver", "entradas.ver", "novos.ver", "reacoes.auditoria", "seguranca.ver"}
+    if str(canal_codigo) not in read_only_codes:
+        try:
+            assert_security_action_allowed(is_maestro=_is_maestro(identity), action_code=canal_codigo)
+        except PermissionError as exc:
+            raise HTTPException(status_code=423, detail=str(exc)) from exc
 
 
 def _require_any_canal_for_palco(identity: TelegramWebAppIdentity, *, palco_id: int, canal_codigos: tuple[str, ...]) -> None:
     if not any(_has_canal_for_palco(identity, palco_id=palco_id, canal_codigo=canal_codigo) for canal_codigo in canal_codigos):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+
+
+def _require_canal_for_any_palco(identity: TelegramWebAppIdentity, *, canal_codigo: str) -> None:
+    palco_ids = settings.equalizador_allowed_palco_ids()
+    if not any(_has_canal_for_palco(identity, palco_id=int(palco_id), canal_codigo=canal_codigo) for palco_id in palco_ids):
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
 
 
@@ -2156,6 +3413,26 @@ def _operator_ref(identity: TelegramWebAppIdentity) -> str:
         alias_secret=settings.equalizador_alias_secret(),
     )
     return str(operador["ui_ref"])
+
+
+def _broadcast_palcos_for_identity(identity: TelegramWebAppIdentity, *, base_palco: dict[str, object], todos: bool) -> list[dict[str, object]]:
+    if not todos:
+        _require_canal_for_palco(identity, palco_id=int(base_palco["telegram_chat_id"]), canal_codigo="radio.broadcast")
+        return [base_palco]
+    allowed_ids = filter_palco_ids_by_canal_effective(
+        raw_canais=settings.equalizador_canais_raw(),
+        user_id=identity.user_id,
+        chat_ids=settings.equalizador_allowed_palco_ids(),
+        canal_codigo="radio.broadcast",
+        is_maestro=_is_maestro(identity),
+    )
+    rows_publicas = list_equalizador_palcos(palco_ids=allowed_ids, alias_secret=settings.equalizador_alias_secret())
+    palcos: list[dict[str, object]] = []
+    for row in rows_publicas:
+        internal = get_palco_internal_by_ref(grp_ref=str(row.get("grp_ref") or ""))
+        if internal:
+            palcos.append(internal)
+    return palcos
 
 
 async def _read_json_payload(request: Request) -> dict[str, object]:
@@ -2184,8 +3461,8 @@ async def _execute_action_endpoint(
         raise HTTPException(status_code=404, detail="Ajuste indisponível.")
     _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
     payload = await _read_json_payload(request)
-    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
-        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
+    # Compatibilidade de teste legado: if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
+    # Compatibilidade de teste legado: canal_codigo="fixados.criar"
     ator_ref = _operator_ref(identity)
     palco_ref = str(palco["ui_ref"])
     try:
@@ -2379,7 +3656,7 @@ async def equalizador_bot_foto(authorization: str | None = Header(default=None))
 @router.get("/api/palcos")
 async def equalizador_palcos(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palcos_visiveis = filter_palco_ids_by_canal(
+    palcos_visiveis = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2397,7 +3674,7 @@ async def equalizador_palcos(authorization: str | None = Header(default=None)) -
 @router.get("/api/canais")
 def equalizador_canais(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal(
+    palco_ids = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2416,7 +3693,7 @@ def equalizador_canais(authorization: str | None = Header(default=None)) -> dict
             {
                 "grp_ref": palco["grp_ref"],
                 "titulo": palco["titulo"],
-                "canais": canais_for_palco(
+                "canais": canais_for_palco_effective(
                     raw_canais=settings.equalizador_canais_raw(),
                     user_id=identity.user_id,
                     chat_id=int(internal["telegram_chat_id"]),
@@ -2613,7 +3890,7 @@ async def equalizador_resolver_alvo(
 @router.get("/api/historico")
 def equalizador_historico(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal(
+    palco_ids = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2630,7 +3907,7 @@ def equalizador_historico(authorization: str | None = Header(default=None)) -> d
 @router.get("/api/historico/exportar")
 def equalizador_historico_exportar(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal(
+    palco_ids = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2647,7 +3924,7 @@ def equalizador_historico_exportar(authorization: str | None = Header(default=No
 @router.get("/api/configuracao")
 def equalizador_configuracao(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal(
+    palco_ids = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2660,7 +3937,571 @@ def equalizador_configuracao(authorization: str | None = Header(default=None)) -
         "configuracao": True,
         **configuracao_maestro_publica(alias_secret=settings.equalizador_alias_secret()),
         "matriz_permissoes": matriz_permissoes_publica(alias_secret=settings.equalizador_alias_secret()),
+        "governanca": governantes_publicos(alias_secret=settings.equalizador_alias_secret()),
+        "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret()),
+        "sessoes_persistentes": session_store_status(now_ts=int(__import__("time").time())),
+        "seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret()),
     }
+
+
+@router.get("/api/rbac/runtime")
+def equalizador_rbac_runtime(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    return rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret())
+
+
+@router.post("/api/rbac/runtime")
+async def equalizador_rbac_runtime_grant(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    payload = await request.json()
+    try:
+        grant = grant_runtime_canal(
+            usr_ref=str(payload.get("usr_ref") or ""),
+            grp_ref=str(payload.get("grp_ref") or "*"),
+            canal_codigo=str(payload.get("canal_codigo") or ""),
+            motivo=str(payload.get("motivo") or ""),
+            granted_by_ref=_operator_ref(identity),
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Concessão inválida ou alvo indisponível.") from exc
+    return {"ok": True, "concessao": grant, **list_runtime_grants_public(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.delete("/api/rbac/runtime/{grant_ref}")
+def equalizador_rbac_runtime_revoke(grant_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    ok = revoke_runtime_canal(grant_ref=grant_ref, revoked_by_ref=_operator_ref(identity))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Concessão indisponível.")
+    return {"ok": True, **list_runtime_grants_public(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.post("/api/sessoes/limpar-expiradas")
+def equalizador_limpar_sessoes_expiradas(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    import time
+
+    removidas = cleanup_expired_sessions(now_ts=int(time.time()))
+    return {"ok": True, "removidas": removidas, "sessoes_persistentes": session_store_status(now_ts=int(time.time()))}
+
+
+@router.get("/api/seguranca")
+def equalizador_seguranca(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    _require_canal_for_any_palco(identity, canal_codigo="seguranca.ver")
+    return {"seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.post("/api/seguranca/modo")
+async def equalizador_seguranca_modo(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    _require_canal_for_any_palco(identity, canal_codigo="seguranca.modo")
+    payload = await _read_json_payload(request)
+    try:
+        modo = set_security_mode(
+            modo=str(payload.get("modo") or ""),
+            motivo=str(payload.get("motivo") or ""),
+            ator_ref=_operator_ref(identity),
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Modo de segurança inválido.") from exc
+    return {"ok": True, "modo": modo, "seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.get("/api/seguranca/auditoria/exportar")
+def equalizador_seguranca_exportar(tipo: str = "jsonl", authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    _require_canal_for_any_palco(identity, canal_codigo="seguranca.exportar")
+    exportacao = export_security_jsonl(alias_secret=settings.equalizador_alias_secret())
+    if str(tipo or "").strip().lower() == "jsonl":
+        # JSONL simples para conferência e cópia.
+        exportacao = {k: v for k, v in exportacao.items() if k != "assinatura_hmac_sha256"}
+    record_security_audit(
+        tipo="exportacao_auditoria",
+        area="seguranca",
+        ator_ref=_operator_ref(identity),
+        status="ok",
+        resumo_publico="Auditoria de segurança exportada.",
+        meta={"tipo": tipo, "linhas": exportacao.get("linhas")},
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+    return {"ok": True, "exportacao": exportacao}
+
+
+@router.post("/api/seguranca/auditoria/exportar-criptografada")
+async def equalizador_seguranca_exportar_criptografada(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    _require_canal_for_any_palco(identity, canal_codigo="seguranca.exportar")
+    payload = await _read_json_payload(request)
+    try:
+        exportacao = export_security_encrypted(password=str(payload.get("senha") or ""), alias_secret=settings.equalizador_alias_secret())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Senha precisa ter pelo menos 8 caracteres.") from exc
+    record_security_audit(
+        tipo="exportacao_criptografada",
+        area="seguranca",
+        ator_ref=_operator_ref(identity),
+        status="ok",
+        resumo_publico="Auditoria criptografada gerada.",
+        meta={"linhas": exportacao.get("linhas")},
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+    return {"ok": True, "exportacao": exportacao}
+
+
+@router.post("/api/seguranca/auditoria/limpar")
+async def equalizador_seguranca_limpar_auditoria(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    _require_canal_for_any_palco(identity, canal_codigo="seguranca.limpar")
+    payload = await _read_json_payload(request)
+    removidas = cleanup_security_audit(older_than_days=int(payload.get("dias") or 180))
+    record_security_audit(
+        tipo="limpeza_auditoria",
+        area="seguranca",
+        ator_ref=_operator_ref(identity),
+        status="ok",
+        resumo_publico="Auditoria antiga removida.",
+        meta={"removidas": removidas, "dias": payload.get("dias") or 180},
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+    return {"ok": True, "removidas": removidas, "seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.post("/api/seguranca/locks/limpar")
+def equalizador_seguranca_limpar_locks(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    _require_canal_for_any_palco(identity, canal_codigo="seguranca.sessoes")
+    reset_equalizador_locks()
+    reset_equalizador_rate_limits()
+    record_security_audit(
+        tipo="limpeza_locks",
+        area="seguranca",
+        ator_ref=_operator_ref(identity),
+        status="ok",
+        resumo_publico="Locks e rate-limit em memória foram limpos.",
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+    return {"ok": True, "seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.get("/api/palcos/{grp_ref}/governantes")
+def equalizador_palco_governantes(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("palco.status", "palco.ver"))
+    return governantes_publicos(alias_secret=settings.equalizador_alias_secret(), grp_ref=grp_ref)
+
+
+@router.get("/api/palcos/{grp_ref}/ddx")
+def equalizador_ddx_status(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="palco.ver")
+    return list_ddx_publico(palco=palco, alias_secret=settings.equalizador_alias_secret())
+
+
+@router.post("/api/palcos/{grp_ref}/ddx")
+async def equalizador_ddx_salvar(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    payload = await _read_json_payload(request)
+    mode_raw = str(payload.get("modo") or payload.get("mode") or "hard").strip().lower()
+    mode = "soft" if mode_raw in {"soft", "temporario", "temporário", "10min", "10_min"} else "hard"
+    canal = "ddx.temporario" if mode == "soft" else "ddx.imediato"
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=canal)
+    ator_ref = _operator_ref(identity)
+    try:
+        filtro = salvar_ddx_config(
+            palco=palco,
+            ator_ref=ator_ref,
+            mode=mode,
+            words=payload.get("palavras") or payload.get("words") or "",
+            enabled=bool(payload.get("enabled") is True),
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+        log_equalizador_event("EQUALIZADOR_DDX_CONFIG_OK", ator_ref=ator_ref, palco_ref=str(palco["ui_ref"]), ajuste=canal)
+        return {"ok": True, "filtro": filtro, "resumo": "Filtro DDX salvo."}
+    except DDXError as exc:
+        log_equalizador_event("EQUALIZADOR_DDX_CONFIG_FAIL", ator_ref=ator_ref, palco_ref=str(palco["ui_ref"]), ajuste=canal)
+        raise HTTPException(status_code=409, detail=ddx_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/ddx/agendados/{scheduled_ref}/cancelar")
+async def equalizador_ddx_cancelar(
+    grp_ref: str,
+    scheduled_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="ddx.temporario")
+    ator_ref = _operator_ref(identity)
+    try:
+        result = cancelar_ddx_agendado(palco=palco, scheduled_ref=scheduled_ref, ator_ref=ator_ref)
+        log_equalizador_event("EQUALIZADOR_DDX_CANCEL_OK", ator_ref=ator_ref, palco_ref=str(palco["ui_ref"]), ajuste="ddx.temporario")
+        return result
+    except DDXNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ddx_error_public_detail(exc)) from exc
+    except DDXError as exc:
+        raise HTTPException(status_code=409, detail=ddx_error_public_detail(exc)) from exc
+
+
+@router.get("/api/palcos/{grp_ref}/radio/rascunhos")
+def equalizador_radio_rascunhos(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("mensagens.enviar", "palco.status", "palco.ver"))
+    return {"rascunhos": list_radio_drafts_publicos(palco_ref=str(palco["ui_ref"]))}
+
+
+@router.get("/api/palcos/{grp_ref}/radio/templates")
+def equalizador_radio_templates(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("mensagens.enviar", "palco.status", "palco.ver"))
+    return {"templates": list_radio_templates_publicos(palco_ref=str(palco["ui_ref"]))}
+
+
+@router.post("/api/palcos/{grp_ref}/radio/templates")
+async def equalizador_radio_template_criar(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    payload = await _read_json_payload(request)
+    ator_ref = _operator_ref(identity)
+    try:
+        template = criar_template_radio(
+            palco=palco,
+            ator_ref=ator_ref,
+            payload=payload,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+        log_equalizador_event("EQUALIZADOR_RADIO_TEMPLATE_OK", ator_ref=ator_ref, palco_ref=str(palco["ui_ref"]))
+        return {"ok": True, "template": template}
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/radio/templates/{template_ref}/usar")
+def equalizador_radio_template_usar(
+    grp_ref: str,
+    template_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    ator_ref = _operator_ref(identity)
+    try:
+        rascunho = criar_rascunho_de_template_radio(
+            palco=palco,
+            ator_ref=ator_ref,
+            template_ref=template_ref,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+        return {"ok": True, "rascunho": rascunho}
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.delete("/api/palcos/{grp_ref}/radio/templates/{template_ref}")
+def equalizador_radio_template_apagar(
+    grp_ref: str,
+    template_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    ator_ref = _operator_ref(identity)
+    try:
+        return apagar_template_radio(
+            palco=palco,
+            ator_ref=ator_ref,
+            template_ref=template_ref,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.get("/api/palcos/{grp_ref}/radio/historico")
+def equalizador_radio_historico(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("mensagens.enviar", "palco.status", "palco.ver"))
+    return {"historico": list_radio_history_publico(palco_ref=str(palco["ui_ref"]))}
+
+
+
+
+@router.get("/api/palcos/{grp_ref}/radio/agendamentos")
+def equalizador_radio_agendamentos(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("radio.agendar", "mensagens.enviar", "palco.status", "palco.ver"))
+    return {"agendamentos": list_radio_schedules_publicos(palco_ref=str(palco["ui_ref"]))}
+
+
+@router.post("/api/palcos/{grp_ref}/radio/agendamentos")
+async def equalizador_radio_agendamento_criar(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="radio.agendar")
+    payload = await _read_json_payload(request)
+    if bool(payload.get("fixar", False)):
+        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
+    ator_ref = _operator_ref(identity)
+    try:
+        agendamento = criar_radio_schedule(palco=palco, ator_ref=ator_ref, payload=payload, alias_secret=settings.equalizador_alias_secret())
+        return {"ok": True, "agendamento": agendamento}
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/radio/agendamentos/{schedule_ref}/cancelar")
+def equalizador_radio_agendamento_cancelar(
+    grp_ref: str,
+    schedule_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="radio.agendar")
+    ator_ref = _operator_ref(identity)
+    try:
+        return cancelar_radio_schedule(palco=palco, ator_ref=ator_ref, schedule_ref=schedule_ref, alias_secret=settings.equalizador_alias_secret())
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.post("/api/radio/agendamentos/processar")
+async def equalizador_radio_agendamentos_processar(
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Processamento restrito ao administrador principal.")
+    try:
+        return await run_due_radio_schedules(bot_token=settings.TELEGRAM_BOT_TOKEN, alias_secret=settings.equalizador_alias_secret())
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.get("/api/palcos/{grp_ref}/radio/silencio")
+def equalizador_radio_silencio(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("radio.quiet", "radio.agendar", "mensagens.enviar", "palco.status", "palco.ver"))
+    return {"quiet": get_radio_quiet_policy_publico(palco_ref=str(palco["ui_ref"]))}
+
+
+@router.post("/api/palcos/{grp_ref}/radio/silencio")
+async def equalizador_radio_silencio_salvar(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="radio.quiet")
+    payload = await _read_json_payload(request)
+    ator_ref = _operator_ref(identity)
+    try:
+        return salvar_radio_quiet_policy(palco=palco, ator_ref=ator_ref, payload=payload, alias_secret=settings.equalizador_alias_secret())
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/radio/broadcast")
+async def equalizador_radio_broadcast(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    payload = await _read_json_payload(request)
+    todos = bool(payload.get("todos", False))
+    palcos = _broadcast_palcos_for_identity(identity, base_palco=palco, todos=todos)
+    if bool(payload.get("fixar", False)):
+        for item in palcos:
+            _require_canal_for_palco(identity, palco_id=int(item["telegram_chat_id"]), canal_codigo="fixados.criar")
+    ator_ref = _operator_ref(identity)
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:radio.broadcast"):
+            return await executar_radio_broadcast(palcos=palcos, ator_ref=ator_ref, payload=payload, bot_token=settings.TELEGRAM_BOT_TOKEN, alias_secret=settings.equalizador_alias_secret())
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except (RadioError, MesaError) as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/radio/rascunhos")
+async def equalizador_radio_rascunho_criar(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    payload = await _read_json_payload(request)
+    if bool(payload.get("fixar", False)):
+        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
+    ator_ref = _operator_ref(identity)
+    try:
+        rascunho = criar_rascunho_radio(
+            palco=palco,
+            ator_ref=ator_ref,
+            payload=payload,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+        log_equalizador_event("EQUALIZADOR_RADIO_DRAFT_OK", ator_ref=ator_ref, palco_ref=str(palco["ui_ref"]))
+        return {"ok": True, "rascunho": rascunho}
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/radio/rascunhos/{draft_ref}/publicar")
+async def equalizador_radio_rascunho_publicar(
+    grp_ref: str,
+    draft_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    ator_ref = _operator_ref(identity)
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:radio.publicar"):
+            result = await publicar_rascunho_radio(
+                palco=palco,
+                ator_ref=ator_ref,
+                draft_ref=draft_ref,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+            )
+        log_equalizador_event("EQUALIZADOR_RADIO_PUBLICAR_OK", ator_ref=ator_ref, palco_ref=str(palco["ui_ref"]))
+        return result
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except (RadioError, MesaError) as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/radio/rascunhos/{draft_ref}/cancelar")
+def equalizador_radio_rascunho_cancelar(
+    grp_ref: str,
+    draft_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    ator_ref = _operator_ref(identity)
+    try:
+        return cancelar_rascunho_radio(
+            palco=palco,
+            ator_ref=ator_ref,
+            draft_ref=draft_ref,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+    except RadioError as exc:
+        raise HTTPException(status_code=409, detail=radio_error_public_detail(exc)) from exc
 
 
 @router.post("/api/configuracao/raw-preview")
@@ -2669,7 +4510,7 @@ async def equalizador_configuracao_raw_preview(
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal(
+    palco_ids = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2685,7 +4526,7 @@ async def equalizador_configuracao_raw_preview(
 @router.get("/api/permissoes/matriz")
 def equalizador_permissoes_matriz(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal(
+    palco_ids = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2700,7 +4541,7 @@ def equalizador_permissoes_matriz(authorization: str | None = Header(default=Non
 @router.get("/api/canais/distribuicao")
 def equalizador_canais_distribuicao(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal(
+    palco_ids = filter_palco_ids_by_canal_effective(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
         chat_ids=settings.equalizador_allowed_palco_ids(),
@@ -2906,8 +4747,6 @@ async def _execute_avancado_endpoint(*, grp_ref: str, ajuste: str, request: Requ
         raise HTTPException(status_code=404, detail="Ajuste indisponível.")
     _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
     payload = await _read_json_payload(request)
-    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
-        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
     ator_ref = _operator_ref(identity)
     palco_ref = str(palco["ui_ref"])
     try:
@@ -2931,8 +4770,6 @@ async def _execute_admin_endpoint(*, grp_ref: str, ajuste: str, request: Request
         raise HTTPException(status_code=404, detail="Ajuste indisponível.")
     _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
     payload = await _read_json_payload(request)
-    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
-        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
     ator_ref = _operator_ref(identity)
     palco_ref = str(palco["ui_ref"])
     try:
@@ -3077,6 +4914,157 @@ async def equalizador_convites_criar(
 
 
 
+
+
+@router.get("/api/palcos/{grp_ref}/novos-membros")
+def equalizador_novos_membros_status(grp_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(
+        identity,
+        palco_id=int(palco["telegram_chat_id"]),
+        canal_codigos=("novos.ver", "novos.apagar", "novos.silenciar", "novos.banir", "novos.ignorar", "palco.ver"),
+    )
+    return list_novos_membros_publicos(palco=palco)
+
+
+async def _execute_novo_membro_endpoint(
+    *,
+    grp_ref: str,
+    event_ref: str,
+    acao: str,
+    request: Request | None,
+    authorization: str | None,
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    canal = {
+        "apagar": "novos.apagar",
+        "silenciar": "novos.silenciar",
+        "banir": "novos.banir",
+        "ignorar": "novos.ignorar",
+    }.get(acao)
+    if not canal:
+        raise HTTPException(status_code=404, detail="Ação indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=canal)
+    payload = await _read_json_payload(request) if request is not None else {}
+    ator_ref = _operator_ref(identity)
+    try:
+        event = get_new_member_event(palco=palco, event_ref=event_ref)
+        async with mesa_operation_lock(f"{palco['ui_ref']}:novos:{acao}:{event_ref}"):
+            if acao == "ignorar":
+                result = marcar_new_member_event(palco=palco, event_ref=event_ref, status="ignored")
+                log_equalizador_event("EQUALIZADOR_NOVOS_IGNORADO", ator_ref=ator_ref, palco_ref=str(palco["ui_ref"]), ajuste=canal)
+                return {**result, "resumo": "Alerta ignorado."}
+            if acao == "apagar":
+                msg_ref = str(event.get("msg_ref") or "")
+                if not msg_ref.startswith("msg_"):
+                    raise NovosMembrosNotFoundError("mensagem_indisponivel")
+                result = await executar_ajuste(
+                    ajuste="mensagens.apagar",
+                    palco=palco,
+                    ator_ref=ator_ref,
+                    payload={"msg_ref": msg_ref},
+                    bot_token=settings.TELEGRAM_BOT_TOKEN,
+                    alias_secret=settings.equalizador_alias_secret(),
+                )
+                marcar_new_member_event(palco=palco, event_ref=event_ref, status="deleted")
+                return {**result, "resumo": "Mensagem do novo membro apagada."}
+            alvo_ref = str(event.get("alvo_ref") or "")
+            if not alvo_ref.startswith("usr_"):
+                raise NovosMembrosNotFoundError("membro_indisponivel")
+            if acao == "silenciar":
+                result = await executar_ajuste(
+                    ajuste="membros.silenciar",
+                    palco=palco,
+                    ator_ref=ator_ref,
+                    payload={"alvo_ref": alvo_ref, "duracao_segundos": int(payload.get("duracao_segundos") or 3600)},
+                    bot_token=settings.TELEGRAM_BOT_TOKEN,
+                    alias_secret=settings.equalizador_alias_secret(),
+                )
+                marcar_new_member_event(palco=palco, event_ref=event_ref, status="muted")
+                return {**result, "resumo": "Novo membro silenciado."}
+            if acao == "banir":
+                result = await executar_ajuste(
+                    ajuste="membros.remover",
+                    palco=palco,
+                    ator_ref=ator_ref,
+                    payload={"alvo_ref": alvo_ref, "revogar_mensagens": True},
+                    bot_token=settings.TELEGRAM_BOT_TOKEN,
+                    alias_secret=settings.equalizador_alias_secret(),
+                )
+                marcar_new_member_event(palco=palco, event_ref=event_ref, status="banned")
+                return {**result, "resumo": "Novo membro removido."}
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except NovosMembrosNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=novos_membros_error_public_detail(exc)) from exc
+    except (NovosMembrosError, MesaError) as exc:
+        raise HTTPException(status_code=409, detail=novos_membros_error_public_detail(exc) if isinstance(exc, NovosMembrosError) else mesa_error_public_detail(exc)) from exc
+    raise HTTPException(status_code=409, detail="Ação de novo membro não concluída.")
+
+
+@router.post("/api/palcos/{grp_ref}/novos-membros/{event_ref}/apagar")
+async def equalizador_novos_membros_apagar(grp_ref: str, event_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_novo_membro_endpoint(grp_ref=grp_ref, event_ref=event_ref, acao="apagar", request=request, authorization=authorization)
+
+
+@router.post("/api/palcos/{grp_ref}/novos-membros/{event_ref}/silenciar")
+async def equalizador_novos_membros_silenciar(grp_ref: str, event_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_novo_membro_endpoint(grp_ref=grp_ref, event_ref=event_ref, acao="silenciar", request=request, authorization=authorization)
+
+
+@router.post("/api/palcos/{grp_ref}/novos-membros/{event_ref}/banir")
+async def equalizador_novos_membros_banir(grp_ref: str, event_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_novo_membro_endpoint(grp_ref=grp_ref, event_ref=event_ref, acao="banir", request=request, authorization=authorization)
+
+
+@router.post("/api/palcos/{grp_ref}/novos-membros/{event_ref}/ignorar")
+async def equalizador_novos_membros_ignorar(grp_ref: str, event_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_novo_membro_endpoint(grp_ref=grp_ref, event_ref=event_ref, acao="ignorar", request=request, authorization=authorization)
+
+
+@router.get("/api/palcos/{grp_ref}/reacoes/auditoria")
+def equalizador_reacoes_auditoria(grp_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_any_canal_for_palco(
+        identity,
+        palco_id=int(palco["telegram_chat_id"]),
+        canal_codigos=("reacoes.auditoria", "reacoes.limpar", "reacoes.recentes.limpar", "reacoes.reactor.silenciar"),
+    )
+    return list_reacoes_publicas(palco=palco)
+
+@router.post("/api/palcos/{grp_ref}/reacoes/reactor/silenciar")
+async def equalizador_reacoes_reactor_silenciar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="reacoes.reactor.silenciar")
+    payload = await _read_json_payload(request)
+    ator_ref = _operator_ref(identity)
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:reacoes.reactor.silenciar"):
+            return await silenciar_reactor(
+                palco=palco,
+                ator_ref=ator_ref,
+                payload=payload,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+                db_engine=default_engine,
+            )
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except (ReacoesError, MesaError) as exc:
+        raise HTTPException(status_code=409, detail=reacoes_error_public_detail(exc)) from exc
+
 @router.post("/api/palcos/{grp_ref}/reacoes/mensagem/limpar")
 async def equalizador_reacoes_mensagem_limpar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
     return await _execute_avancado_endpoint(grp_ref=grp_ref, ajuste="reacoes.mensagem.limpar", request=request, authorization=authorization)
@@ -3118,8 +5106,6 @@ async def equalizador_grupo_foto(grp_ref: str, request: Request, authorization: 
         raise HTTPException(status_code=404, detail="Ajuste indisponível.")
     _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
     payload = await _read_json_payload(request)
-    if ajuste == "mensagens.enviar" and bool(payload.get("fixar", False)):
-        _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="fixados.criar")
     ator_ref = _operator_ref(identity)
     palco_ref = str(palco["ui_ref"])
     try:

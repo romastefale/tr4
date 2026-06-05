@@ -167,3 +167,8 @@ Esta etapa fecha o pacote das fases 54.1 a 54.7 para aplicação em GitHub/Railw
 Para preservar tokens Spotify/Last.fm e sessões musicais existentes, use o SQLite persistente antigo no volume. O caminho recomendado é `TR3_DATABASE_URL=sqlite:////app/data/app.db`. Se o banco real antigo tiver outro nome, a variável deve apontar exatamente para esse arquivo, sem criar banco novo.
 
 Guia operacional: `docs/FASE54_8_CONSOLIDACAO_RAILWAY.md`.
+
+
+## Fase 55.7 — Reações, auditoria e reactors
+
+Adiciona janela Reações no Equalizador, auditoria sanitizada de `message_reaction`, seleção de reactors recentes e silêncio de reactor em modo conservador, sem expor ID real na interface.

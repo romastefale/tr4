@@ -43,6 +43,13 @@ _CANAL_RULES: tuple[dict[str, object], ...] = (
         "nome": "Enviar mensagens",
         "direitos": (),
     },
+    {"codigo": "radio.agendar", "nome": "Agendar Radio", "direitos": ()},
+    {"codigo": "radio.quiet", "nome": "Silêncio operacional do Radio", "direitos": (), "critico": True},
+    {"codigo": "radio.broadcast", "nome": "Broadcast multi-grupo", "direitos": (), "critico": True},
+    {"codigo": "ddx.imediato", "nome": "DDX imediato", "direitos": ("can_delete_messages",)},
+    {"codigo": "ddx.temporario", "nome": "DDX 10 minutos", "direitos": ("can_delete_messages",)},
+    {"codigo": "reacoes.auditoria", "nome": "Auditoria de reações", "direitos": ()},
+    {"codigo": "reacoes.reactor.silenciar", "nome": "Silenciar reactor", "direitos": ("can_restrict_members",)},
     {
         "codigo": "mensagens.apagar",
         "nome": "Apagar mensagens",

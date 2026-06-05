@@ -114,6 +114,12 @@ def create_equalizador_session(
     expires_at = issued_at + int(ttl_seconds)
     token = secrets.token_urlsafe(32)
     _sessions[token] = EqualizadorSession(token=token, identity=identity, issued_at=issued_at, expires_at=expires_at)
+    try:
+        from app.equalizador.session_store import save_session
+
+        save_session(token=token, identity=identity, issued_at=issued_at, expires_at=expires_at)
+    except Exception:
+        logger.debug("equalizador_session_store_save_failed", exc_info=True)
     return {
         "token": token,
         "expira_em": _iso_from_ts(expires_at),
@@ -128,9 +134,25 @@ def validate_equalizador_session(token: str, *, now: float | None = None) -> Tel
     session = _sessions.get(value)
     current = int(_now_ts(now))
     if not session:
-        raise EqualizadorSessionError("session_not_found")
+        try:
+            from app.equalizador.session_store import load_session
+
+            loaded = load_session(value)
+        except Exception:
+            loaded = None
+        if not loaded:
+            raise EqualizadorSessionError("session_not_found")
+        identity, issued_at, expires_at = loaded
+        session = EqualizadorSession(token=value, identity=identity, issued_at=issued_at, expires_at=expires_at)
+        _sessions[value] = session
     if session.expires_at <= current:
         _sessions.pop(value, None)
+        try:
+            from app.equalizador.session_store import delete_session
+
+            delete_session(value)
+        except Exception:
+            logger.debug("equalizador_session_store_delete_failed", exc_info=True)
         raise EqualizadorSessionError("session_expired")
     return session.identity
 
