@@ -2006,7 +2006,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         return rows.find((row) => row.modo === mode) || { palavras: [], enabled: false, total_palavras: 0 };
       }
       function ddxWordsText(words) {
-        return (Array.isArray(words) ? words : []).join("\n");
+        return (Array.isArray(words) ? words : []).join("\\n");
       }
       function ddxPendingLabel(row) {
         if (!row) return "Agendamento";
