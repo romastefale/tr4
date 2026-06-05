@@ -39,7 +39,7 @@ from app.equalizador.mesa import (
 )
 from app.equalizador.entradas import register_join_request_from_update
 from app.equalizador.avancado import register_sender_chat_ref, register_topic_ref
-from app.equalizador.identity import make_ui_ref
+from app.equalizador.identity import make_ui_ref, public_tme_url
 from app.equalizador.maestro import (
     MaestroError,
     executar_modo_silencio,
@@ -132,7 +132,10 @@ def _user_mention(message: Message) -> str:
     if not message.from_user:
         return "Usuário"
     display_name = html.escape(message.from_user.full_name or "Usuário")
-    return f'<a href="tg://user?id={message.from_user.id}">{display_name}</a>'
+    contato_url = public_tme_url(getattr(message.from_user, "username", None))
+    if contato_url:
+        return f'<a href="{html.escape(contato_url, quote=True)}">{display_name}</a>'
+    return display_name
 
 
 # Negrito unicode (Mathematical Bold) pro nome de exibição no /tly. Telegram
@@ -288,7 +291,7 @@ async def _resolve_play_button_count(user_id: int, track_id: str, artist: str | 
 
 
 async def build_playing_payload_for_user(
-    user_id: int, display_name_raw: str, track: dict
+    user_id: int, display_name_raw: str, track: dict, username: str | None = None
 ) -> tuple[str, str, str | None, None, str] | None:
     """Variante que aceita user_id/display_name explícitos.
 
@@ -317,7 +320,7 @@ async def build_playing_payload_for_user(
     liked = await likes_service.is_track_liked(user_id, track_id, owner_user_id=user_id)
 
     display_name = html.escape(display_name_raw or "Usuário")
-    user_link = f"tg://user?id={user_id}"
+    user_link = public_tme_url(username)
     track_name, artist, track_url, cover = _track_label(track)
     track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
     # Sprint 8: caption agora mostra "♫ N · track — artist" onde N é o
@@ -328,8 +331,9 @@ async def build_playing_payload_for_user(
     # preservar compatibilidade com `register_play` (side effect) e o
     # ♥ user_total_likes da linha 1 (legacy, dados históricos).
     _ = (total_likes, liked)  # mantém vars pra clareza/grep
+    user_part = f'<a href="{html.escape(user_link, quote=True)}">{display_name}</a>' if user_link else display_name
     caption = (
-        f"<b><a href=\"{html.escape(user_link)}\">{display_name}</a></b> · ♥ <code>{user_total_likes}</code>\n\n"
+        f"<b>{user_part}</b> · ♥ <code>{user_total_likes}</code>\n\n"
         f"♫ <code>{total_plays}</code> · <b>{track_part}</b> — <i>{artist}</i>"
     )
     # Sprint 10: emoji vai pro 5º slot do tuple — callers usam pra
@@ -353,6 +357,7 @@ async def build_playing_payload(
         message.from_user.id,
         message.from_user.full_name or "Usuário",
         track,
+        message.from_user.username,
     )
 
 
@@ -783,14 +788,14 @@ def _register_handlers(dp: Dispatcher) -> None:
             "<b>Mesa oculta</b>\n"
             "Uso somente no privado e somente Maestro.\n\n"
             "<code>/mesa_msg &lt;link_da_mensagem&gt;</code>\n"
-            "<code>/mesa_alvo &lt;palco&gt; &lt;id_ou_username&gt;</code>\n"
+            "<code>/mesa_alvo &lt;grupo&gt; &lt;username_ou_alvo_ref&gt;</code>\n"
             "<code>/mesa_apagar &lt;palco&gt; &lt;link_ou_msg_ref&gt;</code>\n"
             "<code>/mesa_fixar &lt;palco&gt; &lt;link_ou_msg_ref&gt;</code>\n"
             "<code>/mesa_desfixar &lt;palco&gt; &lt;link_ou_msg_ref&gt;</code>\n"
-            "<code>/mesa_silenciar &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt; [minutos]</code>\n"
-            "<code>/mesa_liberar &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt;</code>\n"
-            "<code>/mesa_remover &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt;</code>\n"
-            "<code>/mesa_reintegrar &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt;</code>\n"
+            "<code>/mesa_silenciar &lt;palco&gt; &lt;username_ou_alvo_ref&gt; [minutos]</code>\n"
+            "<code>/mesa_liberar &lt;palco&gt; &lt;username_ou_alvo_ref&gt;</code>\n"
+            "<code>/mesa_remover &lt;palco&gt; &lt;username_ou_alvo_ref&gt;</code>\n"
+            "<code>/mesa_reintegrar &lt;palco&gt; &lt;username_ou_alvo_ref&gt;</code>\n"
             "<code>/mesa_convite &lt;palco&gt; [nome]</code>\n"
             "<code>/mesa_tx &lt;palco&gt; CONFIRMAR AJUSTE | texto</code>\n"
             "<code>/mesa_silencio &lt;palco&gt; CONFIRMAR AJUSTE</code>\n"
@@ -830,7 +835,7 @@ def _register_handlers(dp: Dispatcher) -> None:
             return
         parts = (message.text or "").split(maxsplit=2)
         if len(parts) < 3:
-            await message.answer("Uso: /mesa_alvo <palco> <id_ou_username>")
+            await message.answer("Uso: /mesa_alvo <grupo> <username_ou_alvo_ref>")
             return
         chat_id = _hidden_palco_id(parts[1])
         if chat_id is None:
@@ -859,21 +864,21 @@ def _register_handlers(dp: Dispatcher) -> None:
         await _hidden_member_action_command(
             message,
             "membros.silenciar",
-            "Uso: /mesa_silenciar <palco> <id_ou_username_ou_alvo_ref> [minutos]",
+            "Uso: /mesa_silenciar <grupo> <username_ou_alvo_ref> [minutos]",
             allow_duration=True,
         )
 
     @dp.message(Command("mesa_liberar"))
     async def equalizador_hidden_liberar(message: Message) -> None:
-        await _hidden_member_action_command(message, "membros.liberar", "Uso: /mesa_liberar <palco> <id_ou_username_ou_alvo_ref>")
+        await _hidden_member_action_command(message, "membros.liberar", "Uso: /mesa_liberar <grupo> <username_ou_alvo_ref>")
 
     @dp.message(Command("mesa_remover"))
     async def equalizador_hidden_remover(message: Message) -> None:
-        await _hidden_member_action_command(message, "membros.remover", "Uso: /mesa_remover <palco> <id_ou_username_ou_alvo_ref>")
+        await _hidden_member_action_command(message, "membros.remover", "Uso: /mesa_remover <grupo> <username_ou_alvo_ref>")
 
     @dp.message(Command("mesa_reintegrar"))
     async def equalizador_hidden_reintegrar(message: Message) -> None:
-        await _hidden_member_action_command(message, "membros.reintegrar", "Uso: /mesa_reintegrar <palco> <id_ou_username_ou_alvo_ref>")
+        await _hidden_member_action_command(message, "membros.reintegrar", "Uso: /mesa_reintegrar <grupo> <username_ou_alvo_ref>")
 
     @dp.message(Command("mesa_convite"))
     async def equalizador_hidden_convite(message: Message) -> None:

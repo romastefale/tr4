@@ -36,9 +36,9 @@ TR4_EQUALIZADOR_SESSION_TTL_SECONDS=900
 TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE=30
 ```
 
-As APIs `/equalizador/api/me`, `/equalizador/api/palcos`, `/equalizador/api/canais` e `/equalizador/api/palcos/{grp_ref}/afinacao` exigem `Authorization: tma <Telegram.WebApp.initData>` ou sessão curta `Authorization: eqs <token>`. A sessão curta é opaca, expira por `TR4_EQUALIZADOR_SESSION_TTL_SECONDS` e não contém ID Telegram codificado., validam assinatura e `auth_date` no backend, conferem allowlist por variável e aplicam `TR4_EQUALIZADOR_CANAIS` em negação por padrão. A resposta retorna apenas aliases públicos, nomes, perfis, canais concedidos, títulos de palcos e diagnóstico de direitos reais do bot. IDs numéricos e `@username` permanecem internos.
+As APIs `/equalizador/api/me`, `/equalizador/api/palcos`, `/equalizador/api/canais` e `/equalizador/api/palcos/{grp_ref}/afinacao` exigem `Authorization: tma <Telegram.WebApp.initData>` ou sessão curta `Authorization: eqs <token>`. A sessão curta é opaca, expira por `TR4_EQUALIZADOR_SESSION_TTL_SECONDS` e não contém ID Telegram codificado. As rotas validam assinatura e `auth_date` no backend, conferem allowlist por variável e aplicam `TR4_EQUALIZADOR_CANAIS` em negação por padrão. A resposta retorna aliases públicos, nomes públicos, `@username` público quando existir, link `https://t.me/<username>` quando aplicável, perfis, canais concedidos, títulos de grupos e diagnóstico de direitos reais do bot. IDs numéricos continuam internos; a interface não usa link interno por ID do Telegram.
 
-A rota de afinação exige o canal crítico `palco.afinar` e chama a Bot API em modo leitura (`getMe` e `getChatMember`) para verificar se o bot está como administrador no palco e quais direitos estão disponíveis.
+A rota de permissões do bot exige o canal crítico `grupo.afinar` e chama a Bot API em modo leitura (`getMe` e `getChatMember`) para verificar se o bot está como administrador no grupo e quais direitos estão disponíveis.
 
 Na fase 5 entram ajustes leves por API, sempre com `Authorization: tma <Telegram.WebApp.initData>`, canal concedido, `grp_ref`, `msg_ref` ou `alvo_ref`. A interface pública não aceita `user_id`, `chat_id` nem `message_id`. Esses identificadores são resolvidos apenas no backend a partir das tabelas internas `eq_mensagens` e `eq_alvos`.
 
@@ -58,7 +58,7 @@ GET  /equalizador/api/historico
 
 Cada ajuste valida o direito real do bot antes da chamada Bot API e registra `eq_historico` com resumo público sanitizado. O payload técnico fica oculto da API comum.
 
-Na fase 6 entram ações críticas restritas ao Maestro, com confirmação explícita `CONFIRMAR AJUSTE`. Elas continuam usando aliases públicos e histórico sanitizado. `TR4_EQUALIZADOR_CANAIS` permanece como fonte de concessão; a interface não edita variáveis de ambiente.
+Na fase 6 entram ações críticas restritas ao administrador principal, com confirmação explícita `CONFIRMAR AJUSTE`. Elas continuam usando aliases públicos e histórico sanitizado. `TR4_EQUALIZADOR_CANAIS` permanece como fonte de concessão; a interface não edita variáveis de ambiente.
 
 Rotas críticas da fase 6:
 
@@ -69,9 +69,9 @@ GET  /equalizador/api/historico/exportar
 GET  /equalizador/api/canais/distribuicao
 ```
 
-`silencio.ativar` usa `setChatPermissions` para restringir permissões padrão de não administradores no palco. `transmissao.enviar` usa `sendMessage` e registra a mensagem enviada como `msg_ref` quando a Bot API retorna `message_id`. A exportação de histórico retorna somente dados públicos; `payload_tecnico_json` não é exposto. A distribuição de canais mostra aliases (`usr_ref`, `grp_ref`) e escopos musicais, nunca IDs numéricos.
+`silencio.ativar` usa `setChatPermissions` para restringir permissões padrão de não administradores no grupo. `transmissao.enviar` usa `sendMessage` e registra a mensagem enviada como `msg_ref` quando a Bot API retorna `message_id`. A exportação de histórico retorna somente dados públicos; `payload_tecnico_json` não é exposto. A distribuição de canais mostra aliases (`usr_ref`, `grp_ref`) e escopos musicais, nunca IDs numéricos.
 
-Na fase 7 entram os reforços de hardening: rate limit por operador (`TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE`), sessão curta opaca, trava de mesa para impedir ações concorrentes sobre o mesmo palco/ajuste, logs operacionais sanitizados e estado do Equalizador em `/readyz`. Logs do Equalizador usam aliases como `usr_...` e `grp_...`; payloads, IDs numéricos, `message_id` e `@username` não são enviados aos logs públicos.
+Na fase 7 entram os reforços de hardening: rate limit por operador (`TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE`), sessão curta opaca, trava de mesa para impedir ações concorrentes sobre o mesmo grupo/ajuste, logs operacionais sanitizados e estado do Equalizador em `/readyz`. Logs do Equalizador usam aliases como `usr_...` e `grp_...`; payloads, IDs numéricos e `message_id` não são enviados aos logs públicos; `@username` público pode aparecer na interface quando já conhecido, com link t.me.
 
 
 ## Validação
@@ -93,16 +93,16 @@ Set `TR3_DATABASE_URL=sqlite:////app/data/app.db` when possible. If an older Pos
 Formato de `TR4_EQUALIZADOR_CANAIS`:
 
 ```text
-telegram_user_id:telegram_chat_id:canal1,canal2;telegram_user_id:*:palco.ver,canais.ver
+telegram_user_id:telegram_chat_id:canal1,canal2;telegram_user_id:*:grupo.ver,canais.ver
 ```
 
-Curingas são permitidos com `*`. Exemplo para Maestro com todos os canais em todos os palcos configurados:
+Curingas são permitidos com `*`. Exemplo para Administrador principal com todos os canais em todos os grupos configurados:
 
 ```text
 8505890439:*:*
 ```
 
-Sem `TR4_EQUALIZADOR_CANAIS`, o padrão é negar canais. `TR4_EQUALIZADOR_MAESTRO_IDS` e `TR4_EQUALIZADOR_OPERADOR_IDS` identificam quem pode entrar; os canais definem o que cada pessoa pode ver ou usar. Canais críticos continuam restritos ao Maestro mesmo quando um operador recebe `*`.
+Sem `TR4_EQUALIZADOR_CANAIS`, o padrão é negar canais. `TR4_EQUALIZADOR_MAESTRO_IDS` e `TR4_EQUALIZADOR_OPERADOR_IDS` identificam quem pode entrar; os canais definem o que cada pessoa pode ver ou usar. Canais críticos continuam restritos ao administrador principal mesmo quando um operador recebe `*`.
 
 
 ## Release operacional do Equalizador
@@ -128,23 +128,31 @@ Depois reinicie/redeploie o serviço. O router `/equalizador` deixa de ser regis
 
 ### Equalizador — Etapa 27
 
-O Modo Maestro passou a depender da Afinação também na interface: `silencio.ativar` exige `can_restrict_members` e `transmissao.enviar` exige `can_manage_chat` antes de habilitar os botões. Erros críticos agora retornam mensagens públicas específicas e sanitizadas, e a exportação de histórico informa total de registros sem expor payload técnico.
+O Administração crítica passou a depender das permissões do bot também na interface: `silencio.ativar` exige `can_restrict_members` e `transmissao.enviar` exige `can_manage_chat` antes de habilitar os botões. Erros críticos agora retornam mensagens públicas específicas e sanitizadas, e a exportação de histórico informa total de registros sem expor payload técnico.
 
 ### Equalizador — Etapa 29
 
-A interface do Equalizador recebeu polimento final para uso mobile: status da Mesa, estados vazios para mensagens e membros, nomes públicos de canais na distribuição, resumo visual de Afinação, mensagens de erro sanitizadas no frontend e bloqueio operacional mais explícito quando a Afinação não está carregada. Esta etapa não adiciona novos poderes; apenas melhora usabilidade, clareza e segurança visual.
+A interface do Equalizador recebeu polimento final para uso mobile: status da Mesa, estados vazios para mensagens e membros, nomes públicos de canais na distribuição, resumo visual de Permissões do bot, mensagens de erro sanitizadas no frontend e bloqueio operacional mais explícito quando a Permissões do bot não está carregada. Esta etapa não adiciona novos poderes; apenas melhora usabilidade, clareza e segurança visual.
 
-### Etapa 42 — Configuração amigável do Maestro
+### Etapa 42 — Configuração amigável do Administrador principal
 
-Esta etapa adiciona um assistente visual de configuração dentro do Equalizador. O Maestro passa a revisar e montar a configuração por campos, sem editar Raw Editor durante o uso normal.
+Esta etapa adiciona um assistente visual de configuração dentro do Equalizador. O Administrador principal passa a revisar e montar a configuração por campos, sem editar Raw Editor durante o uso normal.
 
-O app continua sem alterar variáveis do Railway diretamente. Ao final, o Maestro gera um bloco Raw Editor para copiar e aplicar manualmente, preservando rollback e evitando duplicidade de chaves.
+O app continua sem alterar variáveis do Railway diretamente. Ao final, o Administrador principal gera um bloco Raw Editor para copiar e aplicar manualmente, preservando rollback e evitando duplicidade de chaves.
 
 Inclui:
 
-- campos para Mini App, status ligado/desligado, Maestros, Operadores, Palcos ativos e rate limit;
+- campos para Mini App, status ligado/desligado, Administrador principals, Operadores, Grupos ativos e rate limit;
 - campo de aliases por linha no formato `nome=-100...`;
 - campo de canais por operador;
-- endpoint `POST /equalizador/api/configuracao/raw-preview` restrito ao Maestro;
+- endpoint `POST /equalizador/api/configuracao/raw-preview` restrito ao administrador principal;
 - geração de Raw Editor somente no final;
-- avisos quando houver palco sem alias ou alias fora da lista ativa.
+- avisos quando houver grupo sem alias ou alias fora da lista ativa.
+
+### Fase 52 — Consolidar app corrigido
+
+Esta fase consolida a auditoria visual: operador, administradores, bots, membros, pedidos de entrada, canais remetentes, distribuição, histórico e seletores passam a priorizar nome público e `@username` público quando conhecido. Quando há username válido, a interface usa `https://t.me/<username>`; quando não há, exibe apenas o nome público. A interface não usa link interno por ID do Telegram para contato.
+
+Os botões foram classificados por finalidade sem depender só de cor: verde para criar/aprovar/liberar, azul para organizar/editar/fixar/reabrir, laranja para atenção/configuração/transmissão e vermelho para apagar/remover/banir/rebaixar/recusar. O texto do botão permanece explícito.
+
+A foto do bot e a foto do grupo agora usam fallback visual e cache de indisponibilidade, evitando repetição de chamadas quando a Bot API ou o grupo não disponibiliza foto pública.

@@ -7,7 +7,7 @@ import httpx
 
 from app.db.database import engine as default_engine
 from app.equalizador.afinacao import canais_from_bot_rights, get_palco_internal_by_ref, public_rights_from_member
-from app.equalizador.identity import make_ui_ref
+from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
 from app.equalizador.palcos import ensure_equalizador_tables
 
 
@@ -19,7 +19,7 @@ TelegramApiCallable = Callable[[str, str, dict[str, Any] | None], Awaitable[Any]
 
 
 RIGHT_LABELS: dict[str, str] = {
-    "can_manage_chat": "Gerenciar palco",
+    "can_manage_chat": "Gerenciar grupo",
     "can_delete_messages": "Apagar mensagens",
     "can_restrict_members": "Restringir/remover membros",
     "can_invite_users": "Convidar e aprovar entrada",
@@ -49,8 +49,8 @@ ACTION_CATALOG: tuple[dict[str, object], ...] = (
     {"codigo": "convites.exportar_primario", "nome": "Exportar link primário", "categoria": "Entradas", "direitos": ("can_invite_users",)},
     {"codigo": "entradas.aprovar", "nome": "Aprovar pedido de entrada", "categoria": "Entradas", "direitos": ("can_invite_users",)},
     {"codigo": "entradas.recusar", "nome": "Recusar pedido de entrada", "categoria": "Entradas", "direitos": ("can_invite_users",)},
-    {"codigo": "grupo.titulo", "nome": "Alterar título do palco", "categoria": "Palco", "direitos": ("can_change_info",), "critico": True},
-    {"codigo": "grupo.descricao", "nome": "Alterar descrição do palco", "categoria": "Palco", "direitos": ("can_change_info",), "critico": True},
+    {"codigo": "grupo.titulo", "nome": "Alterar título do grupo", "categoria": "Grupo", "direitos": ("can_change_info",), "critico": True},
+    {"codigo": "grupo.descricao", "nome": "Alterar descrição do grupo", "categoria": "Grupo", "direitos": ("can_change_info",), "critico": True},
     {"codigo": "topicos.criar", "nome": "Criar tópico", "categoria": "Tópicos", "direitos": ("can_manage_topics",)},
     {"codigo": "topicos.editar", "nome": "Editar tópico", "categoria": "Tópicos", "direitos": ("can_manage_topics",)},
     {"codigo": "topicos.apagar", "nome": "Apagar tópico", "categoria": "Tópicos", "direitos": ("can_delete_messages",)},
@@ -61,9 +61,9 @@ ACTION_CATALOG: tuple[dict[str, object], ...] = (
     {"codigo": "canais_remetentes.banir", "nome": "Banir canal remetente", "categoria": "Canais remetentes", "direitos": ("can_restrict_members",)},
     {"codigo": "canais_remetentes.liberar", "nome": "Liberar canal remetente", "categoria": "Canais remetentes", "direitos": ("can_restrict_members",)},
     {"codigo": "membros.tag.definir", "nome": "Definir tag de membro", "categoria": "Membros", "direitos": ("can_manage_tags",)},
-    {"codigo": "silencio.ativar", "nome": "Ativar modo silêncio", "categoria": "Maestro", "direitos": ("can_restrict_members",), "critico": True},
-    {"codigo": "silencio.desativar", "nome": "Desativar modo silêncio", "categoria": "Maestro", "direitos": ("can_restrict_members",), "critico": True},
-    {"codigo": "transmissao.enviar", "nome": "Enviar transmissão", "categoria": "Maestro", "direitos": ("can_manage_chat",), "critico": True},
+    {"codigo": "silencio.ativar", "nome": "Ativar modo silêncio", "categoria": "Administração crítica", "direitos": ("can_restrict_members",), "critico": True},
+    {"codigo": "silencio.desativar", "nome": "Desativar modo silêncio", "categoria": "Administração crítica", "direitos": ("can_restrict_members",), "critico": True},
+    {"codigo": "transmissao.enviar", "nome": "Enviar transmissão", "categoria": "Administração crítica", "direitos": ("can_manage_chat",), "critico": True},
     {"codigo": "admins.promover", "nome": "Promover administrador", "categoria": "Administração", "direitos": ("can_promote_members",), "critico": True},
     {"codigo": "admins.rebaixar", "nome": "Rebaixar administrador", "categoria": "Administração", "direitos": ("can_promote_members",), "critico": True},
     {"codigo": "admins.titulo", "nome": "Título personalizado de admin", "categoria": "Administração", "direitos": ("can_promote_members",), "critico": True},
@@ -105,12 +105,12 @@ def _user_public(user: dict[str, Any], *, alias_secret: str) -> dict[str, object
     first = _safe_text(user.get("first_name"), fallback="")
     last = _safe_text(user.get("last_name"), fallback="")
     name = (first + " " + last).strip() or _safe_text(user.get("username"), fallback="Usuário") or "Usuário"
-    username = _safe_text(user.get("username"), fallback="")
+    username = safe_public_username(user.get("username"))
     return {
         "usr_ref": make_ui_ref("usr", user_id, alias_secret) if user_id else "usr_indisponivel",
         "nome": name,
         "username": username,
-        "contato_url": f"https://t.me/{username}" if username else "",
+        "contato_url": public_tme_url(username),
         "bot": bool(user.get("is_bot") is True),
     }
 
@@ -150,7 +150,9 @@ def _chat_public(
         "tipo": _safe_text(chat.get("type"), fallback="desconhecido"),
         "forum": bool(chat.get("is_forum") is True),
         "modo_lento_segundos": int(chat.get("slow_mode_delay") or 0) if str(chat.get("slow_mode_delay") or "0").isdigit() else 0,
-        "endereco_publico": _safe_text(chat.get("username"), fallback=""),
+        "username": safe_public_username(chat.get("username")),
+        "endereco_publico": safe_public_username(chat.get("username")),
+        "contato_url": public_tme_url(chat.get("username")),
         "membros_count": membros_count,
         "foto_disponivel": bool(photo.get("small_file_id") or photo.get("big_file_id")),
         "permissoes_padrao": {str(key): bool(value is True) for key, value in permissions.items()},
@@ -216,7 +218,7 @@ async def montar_painel_dinamico_palco(
     if not palco:
         raise PainelDinamicoError("palco_indisponivel")
     chat_id = int(palco["telegram_chat_id"])
-    titulo_fallback = str(palco.get("titulo") or "Palco")
+    titulo_fallback = str(palco.get("titulo") or "Grupo")
     synced_at = _now_iso()
     try:
         me = await telegram_api_call(bot_token, "getMe", None)

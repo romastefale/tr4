@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
-from app.equalizador.identity import make_ui_ref
+from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
 from app.equalizador.mesa import (
     MesaError,
     MesaNotFoundError,
@@ -81,7 +81,7 @@ def avancado_error_public_detail(exc: BaseException) -> str:
     if isinstance(exc, MesaTelegramError):
         return f"Telegram recusou: {_safe_error_text(exc.description, fallback='operação recusada')}"
     if isinstance(exc, MesaRightError):
-        return "Afinação insuficiente."
+        return "Permissão real do bot insuficiente."
     if isinstance(exc, MesaNotFoundError):
         return "Referência indisponível."
     if isinstance(exc, MesaTargetError):
@@ -144,7 +144,7 @@ def register_sender_chat_ref(*, chat_id: int, sender_chat_id: int, titulo_public
             "sender_chat_id": int(sender_chat_id),
             "sender_ref": ref,
             "titulo_publico": _safe_text(titulo_publico, fallback="Canal remetente"),
-            "username": _safe_text(username, fallback="") or None,
+            "username": safe_public_username(username) or None,
             "updated_at": _now_text(),
         })
     return ref
@@ -177,13 +177,13 @@ def list_sender_chats_publicos(*, palco_id: int, db_engine: Engine = default_eng
     ensure_phase44_tables(db_engine)
     with db_engine.begin() as conn:
         rows = conn.execute(text("""
-            SELECT sender_ref, titulo_publico, updated_at
+            SELECT sender_ref, titulo_publico, username, updated_at
             FROM eq_sender_chats
             WHERE telegram_chat_id=:chat_id AND habilitado=1
             ORDER BY updated_at DESC, id DESC
             LIMIT 50
         """), {"chat_id": int(palco_id)}).mappings().all()
-    return [{"sender_ref": str(row["sender_ref"]), "titulo": str(row["titulo_publico"]), "updated_at": str(row["updated_at"])} for row in rows]
+    return [{"sender_ref": str(row["sender_ref"]), "titulo": str(row["titulo_publico"]), "username": safe_public_username(row["username"]), "contato_url": public_tme_url(row["username"]), "updated_at": str(row["updated_at"])} for row in rows]
 
 
 def list_topics_publicos(*, palco_id: int, db_engine: Engine = default_engine) -> list[dict[str, object]]:
@@ -206,7 +206,7 @@ def resolve_sender_ref(*, palco_id: int, sender_ref: str, db_engine: Engine = de
         raise MesaNotFoundError("remetente_indisponivel")
     with db_engine.begin() as conn:
         row = conn.execute(text("""
-            SELECT sender_chat_id, sender_ref, titulo_publico
+            SELECT sender_chat_id, sender_ref, titulo_publico, username
             FROM eq_sender_chats
             WHERE telegram_chat_id=:chat_id AND sender_ref=:sender_ref AND habilitado=1
         """), {"chat_id": int(palco_id), "sender_ref": ref}).mappings().first()

@@ -13,8 +13,8 @@ from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
 from app.equalizador.afinacao import fetch_bot_member_rights
-from app.equalizador.identity import make_ui_ref
-from app.equalizador.palcos import ensure_equalizador_tables
+from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
+from app.equalizador.palcos import ensure_equalizador_tables, get_operador_public_by_ref
 
 
 class MesaError(RuntimeError):
@@ -48,7 +48,7 @@ class MesaTargetError(MesaError):
 def mesa_error_public_detail(exc: BaseException) -> str:
     """Return a sanitized, operator-facing error message for Mesa failures."""
     if isinstance(exc, MesaRightError):
-        return "Afinação insuficiente."
+        return "Permissão real do bot insuficiente."
     if isinstance(exc, MesaNotFoundError):
         return "Referência indisponível."
     if isinstance(exc, MesaTelegramError):
@@ -111,10 +111,7 @@ def _safe_text(value: object, *, fallback: str = "") -> str:
 
 
 def _safe_username(value: object) -> str | None:
-    text_value = str(value or "").strip().lstrip("@")
-    if not re.fullmatch(r"[A-Za-z0-9_]{3,32}", text_value):
-        return None
-    return text_value
+    return safe_public_username(value) or None
 
 
 def _safe_int(value: object, *, default: int = 0, minimum: int | None = None, maximum: int | None = None) -> int:
@@ -136,10 +133,13 @@ def _safe_error_text(value: object, *, fallback: str = "") -> str:
     return text_value[:220] or fallback
 
 
-def _public_target_row(*, alvo_ref: str, nome: str, updated_at: str | None = None, situacao: str | None = None) -> dict[str, object]:
+def _public_target_row(*, alvo_ref: str, nome: str, username: object = "", updated_at: str | None = None, situacao: str | None = None) -> dict[str, object]:
+    safe_username = safe_public_username(username)
     return {
         "alvo_ref": str(alvo_ref),
         "nome": _safe_text(nome, fallback="Membro"),
+        "username": safe_username,
+        "contato_url": public_tme_url(safe_username),
         "situacao": _safe_text(situacao, fallback="desconhecido"),
         "updated_at": str(updated_at or _now_iso()),
     }
@@ -524,13 +524,6 @@ def _normalize_manual_target_input(value: str) -> str:
     raw = str(value or "").strip()
     if not raw:
         return ""
-    if raw.startswith("tg://"):
-        parsed = urlparse(raw)
-        if parsed.netloc.lower() == "user":
-            query = parse_qs(parsed.query)
-            user_id = (query.get("id") or [""])[0]
-            if re.fullmatch(r"\d{4,20}", user_id):
-                return user_id
     parsed = urlparse(raw)
     if parsed.scheme in {"http", "https"} and parsed.netloc.lower() in {"t.me", "telegram.me", "telegram.dog"}:
         parts = [part for part in parsed.path.split("/") if part]
@@ -550,7 +543,7 @@ def resolve_alvo_by_username(*, palco_id: int, username: str, db_engine: Engine 
         row = conn.execute(
             text(
                 """
-                SELECT telegram_user_id, ui_ref, nome_publico, telegram_status, updated_at
+                SELECT telegram_user_id, ui_ref, nome_publico, username, telegram_status, updated_at
                 FROM eq_alvos
                 WHERE telegram_chat_id=:chat_id AND lower(username)=lower(:username) AND habilitado=1
                 ORDER BY updated_at DESC, id DESC
@@ -560,7 +553,7 @@ def resolve_alvo_by_username(*, palco_id: int, username: str, db_engine: Engine 
             {"chat_id": int(palco_id), "username": safe_username},
         ).mappings().first()
     if not row:
-        raise MesaTargetError("Username ainda não reconhecido. Peça para a pessoa enviar mensagem no palco ou use ID numérico.")
+        raise MesaTargetError("Username ainda não reconhecido. Peça para a pessoa enviar mensagem no grupo ou use ID numérico.")
     return dict(row)
 
 
@@ -581,7 +574,7 @@ async def resolve_alvo_manual(
     """
     raw = _normalize_manual_target_input(str(identificador or ""))
     if not raw:
-        raise MesaTargetError("Informe ID numérico, @username, link t.me/username ou tg://user?id=...")
+        raise MesaTargetError("Informe ID numérico, @username ou link t.me/username.")
     if raw.startswith("usr_"):
         row = resolve_alvo_ref(palco_id=palco_id, alvo_ref=raw, db_engine=db_engine)
         user_id = int(row["telegram_user_id"])
@@ -594,7 +587,7 @@ async def resolve_alvo_manual(
         user_id = int(raw)
         member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": int(palco_id), "user_id": user_id})
     if not isinstance(member, dict):
-        raise MesaTargetError("Alvo não encontrado no palco.")
+        raise MesaTargetError("Alvo não encontrado no grupo.")
     user = member.get("user") if isinstance(member.get("user"), dict) else {}
     first_name = str(user.get("first_name") or "").strip()
     last_name = str(user.get("last_name") or "").strip()
@@ -608,7 +601,7 @@ async def resolve_alvo_manual(
         alias_secret=alias_secret,
         db_engine=db_engine,
     )
-    return _public_target_row(alvo_ref=alvo_ref, nome=nome, situacao=_target_member_status(member))
+    return _public_target_row(alvo_ref=alvo_ref, nome=nome, username=user.get("username"), situacao=_target_member_status(member))
 
 
 def resolve_alvo_ref(*, palco_id: int, alvo_ref: str, db_engine: Engine = default_engine) -> dict[str, object]:
@@ -617,7 +610,7 @@ def resolve_alvo_ref(*, palco_id: int, alvo_ref: str, db_engine: Engine = defaul
         row = conn.execute(
             text(
                 """
-                SELECT telegram_user_id, ui_ref, nome_publico, telegram_status
+                SELECT telegram_user_id, ui_ref, nome_publico, username, telegram_status
                 FROM eq_alvos
                 WHERE telegram_chat_id=:chat_id AND ui_ref=:ui_ref AND habilitado=1
                 """
@@ -756,6 +749,85 @@ def record_historico(
     }
 
 
+def _public_target_by_ref(*, alvo_ref: object, db_engine: Engine) -> dict[str, object] | None:
+    ref = str(alvo_ref or "").strip()
+    if not ref:
+        return None
+    with db_engine.begin() as conn:
+        if ref.startswith("usr_"):
+            row = conn.execute(
+                text(
+                    """
+                    SELECT ui_ref, nome_publico, username, telegram_status, updated_at
+                    FROM eq_alvos
+                    WHERE ui_ref=:ref
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"ref": ref},
+            ).mappings().first()
+            if row:
+                return _public_target_row(
+                    alvo_ref=str(row["ui_ref"]),
+                    nome=str(row["nome_publico"] or "Membro"),
+                    username=row["username"],
+                    updated_at=str(row["updated_at"]),
+                    situacao=str(row["telegram_status"] or "desconhecido"),
+                )
+        if ref.startswith("ent_"):
+            try:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT ui_ref, nome_publico, username, estado, updated_at
+                        FROM eq_join_requests
+                        WHERE ui_ref=:ref
+                        ORDER BY updated_at DESC, id DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"ref": ref},
+                ).mappings().first()
+            except Exception:
+                row = None
+            if row:
+                return {
+                    "alvo_ref": str(row["ui_ref"]),
+                    "nome": _safe_text(row["nome_publico"], fallback="Membro"),
+                    "username": safe_public_username(row["username"]),
+                    "contato_url": public_tme_url(row["username"]),
+                    "situacao": str(row["estado"] or "pendente"),
+                    "updated_at": str(row["updated_at"]),
+                }
+        if ref.startswith("snd_"):
+            try:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT sender_ref, titulo_publico, username, updated_at
+                        FROM eq_sender_chats
+                        WHERE sender_ref=:ref
+                        ORDER BY updated_at DESC, id DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"ref": ref},
+                ).mappings().first()
+            except Exception:
+                row = None
+            if row:
+                return {
+                    "alvo_ref": str(row["sender_ref"]),
+                    "nome": _safe_text(row["titulo_publico"], fallback="Canal remetente"),
+                    "username": safe_public_username(row["username"]),
+                    "contato_url": public_tme_url(row["username"]),
+                    "situacao": "canal remetente",
+                    "updated_at": str(row["updated_at"]),
+                }
+    return None
+
+
 def list_historico_publico(
     *,
     palco_refs: set[str],
@@ -782,20 +854,25 @@ def list_historico_publico(
             ),
             params,
         ).mappings().all()
-    return [
-        {
-            "historico_ref": str(row["historico_ref"]),
-            "ator_ref": str(row["ator_ref"]),
-            "palco_ref": str(row["palco_ref"]),
-            "alvo_ref": row["alvo_ref"],
-            "ajuste": str(row["ajuste"]),
-            "status": str(row["status"]),
-            "resumo": str(row["resumo_publico"]),
-            "created_at": str(row["created_at"]),
-        }
-        for row in rows
-    ]
-
+    public_rows: list[dict[str, object]] = []
+    for row in rows:
+        ator = get_operador_public_by_ref(usr_ref=str(row["ator_ref"]), db_engine=db_engine)
+        alvo = _public_target_by_ref(alvo_ref=row["alvo_ref"], db_engine=db_engine)
+        public_rows.append(
+            {
+                "historico_ref": str(row["historico_ref"]),
+                "ator_ref": str(row["ator_ref"]),
+                "ator": ator,
+                "palco_ref": str(row["palco_ref"]),
+                "alvo_ref": row["alvo_ref"],
+                "alvo": alvo,
+                "ajuste": str(row["ajuste"]),
+                "status": str(row["status"]),
+                "resumo": str(row["resumo_publico"]),
+                "created_at": str(row["created_at"]),
+            }
+        )
+    return public_rows
 
 def _silenciar_permissions() -> dict[str, bool]:
     return {
@@ -1150,8 +1227,8 @@ def list_alvos_publicos(
         {
             "alvo_ref": str(row["ui_ref"]),
             "nome": str(row["nome_publico"] or "Membro"),
-            "username": str(row["username"] or ""),
-            "contato_url": ("https://t.me/" + str(row["username"]).strip()) if str(row["username"] or "").strip() else "",
+            "username": safe_public_username(row["username"]),
+            "contato_url": public_tme_url(row["username"]),
             "situacao": str(row["telegram_status"] or "desconhecido"),
             "updated_at": str(row["updated_at"]),
         }

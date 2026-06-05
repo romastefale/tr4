@@ -8,7 +8,7 @@ from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
 from app.config import settings
-from app.equalizador.identity import display_name_from_telegram_user, make_ui_ref
+from app.equalizador.identity import display_name_from_telegram_user, make_ui_ref, public_tme_url, safe_public_username
 
 
 def _now_iso() -> str:
@@ -21,6 +21,15 @@ def _clean_label(value: object, *, fallback: str) -> str:
         text_value = fallback
     # Keep labels short and UI-safe. Telegram identifiers stay server-side.
     return text_value.replace("@", "").strip()[:120] or fallback
+
+
+def _public_person_payload(*, ui_ref: str, nome: object, username: object = "", perfil: object = "") -> dict[str, object]:
+    safe_username = safe_public_username(username)
+    name = str(nome or "").strip()[:80] or (f"@{safe_username}" if safe_username else "Operador")
+    payload: dict[str, object] = {"usr_ref": str(ui_ref), "nome": name, "username": safe_username, "contato_url": public_tme_url(safe_username)}
+    if perfil:
+        payload["perfil"] = str(perfil)
+    return payload
 
 
 def ensure_equalizador_tables(db_engine: Engine = default_engine) -> None:
@@ -120,7 +129,59 @@ def upsert_operador(
                 "updated_at": now,
             },
         )
-    return {"ui_ref": ui_ref, "nome": nome, "perfil": perfil}
+    return {"ui_ref": ui_ref, "usr_ref": ui_ref, "nome": nome, "username": safe_public_username(username), "contato_url": public_tme_url(username), "perfil": perfil}
+
+
+def get_operador_public_by_user_id(
+    *,
+    user_id: int,
+    alias_secret: str,
+    perfil: str = "Operador",
+    db_engine: Engine = default_engine,
+) -> dict[str, object]:
+    """Return the best public operator profile known locally, without raw IDs."""
+    ensure_equalizador_tables(db_engine)
+    ui_ref = make_ui_ref("usr", int(user_id), alias_secret)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT ui_ref, nome, username, perfil
+                FROM eq_operadores
+                WHERE telegram_user_id=:telegram_user_id
+                LIMIT 1
+                """
+            ),
+            {"telegram_user_id": int(user_id)},
+        ).mappings().first()
+    if row:
+        return _public_person_payload(
+            ui_ref=str(row["ui_ref"] or ui_ref),
+            nome=row["nome"],
+            username=row["username"],
+            perfil=row["perfil"] or perfil,
+        )
+    return _public_person_payload(ui_ref=ui_ref, nome=perfil, username="", perfil=perfil)
+
+
+def get_operador_public_by_ref(*, usr_ref: str, db_engine: Engine = default_engine) -> dict[str, object] | None:
+    """Resolve a public operator alias to public profile data when locally known."""
+    ensure_equalizador_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT ui_ref, nome, username, perfil
+                FROM eq_operadores
+                WHERE ui_ref=:ui_ref
+                LIMIT 1
+                """
+            ),
+            {"ui_ref": str(usr_ref)},
+        ).mappings().first()
+    if not row:
+        return None
+    return _public_person_payload(ui_ref=str(row["ui_ref"]), nome=row["nome"], username=row["username"], perfil=row["perfil"])
 
 
 def sync_allowed_palcos(
@@ -143,7 +204,7 @@ def sync_allowed_palcos(
                 text("SELECT title, username FROM music_groups WHERE chat_id=:chat_id"),
                 {"chat_id": chat_id},
             ).mappings().first()
-            fallback_alias = settings.group_alias_for_chat(chat_id) or "Palco sem título"
+            fallback_alias = settings.group_alias_for_chat(chat_id) or "Grupo sem título"
             title = _clean_label(music_group["title"] if music_group else "", fallback=fallback_alias)
             username = str(music_group["username"] or "").strip() if music_group else ""
             username = username or None
@@ -178,6 +239,8 @@ def sync_allowed_palcos(
                 {
                     "grp_ref": ui_ref,
                     "titulo": title,
+                    "username": safe_public_username(username),
+                    "contato_url": public_tme_url(username),
                     "estado": "habilitado",
                     "afinacao": "pendente",
                 }

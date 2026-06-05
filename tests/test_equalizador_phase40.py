@@ -58,6 +58,6 @@ def test_phase40_message_link_parser_rejects_other_palco() -> None:
 def test_phase40_manual_target_normalization_is_present() -> None:
     text = Path("app/equalizador/mesa.py").read_text()
     assert "def _normalize_manual_target_input" in text
-    assert "tg://user" in text
+    assert "tg://user" not in text
     assert "link t.me/username" in text
     assert 'raw.startswith("usr_")' in text

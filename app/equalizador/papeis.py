@@ -6,6 +6,7 @@ from typing import Iterable
 from app.config import settings
 from app.equalizador.configuracao import nome_canal_publico
 from app.equalizador.identity import make_ui_ref
+from app.equalizador.palcos import get_operador_public_by_user_id
 from app.equalizador.permissions import CANAL_DEFINITIONS, CRITICAL_CANAL_CODES, canal_is_allowed, canais_for_palco
 
 
@@ -19,7 +20,7 @@ class MatrizLinha:
 
 
 def _perfil(user_id: int) -> str:
-    return "Maestro" if int(user_id) in settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET else "Operador"
+    return "Administrador principal" if int(user_id) in settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET else "Operador"
 
 
 def _is_maestro(user_id: int) -> bool:
@@ -30,11 +31,11 @@ def _safe_alias_for_palco(chat_id: int) -> str:
     for alias, value in settings.group_aliases().items():
         if int(value) == int(chat_id):
             return str(alias)
-    return "Palco"
+    return "Grupo"
 
 
 def matriz_permissoes_publica(*, alias_secret: str) -> dict[str, object]:
-    """Return a sanitized role/palco/channel matrix for the Maestro.
+    """Return a sanitized role/grupo/channel matrix for the administrator.
 
     This is diagnostic only. It does not grant permissions and does not expose
     Telegram user IDs, chat IDs or usernames to the Mini App.
@@ -55,7 +56,7 @@ def matriz_permissoes_publica(*, alias_secret: str) -> dict[str, object]:
                 if granted:
                     motivo = "concedido"
                 elif definition.critico and not is_maestro:
-                    motivo = "bloqueado: canal crítico restrito ao Maestro"
+                    motivo = "bloqueado: canal crítico restrito ao administrador principal"
                 else:
                     motivo = "não concedido em TR4_EQUALIZADOR_CANAIS"
                 canais_rows.append({
@@ -71,12 +72,17 @@ def matriz_permissoes_publica(*, alias_secret: str) -> dict[str, object]:
                 "canais_concedidos": sorted(granted_codes),
                 "canais": canais_rows,
             })
-        rows.append({
-            "usr_ref": make_ui_ref("usr", user_id, alias_secret),
-            "perfil": _perfil(user_id),
+        operador_payload = get_operador_public_by_user_id(
+            user_id=user_id,
+            alias_secret=alias_secret,
+            perfil="Administrador principal" if is_maestro else _perfil(user_id),
+        )
+        operador_payload.update({
+            "perfil": "Administrador principal" if is_maestro else _perfil(user_id),
             "modo_maestro": bool(is_maestro),
             "palcos": palcos_rows,
         })
+        rows.append(operador_payload)
 
     canais_catalogo = [
         {"codigo": c.codigo, "nome": nome_canal_publico(c.codigo), "critico": bool(c.critico)}

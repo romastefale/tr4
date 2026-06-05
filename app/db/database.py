@@ -4,17 +4,32 @@ import logging
 import os
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config.settings import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
-try:
-    os.makedirs("/data", exist_ok=True)
-    logger.info("Database directory /data ready.")
-except Exception as exc:
-    logger.warning("Could not prepare /data: %s", exc)
+def _prepare_sqlite_directory() -> None:
+    """Create the actual SQLite parent directory before SQLAlchemy opens it."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    try:
+        database_path = make_url(DATABASE_URL).database
+    except Exception as exc:
+        logger.warning("Could not parse SQLite DATABASE_URL: %s", exc)
+        return
+    if not database_path or database_path == ":memory:":
+        return
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(database_path)), exist_ok=True)
+        logger.info("Database directory ready: %s", os.path.dirname(os.path.abspath(database_path)))
+    except Exception as exc:
+        logger.warning("Could not prepare SQLite database directory: %s", exc)
+
+
+_prepare_sqlite_directory()
 
 connect_args: dict = {}
 if DATABASE_URL.startswith("sqlite"):

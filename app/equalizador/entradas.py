@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
-from app.equalizador.identity import make_ui_ref
+from app.equalizador.identity import make_ui_ref, public_tme_url, safe_public_username
 from app.equalizador.mesa import (
     MesaTargetError,
     MesaTelegramError,
@@ -152,7 +152,7 @@ def register_join_request(
             "chat_id": int(chat_id),
             "user_id": int(user_id),
             "ui_ref": ui_ref,
-            "username": _safe_text(username, fallback="") or None,
+            "username": safe_public_username(username) or None,
             "nome_publico": _safe_text(nome_publico, fallback="Membro"),
             "bio_publica": _safe_text(bio, fallback="") or None,
             "invite_link": _safe_text(invite_link, fallback="") or None,
@@ -179,9 +179,12 @@ def register_join_request_from_update(*, chat_id: int, user: dict[str, Any], ali
 
 
 def _public_join_row(row: Any) -> dict[str, object]:
+    safe_username = safe_public_username(row["username"] if "username" in row else "")
     return {
         "entrada_ref": str(row["ui_ref"]),
         "nome": str(row["nome_publico"] or "Membro"),
+        "username": safe_username,
+        "contato_url": public_tme_url(safe_username),
         "situacao": str(row["estado"] or "pendente"),
         "bio": str(row["bio_publica"] or ""),
         "tem_convite": bool(row["invite_link"]),
@@ -193,7 +196,7 @@ def list_join_requests_publicos(*, palco_id: int, limit: int = 30, db_engine: En
     ensure_phase43_tables(db_engine)
     with db_engine.begin() as conn:
         rows = conn.execute(text("""
-            SELECT ui_ref, nome_publico, bio_publica, invite_link, estado, updated_at
+            SELECT ui_ref, nome_publico, username, bio_publica, invite_link, estado, updated_at
             FROM eq_join_requests
             WHERE telegram_chat_id=:chat_id
             ORDER BY CASE estado WHEN 'pendente' THEN 0 ELSE 1 END, updated_at DESC, id DESC
@@ -252,7 +255,7 @@ async def executar_pedido_entrada(
             alias_secret=alias_secret,
             db_engine=db_engine,
         )
-        return {"ok": True, "entrada": {"entrada_ref": row["ui_ref"], "nome": row["nome_publico"], "situacao": estado}, "historico_ref": history["historico_ref"], "resumo": history["resumo"]}
+        return {"ok": True, "entrada": {"entrada_ref": row["ui_ref"], "nome": row["nome_publico"], "username": safe_public_username(row.get("username")), "contato_url": public_tme_url(row.get("username")), "situacao": estado}, "historico_ref": history["historico_ref"], "resumo": history["resumo"]}
     except Exception as exc:
         detail = entradas_error_public_detail(exc)
         record_historico(

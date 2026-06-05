@@ -18,7 +18,7 @@ from app.equalizador.mesa import (
     record_historico,
     register_mensagem_ref,
 )
-from app.equalizador.palcos import list_equalizador_palcos
+from app.equalizador.palcos import get_operador_public_by_user_id, list_equalizador_palcos
 from app.equalizador.permissions import parse_equalizador_canais
 
 MAESTRO_CONFIRMATION_PHRASE = "CONFIRMAR AJUSTE"
@@ -33,7 +33,7 @@ class MaestroConfirmationError(MaestroError):
 
 
 def maestro_error_public_detail(exc: BaseException) -> str:
-    """Return a sanitized operator-facing detail for Maestro failures."""
+    """Return a sanitized operator-facing detail for falhas críticas."""
     if isinstance(exc, MaestroConfirmationError):
         return "Confirmação exigida."
     reason = _safe_text(exc, fallback="maestro_erro")
@@ -60,7 +60,7 @@ def _safe_text(value: object, *, fallback: str = "") -> str:
 
 
 def require_maestro_confirmation(payload: dict[str, Any]) -> None:
-    """Require an explicit confirmation phrase for critical Maestro actions."""
+    """Require an explicit confirmation phrase for critical ações críticas."""
     confirmation = str(payload.get("confirmacao") or "").strip().upper()
     if confirmation != MAESTRO_CONFIRMATION_PHRASE:
         raise MaestroConfirmationError("confirmacao_exigida")
@@ -267,7 +267,7 @@ async def executar_modo_silencio(
             alvo_ref=None,
             ajuste="silencio.ativar",
             status="concluido",
-            resumo_publico=f"Modo silêncio ativado em {palco.get('titulo') or 'Palco'}",
+            resumo_publico=f"Modo silêncio ativado em {palco.get('titulo') or 'Grupo'}",
             payload_tecnico={"method": "setChatPermissions", "payload": telegram_payload},
             alias_secret=alias_secret,
             db_engine=db_engine,
@@ -323,7 +323,7 @@ async def executar_modo_silencio_desativar(
         )
         await telegram_api_call(bot_token, "setChatPermissions", telegram_payload)
         _mark_silencio_inativo(palco_ref=palco_ref, db_engine=db_engine)
-        resumo = f"Modo silêncio desativado em {palco.get('titulo') or 'Palco'}"
+        resumo = f"Modo silêncio desativado em {palco.get('titulo') or 'Grupo'}"
         if usado_fallback:
             resumo += " · permissões amplas aplicadas por ausência de estado anterior"
         history = record_historico(
@@ -374,7 +374,7 @@ async def executar_transmissao(
     db_engine: Engine = default_engine,
     telegram_api_call: TelegramApiCallable = _telegram_api_call,
 ) -> dict[str, object]:
-    """Send a Maestro transmission to a palco and record sanitized history."""
+    """Send a critical transmission to a grupo and record sanitized history."""
     palco_id = int(palco["telegram_chat_id"])
     palco_ref = str(palco["ui_ref"])
     telegram_payload = build_transmissao_payload(palco_id=palco_id, payload=payload)
@@ -420,7 +420,7 @@ async def executar_transmissao(
             alvo_ref=msg_ref,
             ajuste="transmissao.enviar",
             status="concluido",
-            resumo_publico=f"Transmissão enviada em {palco.get('titulo') or 'Palco'}",
+            resumo_publico=f"Transmissão enviada em {palco.get('titulo') or 'Grupo'}",
             payload_tecnico={"method": "sendMessage", "payload": telegram_payload, "fixacao": fixacao},
             alias_secret=alias_secret,
             db_engine=db_engine,
@@ -500,19 +500,19 @@ def distribuicao_canais_publica(
         if grant.chat_id is not None and int(grant.chat_id) not in visible_palco_ids:
             continue
         if grant.chat_id is None:
-            palco_payload: dict[str, object] = {"escopo": "todos os palcos configurados"}
+            palco_payload: dict[str, object] = {"escopo": "todos os grupos configurados"}
         else:
             palco_ref = palco_ref_by_id.get(int(grant.chat_id), make_ui_ref("grp", int(grant.chat_id), alias_secret))
             palco_row = palco_by_ref.get(palco_ref, {})
             palco_payload = {
                 "grp_ref": palco_ref,
-                "titulo": str(palco_row.get("titulo") or "Palco sem título"),
+                "titulo": str(palco_row.get("titulo") or "Grupo sem título"),
             }
         operador_payload: dict[str, object]
         if grant.user_id is None:
             operador_payload = {"escopo": "todos os operadores autorizados"}
         else:
-            operador_payload = {"usr_ref": make_ui_ref("usr", int(grant.user_id), alias_secret)}
+            operador_payload = get_operador_public_by_user_id(user_id=int(grant.user_id), alias_secret=alias_secret)
         canais = ["*"] if grant.todos_canais else sorted(grant.canais)
         rows.append({"operador": operador_payload, "palco": palco_payload, "canais": canais})
     return rows

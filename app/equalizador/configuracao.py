@@ -9,14 +9,14 @@ from sqlalchemy.engine import Engine
 from app.config import settings
 from app.db.database import engine as default_engine
 from app.equalizador.identity import make_ui_ref
-from app.equalizador.palcos import ensure_equalizador_tables, list_equalizador_palcos
+from app.equalizador.palcos import ensure_equalizador_tables, get_operador_public_by_user_id, list_equalizador_palcos
 from app.equalizador.permissions import canal_codes_for_operator, parse_equalizador_canais
 
 
 _CANAL_NOMES: dict[str, str] = {
-    "palco.ver": "Ver palco",
-    "palco.status": "Status do palco",
-    "palco.afinar": "Afinação do palco",
+    "palco.ver": "Ver grupo",
+    "palco.status": "Status do grupo",
+    "palco.afinar": "Permissões do bot no grupo",
     "mensagens.apagar": "Apagar mensagem",
     "reacoes.limpar": "Limpar reações",
     "membros.silenciar": "Silenciar membro",
@@ -100,7 +100,7 @@ def palcos_ocultos_publicos(*, allowed_palco_ids: set[int], alias_secret: str, d
             rows.append(
                 {
                     "grp_ref": str(row["ui_ref"] or make_ui_ref("grp", int(row["telegram_chat_id"]), alias_secret)),
-                    "titulo": str(row["ui_label"] or row["titulo"] or "Palco oculto"),
+                    "titulo": str(row["ui_label"] or row["titulo"] or "Grupo oculto"),
                     "estado": "oculto por configuração",
                 }
             )
@@ -199,7 +199,7 @@ def formulario_maestro_atual() -> dict[str, object]:
 
 
 def raw_editor_from_form_payload(payload: dict[str, Any]) -> dict[str, object]:
-    """Generate a Raw Editor block from Maestro-friendly fields without mutating Railway."""
+    """Generate a Raw Editor block from administrator-friendly fields without mutating Railway."""
     aliases = _aliases_from_lines(payload.get("aliases_linhas") or payload.get("aliases") or "")
     palco_ids = _split_ids_text(payload.get("palco_ids"))
     maestro_ids = _split_ids_text(payload.get("maestro_ids"))
@@ -234,7 +234,7 @@ def raw_editor_from_form_payload(payload: dict[str, Any]) -> dict[str, object]:
     if fora_de_palco:
         avisos.append("Há aliases fora da lista de palcos ativos; eles ficarão ocultos.")
     if not maestro_ids:
-        avisos.append("Nenhum Maestro informado.")
+        avisos.append("Nenhum administrador principal informado.")
     return {
         "raw_editor": "\n".join(linhas),
         "resumo": {
@@ -282,13 +282,17 @@ def matriz_operadores_publica(*, alias_secret: str) -> list[dict[str, object]]:
             chat_ids=allowed_palcos,
             is_maestro=is_maestro,
         )
-        rows.append(
-            {
-                "usr_ref": make_ui_ref("usr", int(user_id), alias_secret),
-                "perfil": "Maestro" if is_maestro else "Operador",
-                "canais": [{"codigo": codigo, "nome": nome_canal_publico(codigo)} for codigo in canais],
-            }
+        operador = get_operador_public_by_user_id(
+            user_id=int(user_id),
+            alias_secret=alias_secret,
+            perfil="Administrador principal" if is_maestro else "Operador",
         )
+        operador.update({
+            "perfil": "Administrador principal" if is_maestro else "Operador",
+            "modo_maestro": bool(is_maestro),
+            "canais": [{"codigo": codigo, "nome": nome_canal_publico(codigo)} for codigo in canais],
+        })
+        rows.append(operador)
     return rows
 
 
@@ -303,5 +307,5 @@ def configuracao_maestro_publica(*, alias_secret: str, db_engine: Engine = defau
         "operadores": matriz_operadores_publica(alias_secret=alias_secret),
         "formulario": formulario_maestro_atual(),
         "raw_editor": raw_editor_equalizador_block(),
-        "observacao": "Use os campos amigáveis para montar a configuração. Gere Raw Editor apenas no final e não deixe chaves duplicadas.",
+        "observacao": "Use os campos amigáveis para montar a configuração. Gere Raw Editor apenas no final e não deixe chaves duplicadas. Nomes públicos e @username aparecem quando já conhecidos; IDs seguem restritos à configuração.",
     }

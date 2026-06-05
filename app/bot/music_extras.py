@@ -250,7 +250,7 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
             return
 
         payload = await build_playing_payload_for_user(
-            requester_id, query.from_user.full_name or "Usuário", track
+            requester_id, query.from_user.full_name or "Usuário", track, query.from_user.username
         )
         if not payload:
             try:

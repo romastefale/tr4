@@ -253,7 +253,24 @@ HTTP_TIMEOUT_SECONDS = _float_env(
     legacy=("HTTP_TIMEOUT_SECONDS",),
 )
 
-DATA_DIR = Path(_env("TR3_DATA_DIR", "/app/data", legacy=("DATA_DIR",)))
+def _data_dir() -> Path:
+    """Return the runtime data directory, preferring Railway's mounted volume.
+
+    TR3_DATA_DIR/DATA_DIR remain explicit overrides. When no explicit value is
+    set, Railway exposes RAILWAY_VOLUME_MOUNT_PATH for the persistent volume;
+    using it avoids silently creating a fresh SQLite database in the ephemeral
+    container after deploys. Local/default deployments keep /app/data.
+    """
+    explicit = _env("TR3_DATA_DIR", "", legacy=("DATA_DIR",)).strip()
+    if explicit:
+        return Path(explicit)
+    railway_volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    if railway_volume:
+        return Path(railway_volume)
+    return Path("/app/data")
+
+
+DATA_DIR = _data_dir()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 

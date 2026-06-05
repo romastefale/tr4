@@ -10,6 +10,7 @@ from aiogram.types import BufferedInputFile, Message
 
 from app.services.lastfm_weekly import lastfm_weekly_service
 from app.services.monthfm_card import render_monthfm_card
+from app.equalizador.identity import public_tme_url
 
 logger = logging.getLogger(__name__)
 router = Router(name="weekfm")
@@ -22,17 +23,20 @@ async def _safe_delete(message: Message) -> None:
         logger.warning("weekfm status delete failed | message_id=%s", message.message_id, exc_info=True)
 
 
-def _caption(card_data, display_name: str, user_id: int) -> str:
-    """Legenda enxuta: '♫ <período> de <user>' com mention do autor."""
+def _caption(card_data, display_name: str, user_id: int, username: str | None = None) -> str:
+    """Legenda enxuta: nome público e link t.me quando houver @username público."""
     if card_data is not None and getattr(card_data, "period_value", None):
         period = card_data.period_value.strip().lower()
     else:
         period = "esta semana"
     safe_name = html.escape(display_name or "Usuário")
-    return f'♫ {html.escape(period)} de <a href="tg://user?id={user_id}">{safe_name}</a>'
+    contato_url = public_tme_url(username)
+    if contato_url:
+        return f'♫ {html.escape(period)} de <a href="{html.escape(contato_url, quote=True)}">{safe_name}</a>'
+    return f'♫ {html.escape(period)} de {safe_name}'
 
 
-async def _finish_weekfm(message: Message, user_id: int, display_name: str, raw_week: str | None) -> None:
+async def _finish_weekfm(message: Message, user_id: int, display_name: str, raw_week: str | None, username: str | None = None) -> None:
     try:
         result = await lastfm_weekly_service.build_capsule(
             user_id=user_id,
@@ -49,7 +53,7 @@ async def _finish_weekfm(message: Message, user_id: int, display_name: str, raw_
             await _safe_delete(message)
             sent = await message.answer_photo(
                 photo=BufferedInputFile(card_bytes, filename="weekfm-card.jpg"),
-                caption=_caption(result.card_data, display_name, user_id),
+                caption=_caption(result.card_data, display_name, user_id, username),
                 parse_mode="HTML",
             )
             await _react_to_own_card(sent.bot, sent.chat.id, sent.message_id, _CARD_EMOJI_EXTRACT)
@@ -58,7 +62,7 @@ async def _finish_weekfm(message: Message, user_id: int, display_name: str, raw_
             await _safe_delete(message)
             sent = await message.answer_photo(
                 photo=BufferedInputFile(result.photo_bytes, filename="weekfm.jpg"),
-                caption=_caption(result.card_data, display_name, user_id),
+                caption=_caption(result.card_data, display_name, user_id, username),
                 parse_mode="HTML",
             )
             await _react_to_own_card(sent.bot, sent.chat.id, sent.message_id, _CARD_EMOJI_EXTRACT)
@@ -106,6 +110,7 @@ async def weekfm(message: Message) -> None:
             user_id=message.from_user.id,
             display_name=message.from_user.full_name or "Usuário",
             raw_week=raw_week,
+            username=message.from_user.username,
         )
     )
     _BG_TASKS.add(task)
