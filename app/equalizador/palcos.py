@@ -256,3 +256,29 @@ def list_equalizador_palcos(
 ) -> list[dict[str, object]]:
     """Return only public palco data for the Equalizador UI."""
     return sync_allowed_palcos(palco_ids=palco_ids, alias_secret=alias_secret, db_engine=db_engine)
+
+
+def get_palco_internal_by_ref(
+    *,
+    grp_ref: str,
+    db_engine: Engine = default_engine,
+) -> dict[str, object] | None:
+    """Resolve a public group reference to internal palco data.
+
+    Kept in palcos.py for feature modules that must not import afinacao at
+    import time. This prevents Equalizador startup import cycles.
+    """
+    ensure_equalizador_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT telegram_chat_id, titulo, ui_label, username, ui_ref, habilitado, bot_rights_json, last_synced_at
+                FROM eq_palcos
+                WHERE ui_ref=:ui_ref AND habilitado=1
+                LIMIT 1
+                """
+            ),
+            {"ui_ref": str(grp_ref)},
+        ).mappings().first()
+    return dict(row) if row else None

@@ -186,6 +186,10 @@ async def _telegram_api_call(token: str, method: str, payload: dict[str, Any] | 
     return data.get("result")
 
 
+# Public alias used by feature modules that share Mesa Telegram calls.
+telegram_api_call = _telegram_api_call
+
+
 async def send_operator_dm(
     *,
     bot_token: str,
