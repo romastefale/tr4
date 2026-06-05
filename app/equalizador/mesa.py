@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
@@ -391,36 +391,114 @@ def register_mensagem_ref(
     return ui_ref
 
 
-def parse_telegram_message_link(*, link: str, aliases: dict[str, int]) -> tuple[int, int]:
-    """Parse supported Telegram message links into internal chat/message IDs.
+
+def _private_link_chat_candidates(raw_chat: str) -> list[int]:
+    """Return plausible supergroup/channel IDs from a t.me/c link component.
+
+    Telegram private message links normally use /c/<internal>/<message>, where
+    the full chat id is -100<internal>. Operators sometimes paste the full id or
+    the same value without the leading minus. We keep all plausible candidates
+    and let the caller pick the one matching the selected palco.
+    """
+    value = str(raw_chat or "").strip()
+    if not re.fullmatch(r"-?\d{5,20}", value):
+        return []
+    candidates: list[int] = []
+    number = int(value)
+    if value.startswith("-100"):
+        candidates.append(number)
+    elif value.startswith("100"):
+        candidates.append(-number)
+        candidates.append(int(f"-100{value}"))
+    else:
+        candidates.append(int(f"-100{value}"))
+        candidates.append(-abs(number))
+    unique: list[int] = []
+    for candidate in candidates:
+        if candidate not in unique:
+            unique.append(candidate)
+    return unique
+
+
+def _message_id_from_text(value: str) -> int | None:
+    text_value = str(value or "").strip()
+    if re.fullmatch(r"\d{1,12}", text_value):
+        return int(text_value)
+    return None
+
+
+def parse_telegram_message_link(*, link: str, aliases: dict[str, int], expected_chat_id: int | None = None) -> tuple[int, int]:
+    """Parse supported Telegram message references into chat/message IDs.
 
     Supported formats:
     - https://t.me/c/<internal_chat>/<message_id>
+    - https://t.me/c/<internal_chat>/<topic_id>/<message_id>
     - https://t.me/<alias_or_public_username>/<message_id>
+    - https://t.me/s/<alias_or_public_username>/<message_id>
+    - tg://privatepost?channel=<internal_chat>&post=<message_id>
+    - raw message id, when ``expected_chat_id`` is provided.
 
-    The caller must still verify that the parsed chat belongs to the selected
-    palco. No public endpoint should accept the parsed IDs directly.
+    The public API still receives only the original string; parsed IDs stay
+    server-side and must match the selected palco.
     """
     value = str(link or "").strip()
+    if not value:
+        raise MesaTargetError("Informe o link ou número da mensagem.")
+    raw_message_id = _message_id_from_text(value)
+    if raw_message_id is not None:
+        if expected_chat_id is None:
+            raise MesaTargetError("Número de mensagem exige um palco selecionado.")
+        return int(expected_chat_id), int(raw_message_id)
+
     parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {"t.me", "telegram.me"}:
+    normalized_aliases = {str(name).lstrip("@").casefold(): int(chat_id) for name, chat_id in aliases.items()}
+
+    if parsed.scheme == "tg" and parsed.netloc.lower() in {"privatepost", "post"}:
+        query = parse_qs(parsed.query)
+        channel = (query.get("channel") or query.get("chat") or [""])[0]
+        post = (query.get("post") or query.get("message") or [""])[0]
+        if not post.isdigit():
+            raise MesaTargetError("Link tg:// sem número de mensagem.")
+        candidates = _private_link_chat_candidates(channel)
+        if expected_chat_id is not None:
+            if int(expected_chat_id) in candidates:
+                return int(expected_chat_id), int(post)
+            raise MesaTargetError("Link pertence a outro palco.")
+        if candidates:
+            return candidates[0], int(post)
+        raise MesaTargetError("Link tg:// com palco inválido.")
+
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {"t.me", "telegram.me", "telegram.dog"}:
         raise MesaTargetError("Link de mensagem inválido.")
     parts = [part for part in parsed.path.split("/") if part]
+    if parts and parts[0] == "s":
+        parts = parts[1:]
     if len(parts) < 2:
         raise MesaTargetError("Link de mensagem incompleto.")
     message_part = parts[-1]
     if not message_part.isdigit():
         raise MesaTargetError("Link sem número de mensagem.")
     message_id = int(message_part)
+
     if parts[0] == "c":
-        if len(parts) < 3 or not parts[1].isdigit():
-            raise MesaTargetError("Link interno de mensagem inválido.")
-        return int(f"-100{parts[1]}"), message_id
+        if len(parts) < 3:
+            raise MesaTargetError("Link interno de mensagem incompleto.")
+        candidates = _private_link_chat_candidates(parts[1])
+        if expected_chat_id is not None:
+            if int(expected_chat_id) in candidates:
+                return int(expected_chat_id), message_id
+            raise MesaTargetError("Link pertence a outro palco.")
+        if candidates:
+            return candidates[0], message_id
+        raise MesaTargetError("Link interno de mensagem inválido.")
+
     alias = parts[0].lstrip("@").casefold()
-    normalized = {str(name).lstrip("@").casefold(): int(chat_id) for name, chat_id in aliases.items()}
-    if alias not in normalized:
+    if alias not in normalized_aliases:
         raise MesaTargetError("Palco do link não está configurado no Equalizador.")
-    return normalized[alias], message_id
+    chat_id = int(normalized_aliases[alias])
+    if expected_chat_id is not None and int(chat_id) != int(expected_chat_id):
+        raise MesaTargetError("Link pertence a outro palco.")
+    return chat_id, message_id
 
 
 def register_mensagem_from_link(
@@ -431,18 +509,37 @@ def register_mensagem_from_link(
     alias_secret: str,
     db_engine: Engine = default_engine,
 ) -> dict[str, object]:
-    chat_id, message_id = parse_telegram_message_link(link=link, aliases=aliases)
-    if int(chat_id) != int(palco_id):
-        raise MesaTargetError("Link pertence a outro palco.")
+    chat_id, message_id = parse_telegram_message_link(link=link, aliases=aliases, expected_chat_id=int(palco_id))
     msg_ref = register_mensagem_ref(
         chat_id=int(chat_id),
         message_id=int(message_id),
-        resumo_publico="Mensagem marcada por link",
+        resumo_publico="Mensagem marcada manualmente",
         alias_secret=alias_secret,
         db_engine=db_engine,
     )
-    return _public_message_row(msg_ref=msg_ref, resumo="Mensagem marcada por link")
+    return _public_message_row(msg_ref=msg_ref, resumo="Mensagem marcada manualmente")
 
+
+def _normalize_manual_target_input(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("tg://"):
+        parsed = urlparse(raw)
+        if parsed.netloc.lower() == "user":
+            query = parse_qs(parsed.query)
+            user_id = (query.get("id") or [""])[0]
+            if re.fullmatch(r"\d{4,20}", user_id):
+                return user_id
+    parsed = urlparse(raw)
+    if parsed.scheme in {"http", "https"} and parsed.netloc.lower() in {"t.me", "telegram.me", "telegram.dog"}:
+        parts = [part for part in parsed.path.split("/") if part]
+        if parts:
+            return "@" + parts[0].lstrip("@")
+    match = re.search(r"-?\d{4,20}", raw)
+    if match and not raw.lstrip().startswith("@"):
+        return match.group(0)
+    return raw
 
 def resolve_alvo_by_username(*, palco_id: int, username: str, db_engine: Engine = default_engine) -> dict[str, object]:
     ensure_phase5_tables(db_engine)
@@ -482,10 +579,14 @@ async def resolve_alvo_manual(
     when the bot has already seen and stored the username inside the selected
     palco; Bot API does not provide a general username-to-user-id resolver.
     """
-    raw = str(identificador or "").strip()
+    raw = _normalize_manual_target_input(str(identificador or ""))
     if not raw:
-        raise MesaTargetError("Informe ID numérico ou username.")
-    if raw.startswith("@") or not re.fullmatch(r"-?\d{4,15}", raw):
+        raise MesaTargetError("Informe ID numérico, @username, link t.me/username ou tg://user?id=...")
+    if raw.startswith("usr_"):
+        row = resolve_alvo_ref(palco_id=palco_id, alvo_ref=raw, db_engine=db_engine)
+        user_id = int(row["telegram_user_id"])
+        member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": int(palco_id), "user_id": user_id})
+    elif raw.startswith("@") or not re.fullmatch(r"-?\d{4,20}", raw):
         row = resolve_alvo_by_username(palco_id=palco_id, username=raw, db_engine=db_engine)
         user_id = int(row["telegram_user_id"])
         member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": int(palco_id), "user_id": user_id})
