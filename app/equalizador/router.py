@@ -822,7 +822,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         direitosDisponiveis = new Set();
         afinacaoLoaded = false;
         const base = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref);
-        const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes] = await Promise.all(
+        const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes] = await Promise.all([
           api(base + "/afinacao").then((r) => r.ok ? r.json() : null).catch(() => null),
           api(base + "/mensagens").then((r) => r.ok ? r.json() : { mensagens: [] }).catch(() => ({ mensagens: [] })),
           api(base + "/alvos").then((r) => r.ok ? r.json() : { alvos: [] }).catch(() => ({ alvos: [] })),
