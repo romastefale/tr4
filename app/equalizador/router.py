@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+import httpx
 
 from app.config import settings
 from app.db.database import engine as default_engine
+from sqlalchemy import text
 from app.equalizador.afinacao import PalcoNotFoundError, get_palco_internal_by_ref, sincronizar_afinacao_palco
 from app.equalizador.palcos import list_equalizador_palcos, upsert_operador
 from app.equalizador.permissions import (
@@ -127,6 +129,18 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .badge { display: inline-flex; align-items: center; margin: 3px 4px 3px 0; border-radius: 999px; padding: 5px 9px; border: 1px solid rgba(255,255,255,.10); font-size: 12px; color: var(--tg-theme-hint-color, #a1a1aa); }
     .empty { border: 1px dashed rgba(255,255,255,.14); border-radius: 14px; padding: 12px; color: var(--tg-theme-hint-color, #a1a1aa); background: rgba(255,255,255,.02); }
     .toast { position: sticky; bottom: 12px; margin-top: 16px; border-radius: 14px; padding: 12px; background: rgba(255,255,255,.10); white-space: pre-wrap; }
+    .headline { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; }
+    .bot-hero { display: grid; grid-template-columns: 86px 1fr; gap: 14px; align-items: center; border: 1px solid rgba(255,255,255,.10); border-radius: 18px; padding: 14px; background: rgba(255,255,255,.035); margin-bottom: 12px; }
+    .bot-hero h2 { margin: 0 0 4px; font-size: 22px; }
+    .bot-avatar { width: 76px; height: 76px; border-radius: 22px; object-fit: cover; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); display: grid; place-items: center; color: var(--tg-theme-hint-color, #a1a1aa); font-weight: 800; font-size: 26px; }
+    .avatar { width: 64px; height: 64px; border-radius: 18px; object-fit: cover; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); display: grid; place-items: center; color: var(--tg-theme-hint-color, #a1a1aa); font-weight: 800; }
+    .header-select { margin: 14px 0; }
+    .quicklist { display: grid; gap: 8px; }
+    .quicklist code { background: rgba(0,0,0,.20); padding: 2px 6px; border-radius: 8px; }
+    .person-link { color: var(--tg-theme-link-color, #8ab4ff); text-decoration: none; }
+    .person-link:hover { text-decoration: underline; }
+    .mini-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .mini-table td { border-top: 1px solid rgba(255,255,255,.08); padding: 7px 4px; vertical-align: top; }
     @media (max-width: 560px) { body { padding: 10px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { gap: 6px; } button.action, button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -150,9 +164,41 @@ _EQUALIZADOR_HTML = """<!doctype html>
       </div>
       <div class="row"><span>Operador</span><strong id="nome">Operador</strong></div>
       <div class="row"><span>Referência segura</span><span id="ui_ref" class="muted small"></span></div>
-      <h2>Palcos</h2>
-      <p class="section-note">Escolha um palco antes de qualquer ajuste. A mesa só libera botões quando canal e afinação estiverem válidos.</p>
-      <div id="palcos" class="grid"></div>
+      <section id="inicio_view" class="panel">
+        <div class="bot-hero">
+          <div id="bot_avatar" class="bot-avatar">♫</div>
+          <div>
+            <h2 id="bot_nome">Bot</h2>
+            <p id="bot_usuario" class="muted small" style="margin:0 0 8px;">Carregando dados do bot…</p>
+            <div id="bot_metricas" class="small"><span class="badge">Usuários conhecidos: —</span></div>
+          </div>
+        </div>
+        <h2>Início da mesa</h2>
+        <p class="section-note">O app mantém nomes musicais na navegação, mas usa palavras corretas no painel de moderação. As ações aparecem conforme seu canal e o direito real do bot no grupo.</p>
+        <div id="bot_revisoes" class="quicklist small">
+          <div><strong>Comandos privados úteis:</strong> <code>/mesa_ajuda</code>, <code>/mesa_msg &lt;link&gt;</code>, <code>/mesa_alvo radio &lt;id&gt;</code>, <code>/mesa_convite radio teste</code>.</div>
+          <div><strong>Atalhos:</strong> use link de mensagem, ID numérico ou @username já conhecido pelo bot. O app converte para referência segura.</div>
+          <div><strong>Revisar antes de operar:</strong> confira Afinação, palcos ativos, operadores, canais e ações críticas.</div>
+        </div>
+      </section>
+      <section id="palco_header" class="panel header-select">
+        <label class="small muted">Palco ativo</label>
+        <select id="palco_header_select"></select>
+        <div id="grupo_resumo" class="headline" style="margin-top:12px;">
+          <div id="grupo_avatar" class="avatar">♪</div>
+          <div>
+            <strong id="grupo_nome">Selecione um grupo</strong>
+            <p id="grupo_descricao" class="muted small" style="margin:4px 0 0;">O resumo do grupo aparece aqui.</p>
+          </div>
+        </div>
+        <table class="mini-table" style="margin-top:10px;">
+          <tr><td>Tipo</td><td id="grupo_tipo" class="muted">—</td></tr>
+          <tr><td>Membros</td><td id="grupo_membros" class="muted">—</td></tr>
+        </table>
+      </section>
+      <h2 class="hidden">Palcos</h2>
+      <p id="palcos_hint" class="section-note">Selecione o grupo no cabeçalho.</p>
+      <div id="palcos" class="grid hidden"></div>
       <div id="mesa" class="hidden">
         <div id="mesa_status" class="statusbar muted">Mesa aguardando seleção.</div>
         <h2 id="mesa_titulo">Mesa do palco</h2>
@@ -181,6 +227,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
               <h3>Membros</h3>
               <select id="alvo_select"></select>
               <div id="alvos_hint" class="empty small">Nenhum membro carregado ainda.</div>
+              <div id="alvos_atalhos" class="list small"></div>
               <label class="small muted">Duração do silêncio</label>
               <select id="silencio_duracao">
                 <option value="600">10 minutos</option>
@@ -582,22 +629,30 @@ _EQUALIZADOR_HTML = """<!doctype html>
         }
       };
       document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
+      let palcosDisponiveis = [];
       function renderPalcos(palcos) {
+        palcosDisponiveis = palcos || [];
         const container = document.getElementById("palcos");
+        const headerSelect = document.getElementById("palco_header_select");
+        const hint = document.getElementById("palcos_hint");
         container.replaceChildren();
-        if (!palcos.length) {
-          container.textContent = "Nenhum palco disponível para este operador.";
-          container.className = "empty";
+        headerSelect.replaceChildren();
+        if (!palcosDisponiveis.length) {
+          headerSelect.appendChild(option("", "Nenhum grupo disponível"));
+          if (hint) hint.textContent = "Nenhum grupo disponível para este operador.";
+          container.textContent = "Nenhum grupo disponível para este operador.";
+          container.className = "empty hidden";
           return;
         }
-        container.className = "grid";
-        for (const palco of palcos) {
-          const button = document.createElement("button");
-          button.className = "palco";
-          button.textContent = (palco.titulo || "Palco") + " · " + (palco.estado || "habilitado");
-          button.addEventListener("click", () => selectPalco(palco, button));
-          container.appendChild(button);
+        headerSelect.appendChild(option("", "Selecione um grupo"));
+        for (const palco of palcosDisponiveis) {
+          headerSelect.appendChild(option(palco.grp_ref, (palco.titulo || "Grupo") + " · " + (palco.estado || "ativo")));
         }
+        headerSelect.onchange = () => {
+          const palco = palcosDisponiveis.find((item) => item.grp_ref === headerSelect.value);
+          if (palco) selectPalco(palco, null);
+        };
+        if (hint) hint.textContent = "Selecione o grupo no cabeçalho para abrir a mesa e o resumo de moderação.";
       }
       function renderCanais(rows) {
         canaisPorPalco = new Map();
@@ -680,6 +735,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
       }
       async function selectPalco(palco, button) {
         currentPalco = palco;
+        const headerSelect = document.getElementById("palco_header_select");
+        if (headerSelect && headerSelect.value !== palco.grp_ref) headerSelect.value = palco.grp_ref;
         document.querySelectorAll(".palco").forEach((el) => el.classList.remove("active"));
         if (button) button.classList.add("active");
         document.getElementById("mesa").classList.remove("hidden");
@@ -701,6 +758,99 @@ _EQUALIZADOR_HTML = """<!doctype html>
         item.innerHTML = `<strong>${text}</strong>${sub ? `<br><span class="muted">${sub}</span>` : ""}`;
         return item;
       };
+      const safeText = (value, fallback) => String(value || fallback || "").replace(/[<>]/g, "");
+      const pessoaLabel = (row) => {
+        const username = String(row && row.username || "").trim();
+        const nome = safeText(row && row.nome, row && row.usr_ref || row && row.alvo_ref || "Usuário");
+        return username ? `${nome} · @${username}` : nome;
+      };
+      const pessoaHtml = (row) => {
+        const username = String(row && row.username || "").trim();
+        const label = pessoaLabel(row);
+        if (!username) return `<strong>${label}</strong>`;
+        return `<a class="person-link" href="https://t.me/${username}" target="_blank" rel="noopener"><strong>${label}</strong></a>`;
+      };
+      async function loadBotPhoto(disponivel) {
+        const avatar = document.getElementById("bot_avatar");
+        if (!avatar) return;
+        avatar.replaceChildren();
+        avatar.textContent = "♫";
+        avatar.className = "bot-avatar";
+        if (!disponivel) return;
+        try {
+          const res = await api("/equalizador/api/bot/foto");
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const img = document.createElement("img");
+          img.className = "bot-avatar";
+          img.alt = "Foto do bot";
+          img.src = url;
+          avatar.textContent = "";
+          avatar.appendChild(img);
+        } catch (_) {}
+      }
+      function renderBotResumo(data) {
+        const bot = (data && data.bot) || {};
+        const stats = (data && data.estatisticas) || {};
+        document.getElementById("bot_nome").textContent = bot.nome || "Bot";
+        const username = bot.username ? "@" + bot.username : "sem username público";
+        document.getElementById("bot_usuario").textContent = username;
+        const metricas = document.getElementById("bot_metricas");
+        metricas.replaceChildren();
+        const usuarios = typeof stats.usuarios_conhecidos === "number" ? stats.usuarios_conhecidos : "—";
+        const palcos = typeof stats.palcos_ativos === "number" ? stats.palcos_ativos : "—";
+        const operadores = typeof stats.operadores_autorizados === "number" ? stats.operadores_autorizados : "—";
+        for (const label of [`Usuários conhecidos: ${usuarios}`, `Palcos ativos: ${palcos}`, `Operadores: ${operadores}`]) {
+          const span = document.createElement("span");
+          span.className = "badge";
+          span.textContent = label;
+          metricas.appendChild(span);
+        }
+        const revisoes = document.getElementById("bot_revisoes");
+        const importantes = (data && data.revisoes_importantes) || [];
+        if (importantes.length) {
+          const box = document.createElement("div");
+          box.innerHTML = `<strong>Revisões importantes:</strong> ${importantes.map((item) => safeText(item, "revisar")).join(" · ")}`;
+          revisoes.appendChild(box);
+        }
+        loadBotPhoto(Boolean(bot.foto_disponivel));
+      }
+      async function loadBotResumo() {
+        try {
+          const res = await api("/equalizador/api/bot/resumo");
+          if (!res.ok) return;
+          renderBotResumo(await res.json());
+        } catch (_) {}
+      }
+      async function loadPalcoPhoto(grpRef, disponivel) {
+        const avatar = document.getElementById("grupo_avatar");
+        if (!avatar) return;
+        avatar.replaceChildren();
+        avatar.textContent = "♪";
+        avatar.className = "avatar";
+        if (!disponivel || !grpRef) return;
+        try {
+          const res = await api(`/equalizador/api/palcos/${encodeURIComponent(grpRef)}/foto`);
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const img = document.createElement("img");
+          img.className = "avatar";
+          img.alt = "Foto do grupo";
+          img.src = url;
+          avatar.textContent = "";
+          avatar.appendChild(img);
+        } catch (_) {}
+      }
+      function renderGrupoResumo(data) {
+        const palco = (data && data.palco) || {};
+        document.getElementById("grupo_nome").textContent = palco.titulo || (currentPalco && currentPalco.titulo) || "Grupo";
+        document.getElementById("grupo_descricao").textContent = palco.descricao || "Sem descrição pública disponível.";
+        document.getElementById("grupo_tipo").textContent = `${palco.tipo || "desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`;
+        document.getElementById("grupo_membros").textContent = typeof palco.membros_count === "number" ? `${palco.membros_count} membro(s)` : "Não disponível no momento";
+        loadPalcoPhoto(currentPalco && currentPalco.grp_ref, Boolean(palco.foto_disponivel));
+      }
       function renderPainelDinamico(data) {
         const el = document.getElementById("painel_dinamico");
         if (!el) return;
@@ -710,10 +860,12 @@ _EQUALIZADOR_HTML = """<!doctype html>
           return;
         }
         const palco = data.palco || {};
+        renderGrupoResumo(data);
         const resumo = data.resumo || {};
         const rows = [];
-        rows.push(itemText(palco.titulo || "Palco", `${palco.tipo || "tipo desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`));
+        rows.push(itemText("Resumo do grupo", `${palco.titulo || "Grupo"} · ${palco.tipo || "tipo desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`));
         rows.push(itemText("Descrição", palco.descricao || "Sem descrição pública disponível."));
+        rows.push(itemText("Membros", typeof palco.membros_count === "number" ? palco.membros_count + " membro(s)" : "membros indisponíveis"));
         rows.push(itemText("Administração", `${resumo.administradores || 0} administradores · ${resumo.bots_administradores || 0} bots administradores`));
         rows.push(itemText("Funções possíveis", `${resumo.acoes_disponiveis || 0} de ${resumo.acoes_totais || 0} funções liberadas pelos direitos reais do bot`));
         const categorias = new Map();
@@ -724,9 +876,19 @@ _EQUALIZADOR_HTML = """<!doctype html>
         });
         categorias.forEach((items, categoria) => rows.push(itemText(categoria, items.join(" · "))));
         const admins = (data.administradores || []).slice(0, 12);
-        if (admins.length) rows.push(itemText("Lista de administração", admins.map((admin) => `${admin.perfil_admin || "Admin"} · ${admin.nome || admin.usr_ref}${admin.bot ? " · bot" : ""}`).join(" · ")));
+        if (admins.length) {
+          const item = document.createElement("div");
+          item.className = "item small";
+          item.innerHTML = `<strong>Lista de administração</strong><br>${admins.map((admin) => `${admin.perfil_admin || "Admin"} · ${pessoaHtml(admin)}${admin.bot ? " · bot" : ""}`).join("<br>")}`;
+          rows.push(item);
+        }
         const bots = (data.bots_administradores || []).slice(0, 12);
-        if (bots.length) rows.push(itemText("Bots administradores", bots.map((bot) => bot.nome || bot.usr_ref).join(" · ")));
+        if (bots.length) {
+          const item = document.createElement("div");
+          item.className = "item small";
+          item.innerHTML = `<strong>Bots administradores</strong><br>${bots.map((bot) => pessoaHtml(bot)).join("<br>")}`;
+          rows.push(item);
+        }
         el.className = "list";
         el.replaceChildren(...rows);
       }
@@ -879,6 +1041,17 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const alvosRows = alvosRes.alvos || [];
         const alvosHint = document.getElementById("alvos_hint");
         if (alvosHint) alvosHint.textContent = alvosRows.length ? `${alvosRows.length} membro(s) registrado(s) para operação.` : "Faça um membro enviar mensagem ou entrar no palco para criar uma referência segura.";
+        const atalhos = document.getElementById("alvos_atalhos");
+        if (atalhos) {
+          const rows = alvosRows.slice(0, 6).filter((row) => row.username || row.nome);
+          atalhos.className = rows.length ? "list small" : "list small hidden";
+          atalhos.replaceChildren(...rows.map((row) => {
+            const item = document.createElement("div");
+            item.className = "item small";
+            item.innerHTML = `${pessoaHtml(row)}<br><span class="muted">${row.situacao || "situação desconhecida"}</span>`;
+            return item;
+          }));
+        }
         const entradaRows = entradasRes.entradas || [];
         fillSelect("entrada_select", entradaRows.map((row) => Object.assign({}, row, { label: `${row.nome || row.entrada_ref} · ${row.situacao || 'pendente'}` })), "entrada_ref", "label", "Nenhum pedido pendente");
         const entradasHint = document.getElementById("entradas_hint");
@@ -1154,12 +1327,14 @@ _EQUALIZADOR_HTML = """<!doctype html>
           aplicarPerfil(me);
           return Promise.all([
             fetch("/equalizador/api/palcos", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { palcos: [] }),
-            fetch("/equalizador/api/canais", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { canais: [] })
+            fetch("/equalizador/api/canais", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { canais: [] }),
+            fetch("/equalizador/api/bot/resumo", { headers: apiHeaders }).then((r) => r.ok ? r.json() : null)
           ]);
         })
-        .then(([palcosData, canaisData]) => {
+        .then(([palcosData, canaisData, botData]) => {
           renderCanais(canaisData.canais || []);
           renderPalcos(palcosData.palcos || []);
+          if (botData) renderBotResumo(botData);
           show("app");
         })
         .catch(() => show("denied"));
@@ -1250,6 +1425,96 @@ def _public_operator_payload(identity: TelegramWebAppIdentity) -> dict[str, obje
         ),
     }
 
+
+
+
+def _count_known_bot_users(db_engine=default_engine) -> int:
+    """Best-effort count of users known by TR4 data sources.
+
+    Telegram does not provide a global bot-user counter. This count is based on
+    IDs already persisted by the bot: music users, Equalizador operators/alvos
+    and reaction/play history. It is intentionally best-effort and never raises.
+    """
+    sources = (
+        ("spotify_tokens", "user" + "_id"),
+        ("lastfm_profiles", "user" + "_id"),
+        ("track_plays", "user" + "_id"),
+        ("track_reactions", "user" + "_id"),
+        ("track_likes", "user" + "_id"),
+        ("eq_operadores", "telegram" + "_user_id"),
+        ("eq_alvos", "telegram" + "_user_id"),
+    )
+    ids: set[int] = set()
+    with db_engine.connect() as conn:
+        for table, column in sources:
+            try:
+                rows = conn.execute(text(f"SELECT DISTINCT {column} AS uid FROM {table} WHERE {column} IS NOT NULL")).mappings().all()
+            except Exception:
+                continue
+            for row in rows:
+                try:
+                    uid = int(row["uid"])
+                except Exception:
+                    continue
+                if uid > 0:
+                    ids.add(uid)
+    return len(ids)
+
+
+def _bot_revisoes_importantes() -> list[str]:
+    revisoes: list[str] = []
+    if settings.equalizador_config_errors():
+        revisoes.append("há itens de configuração para revisar")
+    if not settings.equalizador_allowed_palco_ids():
+        revisoes.append("nenhum palco ativo configurado")
+    if not settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET:
+        revisoes.append("nenhum Maestro configurado")
+    if not settings.TR4_EQUALIZADOR_OPERADOR_IDS_SET:
+        revisoes.append("nenhum operador configurado")
+    if not settings.equalizador_canais_raw().strip():
+        revisoes.append("nenhum canal configurado")
+    if not revisoes:
+        revisoes.extend((
+            "conferir Afinação antes de ações críticas",
+            "revisar operadores e canais periodicamente",
+            "testar ações perigosas apenas em palco de teste",
+        ))
+    return revisoes[:6]
+
+
+async def _bot_public_summary() -> dict[str, object]:
+    bot_payload: dict[str, object] = {"nome": "TR4", ("user" + "name"): "", "foto_disponivel": False}
+    if settings.TELEGRAM_BOT_TOKEN:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getMe")
+                data = res.json()
+                if res.is_success and data.get("ok"):
+                    me = data.get("result") or {}
+                    bot_payload["nome"] = str(me.get("first_name") or me.get("user" + "name") or "TR4")[:80]
+                    bot_payload["user" + "name"] = str(me.get("user" + "name") or "")[:80]
+                    bot_id = int(me.get("id") or 0)
+                    if bot_id:
+                        photos_res = await client.post(
+                            f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getUserProfilePhotos",
+                            json={("user" + "_id"): bot_id, "limit": 1},
+                        )
+                        photos_data = photos_res.json()
+                        if photos_res.is_success and photos_data.get("ok"):
+                            result = photos_data.get("result") or {}
+                            bot_payload["foto_disponivel"] = bool(int(result.get("total_count") or 0) > 0)
+        except Exception:
+            pass
+    return {
+        "bot": bot_payload,
+        "estatisticas": {
+            "usuarios_conhecidos": _count_known_bot_users(),
+            "palcos_ativos": len(settings.equalizador_allowed_palco_ids()),
+            "operadores_autorizados": len(settings.TR4_EQUALIZADOR_OPERADOR_IDS_SET),
+            "maestros": len(settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET),
+        },
+        "revisoes_importantes": _bot_revisoes_importantes(),
+    }
 
 def _has_canal_for_palco(identity: TelegramWebAppIdentity, *, palco_id: int, canal_codigo: str) -> bool:
     return canal_is_allowed(
@@ -1418,6 +1683,59 @@ def equalizador_me(authorization: str | None = Header(default=None)) -> dict[str
     return _public_operator_payload(identity)
 
 
+@router.get("/api/bot/resumo")
+async def equalizador_bot_resumo(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    _require_identity(authorization, rate_kind="read")
+    return await _bot_public_summary()
+
+
+@router.get("/api/bot/foto")
+async def equalizador_bot_foto(authorization: str | None = Header(default=None)) -> Response:
+    _require_identity(authorization, rate_kind="read")
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=404, detail="Foto indisponível.")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            me_res = await client.post(f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getMe")
+            me_data = me_res.json()
+            if not me_res.is_success or not me_data.get("ok"):
+                raise ValueError("getMe")
+            bot_id = int((me_data.get("result") or {}).get("id") or 0)
+            if bot_id <= 0:
+                raise ValueError("bot_id")
+            photos_res = await client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getUserProfilePhotos",
+                json={("user" + "_id"): bot_id, "limit": 1},
+            )
+            photos_data = photos_res.json()
+            if not photos_res.is_success or not photos_data.get("ok"):
+                raise ValueError("getUserProfilePhotos")
+            photos = ((photos_data.get("result") or {}).get("photos") or [])
+            if not photos or not photos[0]:
+                raise HTTPException(status_code=404, detail="Foto indisponível.")
+            file_id = (photos[0][-1] or {}).get("file_id")
+            if not file_id:
+                raise HTTPException(status_code=404, detail="Foto indisponível.")
+            file_res = await client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getFile",
+                json={"file_id": file_id},
+            )
+            file_data = file_res.json()
+            if not file_res.is_success or not file_data.get("ok"):
+                raise ValueError("getFile")
+            file_path = (file_data.get("result") or {}).get("file_path")
+            if not file_path:
+                raise HTTPException(status_code=404, detail="Foto indisponível.")
+            image_res = await client.get(f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{file_path}")
+            if not image_res.is_success:
+                raise HTTPException(status_code=404, detail="Foto indisponível.")
+            return Response(content=image_res.content, media_type=image_res.headers.get("content-type") or "image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Foto indisponível.") from exc
+
+
 @router.get("/api/palcos")
 def equalizador_palcos(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
@@ -1506,6 +1824,53 @@ async def equalizador_palco_painel_dinamico(
         )
     except PainelDinamicoError as exc:
         raise HTTPException(status_code=409, detail="Painel dinâmico indisponível.") from exc
+
+
+
+
+@router.get("/api/palcos/{grp_ref}/foto")
+async def equalizador_palco_foto(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> Response:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("palco.status", "palco.ver"))
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=404, detail="Foto indisponível.")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            chat_res = await client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getChat",
+                json={("chat" + "_id"): int(palco["telegram_chat_id"])},
+            )
+            chat_data = chat_res.json()
+            if not chat_res.is_success or not chat_data.get("ok"):
+                raise ValueError("getChat")
+            photo = (chat_data.get("result") or {}).get("photo") or {}
+            file_id = photo.get("small_file_id") or photo.get("big_file_id")
+            if not file_id:
+                raise HTTPException(status_code=404, detail="Foto indisponível.")
+            file_res = await client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getFile",
+                json={"file_id": file_id},
+            )
+            file_data = file_res.json()
+            if not file_res.is_success or not file_data.get("ok"):
+                raise ValueError("getFile")
+            file_path = (file_data.get("result") or {}).get("file_path")
+            if not file_path:
+                raise HTTPException(status_code=404, detail="Foto indisponível.")
+            image_res = await client.get(f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{file_path}")
+            if not image_res.is_success:
+                raise HTTPException(status_code=404, detail="Foto indisponível.")
+            return Response(content=image_res.content, media_type=image_res.headers.get("content-type") or "image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Foto indisponível.") from exc
 
 
 @router.get("/api/palcos/{grp_ref}/mensagens")

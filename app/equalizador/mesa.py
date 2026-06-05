@@ -1137,7 +1137,7 @@ def list_alvos_publicos(
         rows = conn.execute(
             text(
                 """
-                SELECT ui_ref, nome_publico, telegram_status, updated_at
+                SELECT ui_ref, username, nome_publico, telegram_status, updated_at
                 FROM eq_alvos
                 WHERE telegram_chat_id=:chat_id AND habilitado=1
                 ORDER BY updated_at DESC, id DESC
@@ -1150,6 +1150,8 @@ def list_alvos_publicos(
         {
             "alvo_ref": str(row["ui_ref"]),
             "nome": str(row["nome_publico"] or "Membro"),
+            "username": str(row["username"] or ""),
+            "contato_url": ("https://t.me/" + str(row["username"]).strip()) if str(row["username"] or "").strip() else "",
             "situacao": str(row["telegram_status"] or "desconhecido"),
             "updated_at": str(row["updated_at"]),
         }

@@ -105,9 +105,12 @@ def _user_public(user: dict[str, Any], *, alias_secret: str) -> dict[str, object
     first = _safe_text(user.get("first_name"), fallback="")
     last = _safe_text(user.get("last_name"), fallback="")
     name = (first + " " + last).strip() or _safe_text(user.get("username"), fallback="Usuário") or "Usuário"
+    username = _safe_text(user.get("username"), fallback="")
     return {
         "usr_ref": make_ui_ref("usr", user_id, alias_secret) if user_id else "usr_indisponivel",
         "nome": name,
+        "username": username,
+        "contato_url": f"https://t.me/{username}" if username else "",
         "bot": bool(user.get("is_bot") is True),
     }
 
@@ -133,8 +136,14 @@ def _admin_public(member: dict[str, Any], *, alias_secret: str) -> dict[str, obj
     }
 
 
-def _chat_public(chat: dict[str, Any], *, fallback_title: str) -> dict[str, object]:
+def _chat_public(
+    chat: dict[str, Any],
+    *,
+    fallback_title: str,
+    membros_count: int | None = None,
+) -> dict[str, object]:
     permissions = chat.get("permissions") if isinstance(chat.get("permissions"), dict) else {}
+    photo = chat.get("photo") if isinstance(chat.get("photo"), dict) else {}
     return {
         "titulo": _safe_text(chat.get("title"), fallback=fallback_title),
         "descricao": _safe_text(chat.get("description"), fallback="Sem descrição pública disponível."),
@@ -142,6 +151,8 @@ def _chat_public(chat: dict[str, Any], *, fallback_title: str) -> dict[str, obje
         "forum": bool(chat.get("is_forum") is True),
         "modo_lento_segundos": int(chat.get("slow_mode_delay") or 0) if str(chat.get("slow_mode_delay") or "0").isdigit() else 0,
         "endereco_publico": _safe_text(chat.get("username"), fallback=""),
+        "membros_count": membros_count,
+        "foto_disponivel": bool(photo.get("small_file_id") or photo.get("big_file_id")),
         "permissoes_padrao": {str(key): bool(value is True) for key, value in permissions.items()},
     }
 
@@ -215,6 +226,11 @@ async def montar_painel_dinamico_palco(
         chat = await telegram_api_call(bot_token, "getChat", {"chat_id": chat_id})
         if not isinstance(chat, dict):
             chat = {}
+        try:
+            membros_count_raw = await telegram_api_call(bot_token, "getChatMemberCount", {"chat_id": chat_id})
+            membros_count = int(membros_count_raw)
+        except Exception:
+            membros_count = None
         bot_member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": chat_id, "user_id": bot_id})
         if not isinstance(bot_member, dict):
             bot_member = {"status": "desconhecido"}
@@ -231,7 +247,7 @@ async def montar_painel_dinamico_palco(
         return {
             "grp_ref": str(palco["ui_ref"]),
             "sincronizado_em": synced_at,
-            "palco": _chat_public(chat, fallback_title=titulo_fallback),
+            "palco": _chat_public(chat, fallback_title=titulo_fallback, membros_count=membros_count),
             "bot": direitos_bot,
             "canais": canais,
             "acoes": acoes,
