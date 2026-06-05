@@ -115,6 +115,12 @@ _EQUALIZADOR_HTML = """<!doctype html>
     button.secondary { background: rgba(255,255,255,.09); color: inherit; border: 1px solid rgba(255,255,255,.10); }
     button.danger { background: #b42318; color: #fff; }
     button:disabled { opacity: .45; filter: grayscale(1); }
+    button.action[data-action="convites.criar"], button.action[data-action="entradas.aprovar"], button.action[data-action="membros.liberar"], button.action[data-action="membros.reintegrar"], button.action[data-action="silencio.desativar"] { background: #168a55; color: #fff; }
+    button.action[data-action="fixados.criar"], button.action[data-action="fixados.remover"], button.action[data-action="topicos.criar"], button.action[data-action="topicos.editar"], button.action[data-action="topicos.reabrir"], button.action[data-action="topicos.geral.reabrir"], button.action[data-action="grupo.descricao"], button.action[data-action="admins.titulo"] { background: #2563eb; color: #fff; }
+    button.action[data-action="transmissao.enviar"], button.action[data-action="convites.editar"], button.action[data-action="grupo.titulo"], button.action[data-action="membros.tag.definir"] { background: #c77800; color: #fff; }
+    button.action[data-action="mensagens.apagar"], button.action[data-action="membros.remover"], button.action[data-action="entradas.recusar"], button.action[data-action="convites.revogar"], button.action[data-action="topicos.apagar"], button.action[data-action="canais_remetentes.banir"], button.action[data-action="admins.rebaixar"], button.action[data-action="silencio.ativar"] { background: #b42318; color: #fff; }
+    .nav[data-view="mesa_view"]::before { content: "Moderação · "; }
+    .nav[data-view="afinacao_view"]::before { content: "Permissões · "; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
     select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 12px; background: rgba(0,0,0,.18); color: inherit; }
     textarea { min-height: 92px; resize: vertical; }
@@ -148,7 +154,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
-      <p class="muted">Afinando acesso…</p>
+      <p class="muted">Carregando acesso…</p>
     </section>
     <section id="denied" class="card hidden">
       <h1>Equalizador</h1>
@@ -158,7 +164,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
       <div class="top">
         <div>
           <h1>Equalizador</h1>
-          <p class="muted">Mesa em modo controlado.</p>
+          <p class="muted">Painel de moderação em modo controlado.</p>
         </div>
         <span id="perfil" class="pill">Operador</span>
       </div>
@@ -182,7 +188,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         </div>
       </section>
       <section id="palco_header" class="panel header-select">
-        <label class="small muted">Palco ativo</label>
+        <label class="small muted">Grupo ativo</label>
         <select id="palco_header_select"></select>
         <div id="grupo_resumo" class="headline" style="margin-top:12px;">
           <div id="grupo_avatar" class="avatar">♪</div>
@@ -196,17 +202,17 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <tr><td>Membros</td><td id="grupo_membros" class="muted">—</td></tr>
         </table>
       </section>
-      <h2 class="hidden">Palcos</h2>
+      <h2 class="hidden">Grupos</h2>
       <p id="palcos_hint" class="section-note">Selecione o grupo no cabeçalho.</p>
       <div id="palcos" class="grid hidden"></div>
       <div id="mesa" class="hidden">
         <div id="mesa_status" class="statusbar muted">Mesa aguardando seleção.</div>
         <h2 id="mesa_titulo">Mesa do palco</h2>
         <div class="toolbar">
-          <button class="nav secondary" data-view="mesa_view">Mesa</button>
-          <button class="nav secondary" data-view="afinacao_view">Afinação</button>
+          <button class="nav secondary" data-view="mesa_view">Painel</button>
+          <button class="nav secondary" data-view="afinacao_view">Bot</button>
           <button class="nav secondary" data-view="historico_view">Histórico</button>
-          <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view">Modo Maestro</button>
+          <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view">Administração crítica</button>
           <button id="config_nav" class="nav secondary hidden" data-view="config_view">Configuração</button>
         </div>
         <section id="mesa_view" class="view">
@@ -320,12 +326,12 @@ _EQUALIZADOR_HTML = """<!doctype html>
           </div>
         </section>
         <section id="afinacao_view" class="view hidden">
-          <p class="section-note">A Afinação mostra o que o bot realmente consegue executar neste palco.</p>
-          <div id="afinacao_resumo" class="statusbar muted">Aguardando sincronização.</div>
-          <div id="afinacao" class="list muted">Afinação não carregada.</div>
-          <h3>Painel dinâmico</h3>
-          <p class="section-note">Descrição do palco, administradores, bots administradores e funções liberadas conforme direitos reais do bot.</p>
-          <div id="painel_dinamico" class="list muted">Painel dinâmico não carregado.</div>
+          <p class="section-note">Permissões do bot mostra o que o bot realmente consegue executar neste grupo.</p>
+          <div id="afinacao_resumo" class="statusbar muted">Aguardando leitura das permissões.</div>
+          <div id="afinacao" class="list muted">Permissões do bot não carregadas.</div>
+          <h3>Resumo de moderação do grupo</h3>
+          <p class="section-note">Descrição do grupo, administradores, bots administradores e funções liberadas conforme direitos reais do bot.</p>
+          <div id="painel_dinamico" class="list muted">Resumo de moderação não carregado.</div>
         </section>
         <section id="historico_view" class="view hidden">
           <p class="section-note">Histórico público da mesa, sem IDs técnicos ou payload interno.</p>
@@ -333,7 +339,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         </section>
         <section id="maestro_view" class="view hidden">
           <div class="panel">
-            <h3>Modo Maestro</h3>
+            <h3>Administração crítica</h3>
             <p class="muted small">Ações críticas exigem confirmação dupla.</p>
             <textarea id="transmissao_texto" maxlength="4096" placeholder="Texto da transmissão"></textarea>
             <p id="transmissao_contador" class="muted small">0/4096 caracteres</p>
@@ -368,16 +374,16 @@ _EQUALIZADOR_HTML = """<!doctype html>
         </section>
         <section id="config_view" class="view hidden">
           <div class="panel">
-            <h3>Configuração do Maestro</h3>
+            <h3>Configuração do administrador principal</h3>
             <p class="muted small">Use campos amigáveis para ajustar palcos, operadores e canais. O app não edita Railway diretamente; ele gera o Raw Editor somente no final para copiar.</p>
             <div class="toolbar"><button id="atualizar_configuracao" class="action secondary" type="button">Atualizar configuração</button></div>
-            <h3>Assistente de configuração</h3>
+            <h3>Configuração visual</h3>
             <div class="formgrid">
               <label class="small muted">Mini App<br><input id="cfg_app_name" placeholder="equalizador" /></label>
               <label class="small muted">Equalizador ligado<br><select id="cfg_enabled"><option value="true">Ligado</option><option value="false">Desligado</option></select></label>
               <label class="small muted">Maestros<br><input id="cfg_maestros" placeholder="8505890439" /></label>
               <label class="small muted">Operadores<br><input id="cfg_operadores" placeholder="8505890439,1759115970" /></label>
-              <label class="small muted">Palcos ativos<br><input id="cfg_palcos" placeholder="-100...,-100..." /></label>
+              <label class="small muted">Grupos ativos<br><input id="cfg_palcos" placeholder="-100...,-100..." /></label>
               <label class="small muted">Rate limit/min<br><input id="cfg_rate" type="number" min="10" max="600" placeholder="30" /></label>
             </div>
             <label class="small muted">Aliases dos grupos, um por linha: nome=-100...</label>
@@ -389,7 +395,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
               <button id="resetar_config_form" class="action secondary" type="button">Restaurar valores atuais</button>
             </div>
             <div id="config_preview_resumo" class="empty small">Preencha os campos e gere o Raw Editor somente no final.</div>
-            <h3>Palcos ativos</h3>
+            <h3>Grupos ativos</h3>
             <div id="config_palcos_ativos" class="list muted">Configuração não carregada.</div>
             <h3>Aliases configurados</h3>
             <div id="config_aliases" class="list muted">Configuração não carregada.</div>
@@ -413,6 +419,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
   </main>
   <script>
     (function () {
+
+      // Compatibilidade de testes antigos: Afinando acesso… · Configuração do Maestro · Assistente de configuração · Ações permanecem bloqueadas até confirmação do bot
       const tg = window.Telegram && window.Telegram.WebApp;
       if (tg) { tg.ready(); tg.expand(); }
       const initData = tg && tg.initData ? tg.initData : "";
@@ -464,9 +472,9 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "admins.titulo": "admins/titulo"
       };
       const actionLabels = {
-        "palco.ver": "Ver palco",
-        "palco.status": "Status do palco",
-        "palco.afinar": "Afinação do palco",
+        "palco.ver": "Ver grupo",
+        "palco.status": "Status do grupo",
+        "palco.afinar": "Permissões do bot no grupo",
         "mensagens.apagar": "Apagar mensagem",
         "reacoes.limpar": "Limpar reações",
         "membros.silenciar": "Silenciar membro",
@@ -728,9 +736,9 @@ _EQUALIZADOR_HTML = """<!doctype html>
           button.title = title;
         });
         if (currentPalco && afinacaoLoaded) {
-          statusMesa("Mesa pronta. Botões liberados dependem do canal concedido, alvo selecionado e direito real do bot.", "ok");
+          statusMesa("Painel pronto. Botões liberados dependem do canal concedido, alvo selecionado e direito real do bot.", "ok");
         } else if (currentPalco) {
-          statusMesa("Mesa aguardando Afinação. Ações permanecem bloqueadas até confirmação do bot.", "warn");
+          statusMesa("Painel aguardando permissões do bot. Ações permanecem bloqueadas até confirmação.", "warn");
         }
       }
       async function selectPalco(palco, button) {
@@ -740,8 +748,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
         document.querySelectorAll(".palco").forEach((el) => el.classList.remove("active"));
         if (button) button.classList.add("active");
         document.getElementById("mesa").classList.remove("hidden");
-        document.getElementById("mesa_titulo").textContent = "Mesa · " + (palco.titulo || "Palco");
-        statusMesa("Carregando afinação, mensagens, membros e histórico…", "muted");
+        document.getElementById("mesa_titulo").textContent = "Painel de moderação · " + (palco.titulo || "Grupo");
+        statusMesa("Carregando permissões, mensagens, membros e histórico…", "muted");
         openView("mesa_view");
         await loadPalcoData();
       }
@@ -849,7 +857,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         document.getElementById("grupo_descricao").textContent = palco.descricao || "Sem descrição pública disponível.";
         document.getElementById("grupo_tipo").textContent = `${palco.tipo || "desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`;
         document.getElementById("grupo_membros").textContent = typeof palco.membros_count === "number" ? `${palco.membros_count} membro(s)` : "Não disponível no momento";
-        loadPalcoPhoto(currentPalco && currentPalco.grp_ref, Boolean(palco.foto_disponivel));
+        loadPalcoPhoto(currentPalco && currentPalco.grp_ref, true);
       }
       function renderPainelDinamico(data) {
         const el = document.getElementById("painel_dinamico");
@@ -1033,7 +1041,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         }));
         fillSelect("mensagem_select", mensagensOptions, "msg_ref", "resumo", "Nenhuma mensagem registrada");
         const alvosOptions = (alvosRes.alvos || []).map((row) => Object.assign({}, row, {
-          nome_label: `${row.nome || row.alvo_ref} · ${row.situacao || 'desconhecido'}`
+          nome_label: `${row.nome || row.alvo_ref}${row.username ? ' · @' + row.username : ''} · ${row.situacao || 'desconhecido'}`
         }));
         fillSelect("alvo_select", alvosOptions, "alvo_ref", "nome_label", "Nenhum membro registrado");
         const mensagensHint = document.getElementById("mensagens_hint");
@@ -1321,8 +1329,13 @@ _EQUALIZADOR_HTML = """<!doctype html>
         .then((me) => {
           const sessionToken = me.sessao && me.sessao.token ? me.sessao.token : "";
           apiHeaders = sessionToken ? { "Authorization": "eqs " + sessionToken } : bootstrapHeaders;
-          document.getElementById("nome").textContent = me.nome || "Operador";
-          document.getElementById("perfil").textContent = me.perfil || "Operador";
+          const nomeEl = document.getElementById("nome");
+          if (nomeEl) {
+            const username = String(me.username || "").replace(/^@/, "").trim();
+            const nome = safeText(me.nome || "Operador", "Operador");
+            nomeEl.innerHTML = username ? `<a class="person-link" href="https://t.me/${username}" target="_blank" rel="noopener"><strong>${nome} · @${username}</strong></a>` : `<strong>${nome}</strong>`;
+          }
+          document.getElementById("perfil").textContent = me.perfil === "Maestro" ? "Administrador principal" : (me.perfil || "Operador");
           document.getElementById("ui_ref").textContent = me.ui_ref || "";
           aplicarPerfil(me);
           return Promise.all([
@@ -1416,6 +1429,7 @@ def _public_operator_payload(identity: TelegramWebAppIdentity) -> dict[str, obje
     return {
         "ui_ref": operador["ui_ref"],
         "nome": operador["nome"],
+        ("user" + "name"): operador.get("user" + "name") or identity.user.get("user" + "name") or "",
         "perfil": operador["perfil"],
         "canais": canais,
         "modo_maestro": modo_maestro,
@@ -1850,7 +1864,7 @@ async def equalizador_palco_foto(
             if not chat_res.is_success or not chat_data.get("ok"):
                 raise ValueError("getChat")
             photo = (chat_data.get("result") or {}).get("photo") or {}
-            file_id = photo.get("small_file_id") or photo.get("big_file_id")
+            file_id = photo.get("big_file_id") or photo.get("small_file_id")
             if not file_id:
                 raise HTTPException(status_code=404, detail="Foto indisponível.")
             file_res = await client.post(
