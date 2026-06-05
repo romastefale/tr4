@@ -37,6 +37,7 @@ CANAL_DEFINITIONS: tuple[CanalDefinition, ...] = (
     CanalDefinition("historico.ver", "Ver histórico de mesa"),
     CanalDefinition("historico.exportar", "Exportar histórico", critico=True),
     CanalDefinition("silencio.ativar", "Ativar modo silêncio", critico=True),
+    CanalDefinition("silencio.desativar", "Desativar modo silêncio", critico=True),
     CanalDefinition("transmissao.enviar", "Enviar transmissão", critico=True),
 )
 

@@ -90,6 +90,12 @@ _CANAL_RULES: tuple[dict[str, object], ...] = (
         "critico": True,
     },
     {
+        "codigo": "silencio.desativar",
+        "nome": "Desativar modo silêncio",
+        "direitos": ("can_restrict_members",),
+        "critico": True,
+    },
+    {
         "codigo": "transmissao.enviar",
         "nome": "Enviar transmissão",
         "direitos": ("can_manage_chat",),

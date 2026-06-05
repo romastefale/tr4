@@ -20,15 +20,21 @@ from app.equalizador.mesa import (
     list_mensagens_publicas,
     MesaNotFoundError,
     MesaRightError,
+    MesaTargetError,
     mesa_error_public_detail,
     executar_ajuste,
     list_historico_publico,
+    register_mensagem_from_link,
+    resolve_alvo_manual,
+    send_operator_dm,
 )
+from app.equalizador.papeis import matriz_permissoes_publica
 from app.equalizador.maestro import (
     MaestroConfirmationError,
     MaestroError,
     distribuicao_canais_publica,
     executar_modo_silencio,
+    executar_modo_silencio_desativar,
     executar_transmissao,
     exportar_historico_publico,
     maestro_error_public_detail,
@@ -44,6 +50,7 @@ from app.equalizador.hardening import (
     validate_equalizador_session,
 )
 from app.equalizador.security import InitDataError, TelegramWebAppIdentity, extract_tma_authorization, validate_init_data
+from app.equalizador.configuracao import configuracao_maestro_publica
 
 router = APIRouter(prefix="/equalizador", tags=["equalizador"], include_in_schema=False)
 
@@ -126,6 +133,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <button class="nav secondary" data-view="afinacao_view">Afinação</button>
           <button class="nav secondary" data-view="historico_view">Histórico</button>
           <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view">Modo Maestro</button>
+          <button id="config_nav" class="nav secondary hidden" data-view="config_view">Configuração</button>
         </div>
         <section id="mesa_view" class="view">
           <div class="grid">
@@ -138,24 +146,61 @@ _EQUALIZADOR_HTML = """<!doctype html>
                 <button class="action secondary" data-action="fixados.criar">Fixar</button>
                 <button class="action secondary" data-action="fixados.remover">Remover fixado</button>
               </div>
+              <div id="mensagem_resultado" class="empty small">Nenhum ajuste de mensagem executado nesta sessão.</div>
               <p class="muted small">A lista usa referências internas. IDs de mensagem não aparecem.</p>
             </div>
             <div class="panel">
               <h3>Membros</h3>
               <select id="alvo_select"></select>
               <div id="alvos_hint" class="empty small">Nenhum membro carregado ainda.</div>
+              <label class="small muted">Duração do silêncio</label>
+              <select id="silencio_duracao">
+                <option value="600">10 minutos</option>
+                <option value="3600" selected>1 hora</option>
+                <option value="86400">24 horas</option>
+                <option value="604800">7 dias</option>
+              </select>
+              <label class="small"><input id="remover_revogar" type="checkbox" /> remover mensagens recentes ao remover</label>
               <div class="toolbar">
                 <button class="action secondary" data-action="membros.silenciar">Silenciar</button>
                 <button class="action secondary" data-action="membros.liberar">Liberar</button>
                 <button class="action danger" data-action="membros.remover">Remover</button>
                 <button class="action secondary" data-action="membros.reintegrar">Reintegrar</button>
               </div>
+              <div id="membro_resultado" class="empty small">Nenhum ajuste de membro executado nesta sessão.</div>
               <p class="muted small">A lista usa referências internas. IDs de usuário não aparecem.</p>
+            </div>
+            <div class="panel">
+              <h3>Entrada manual segura</h3>
+              <p class="muted small">Use link da mensagem, ID numérico ou @username já visto pelo bot. O backend transforma tudo em referências internas.</p>
+              <input id="mensagem_link_input" placeholder="Link da mensagem: https://t.me/c/.../..." />
+              <div class="toolbar"><button id="resolver_mensagem" class="action secondary" type="button">Resolver mensagem</button></div>
+              <input id="alvo_manual_input" placeholder="ID numérico ou @username" />
+              <div class="toolbar"><button id="resolver_alvo" class="action secondary" type="button">Resolver membro</button></div>
             </div>
             <div class="panel">
               <h3>Convites</h3>
               <input id="convite_nome" maxlength="32" placeholder="Nome do convite" value="Equalizador" />
+              <label class="small muted">Expiração do convite</label>
+              <select id="convite_expira">
+                <option value="0" selected>Sem expiração</option>
+                <option value="3600">1 hora</option>
+                <option value="86400">24 horas</option>
+                <option value="604800">7 dias</option>
+                <option value="2592000">30 dias</option>
+              </select>
+              <label class="small muted">Limite de membros</label>
+              <input id="convite_limite" type="number" min="0" max="99999" inputmode="numeric" placeholder="0 = sem limite" />
+              <label class="small"><input id="convite_aprovacao" type="checkbox" /> solicitar aprovação para entrar</label>
+              <label class="small"><input id="convite_dm" type="checkbox" checked /> enviar link por DM ao operador</label>
               <div class="toolbar"><button class="action secondary" data-action="convites.criar">Criar convite</button></div>
+              <input id="convite_resultado" readonly placeholder="Link criado aparece aqui" />
+              <div id="convite_metadados" class="empty small">Nenhum convite criado nesta sessão.</div>
+              <div class="toolbar">
+                <button id="copiar_convite" class="action secondary" type="button" disabled>Copiar link</button>
+                <button id="abrir_convite" class="action secondary" type="button" disabled>Abrir link</button>
+              </div>
+              <p id="convite_dm_status" class="muted small">O link também será enviado por DM quando o bot puder conversar com o operador.</p>
             </div>
           </div>
         </section>
@@ -173,12 +218,40 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <h3>Modo Maestro</h3>
             <p class="muted small">Ações críticas exigem confirmação dupla.</p>
             <textarea id="transmissao_texto" maxlength="4096" placeholder="Texto da transmissão"></textarea>
+            <p id="transmissao_contador" class="muted small">0/4096 caracteres</p>
             <div class="toolbar">
               <button class="action danger" data-action="silencio.ativar">Ativar modo silêncio</button>
+              <button class="action secondary" data-action="silencio.desativar">Desativar modo silêncio</button>
               <button class="action secondary" data-action="transmissao.enviar">Enviar transmissão</button>
               <button id="exportar_historico" class="action secondary" type="button">Exportar histórico</button>
             </div>
+            <label class="small"><input id="transmissao_preview" type="checkbox" checked /> sem prévia de link</label>
+            <label class="small"><input id="transmissao_silenciosa" type="checkbox" /> enviar sem notificação</label>
+            <label class="small"><input id="transmissao_fixar" type="checkbox" /> fixar transmissão depois do envio</label>
+            <textarea id="exportacao_resultado" readonly placeholder="Exportação sanitizada aparece aqui"></textarea>
             <div id="distribuicao" class="list muted"></div>
+          </div>
+        </section>
+        <section id="config_view" class="view hidden">
+          <div class="panel">
+            <h3>Configuração do Maestro</h3>
+            <p class="muted small">Área somente leitura para conferência. O app não edita Railway diretamente; ele gera bloco seguro para copiar no Raw Editor.</p>
+            <div class="toolbar"><button id="atualizar_configuracao" class="action secondary" type="button">Atualizar configuração</button></div>
+            <h3>Palcos ativos</h3>
+            <div id="config_palcos_ativos" class="list muted">Configuração não carregada.</div>
+            <h3>Aliases configurados</h3>
+            <div id="config_aliases" class="list muted">Configuração não carregada.</div>
+            <h3>Palcos ocultos</h3>
+            <div id="config_palcos_ocultos" class="list muted">Configuração não carregada.</div>
+            <h3>Operadores e canais</h3>
+            <div id="config_operadores" class="list muted">Configuração não carregada.</div>
+            <h3>Matriz completa de permissões</h3>
+            <p class="muted small">Leitura de segurança por operador, palco e canal. Canais críticos ficam marcados e operadores comuns permanecem bloqueados.</p>
+            <div id="config_matriz_resumo" class="empty small">Matriz não carregada.</div>
+            <div id="config_matriz" class="list muted">Configuração não carregada.</div>
+            <h3>Raw Editor</h3>
+            <textarea id="config_raw" readonly placeholder="Bloco gerado pelo backend"></textarea>
+            <div class="toolbar"><button id="copiar_config_raw" class="action secondary" type="button" disabled>Copiar Raw Editor</button></div>
           </div>
         </section>
       </div>
@@ -197,7 +270,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
       let direitosDisponiveis = new Set();
       let afinacaoLoaded = false;
       let modoMaestroPermitido = false;
-      const criticalActions = new Set(["silencio.ativar", "transmissao.enviar"]);
+      const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar"]);
       const endpoints = {
         "mensagens.apagar": "mensagens/apagar",
         "membros.silenciar": "membros/silenciar",
@@ -208,6 +281,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "fixados.remover": "fixados/remover",
         "convites.criar": "convites/criar",
         "silencio.ativar": "silencio/ativar",
+        "silencio.desativar": "silencio/desativar",
         "transmissao.enviar": "transmissao/enviar"
       };
       const actionLabels = {
@@ -228,6 +302,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "historico.ver": "Ver histórico",
         "historico.exportar": "Exportar histórico",
         "silencio.ativar": "Ativar modo silêncio",
+        "silencio.desativar": "Desativar modo silêncio",
         "transmissao.enviar": "Enviar transmissão"
       };
       const canalNome = (codigo) => actionLabels[codigo] || String(codigo || "canal").replace(/[._]/g, " ");
@@ -237,6 +312,64 @@ _EQUALIZADOR_HTML = """<!doctype html>
         el.textContent = text;
         el.className = "statusbar " + (kind || "muted");
       };
+      const setConviteResult = (link, dm, info) => {
+        const input = document.getElementById("convite_resultado");
+        const copy = document.getElementById("copiar_convite");
+        const open = document.getElementById("abrir_convite");
+        const status = document.getElementById("convite_dm_status");
+        const meta = document.getElementById("convite_metadados");
+        const value = String(link || "").trim();
+        input.value = value;
+        copy.disabled = !value;
+        open.disabled = !value;
+        open.dataset.href = value;
+        if (meta) {
+          const parts = [];
+          if (info && info.nome) parts.push("nome: " + info.nome);
+          if (info && info.expira_em) parts.push("expira: " + info.expira_em);
+          if (info && info.limite_membros) parts.push("limite: " + info.limite_membros);
+          if (info && info.solicitar_aprovacao) parts.push("entrada por aprovação");
+          meta.textContent = value ? (parts.length ? parts.join(" · ") : "Convite criado e mantido visível nesta sessão.") : "Nenhum convite criado nesta sessão.";
+          meta.className = "empty small " + (value ? "ok" : "");
+        }
+        if (status && dm) {
+          status.textContent = dm.enviado ? "Link enviado por DM ao operador." : ("DM não enviada. " + (dm.motivo || "Abra o bot no privado e toque em Start."));
+          status.className = "small " + (dm.enviado ? "ok" : "warn");
+        }
+      };
+      function setMensagemResult(mensagem, fallback) {
+        const el = document.getElementById("mensagem_resultado");
+        if (!el) return;
+        if (!mensagem) {
+          el.textContent = fallback || "Ajuste de mensagem concluído.";
+          el.className = "empty small ok";
+          return;
+        }
+        const estadoNome = {
+          "apagada": "Mensagem apagada",
+          "fixada": "Mensagem fixada",
+          "fixado_removido": "Fixado removido"
+        }[mensagem.estado] || "Mensagem ajustada";
+        el.textContent = `${estadoNome}: ${mensagem.resumo || mensagem.msg_ref || 'referência segura'}`;
+        el.className = "empty small ok";
+      }
+      function setMembroResult(membro, fallback) {
+        const el = document.getElementById("membro_resultado");
+        if (!el) return;
+        if (!membro) {
+          el.textContent = fallback || "Ajuste de membro concluído.";
+          el.className = "empty small ok";
+          return;
+        }
+        const estadoNome = {
+          "silenciado": "Membro silenciado",
+          "liberado": "Membro liberado",
+          "removido": "Membro removido",
+          "reintegrado": "Membro reintegrado"
+        }[membro.estado] || "Membro ajustado";
+        el.textContent = `${estadoNome}: ${membro.nome || membro.alvo_ref || 'referência segura'}`;
+        el.className = "empty small ok";
+      }
       const detailPublico = (detail) => {
         const text = typeof detail === "string" ? detail : (detail && detail.detail ? String(detail.detail) : "Ajuste não concluído.");
         return text
@@ -254,7 +387,11 @@ _EQUALIZADOR_HTML = """<!doctype html>
         el.className = "toast " + (kind || "");
         setTimeout(() => el.classList.add("hidden"), 5200);
       };
-      const api = (url, options) => fetch(url, Object.assign({ headers: apiHeaders }, options || {}));
+      const api = async (url, options) => {
+        const response = await fetch(url, Object.assign({ headers: apiHeaders }, options || {}));
+        if (response.status === 429) toast("Muitas leituras em sequência. Aguarde alguns segundos e tente novamente.", "warn");
+        return response;
+      };
       const option = (value, label) => {
         const item = document.createElement("option");
         item.value = value;
@@ -273,12 +410,17 @@ _EQUALIZADOR_HTML = """<!doctype html>
       };
       const aplicarPerfil = (me) => {
         const canais = new Set(me.canais || []);
-        modoMaestroPermitido = Boolean(me.modo_maestro) || (me.perfil === "Maestro" && (canais.has("silencio.ativar") || canais.has("transmissao.enviar") || canais.has("historico.exportar") || canais.has("canais.distribuir")));
+        modoMaestroPermitido = Boolean(me.modo_maestro) || (me.perfil === "Maestro" && (canais.has("silencio.ativar") || canais.has("silencio.desativar") || canais.has("transmissao.enviar") || canais.has("historico.exportar") || canais.has("canais.distribuir")));
         const maestroNav = document.getElementById("maestro_nav");
         if (maestroNav) maestroNav.classList.toggle("hidden", !modoMaestroPermitido);
+        const configNav = document.getElementById("config_nav");
+        if (configNav) configNav.classList.toggle("hidden", !modoMaestroPermitido);
         const exportButton = document.getElementById("exportar_historico");
         if (exportButton) exportButton.disabled = !modoMaestroPermitido;
-        if (!modoMaestroPermitido) document.getElementById("maestro_view").classList.add("hidden");
+        if (!modoMaestroPermitido) {
+          document.getElementById("maestro_view").classList.add("hidden");
+          document.getElementById("config_view").classList.add("hidden");
+        }
       };
       document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
       function renderPalcos(palcos) {
@@ -357,6 +499,53 @@ _EQUALIZADOR_HTML = """<!doctype html>
         openView("mesa_view");
         await loadPalcoData();
       }
+      const fillList = (id, rows, render, emptyText) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const data = rows || [];
+        el.className = data.length ? "list" : "list muted";
+        el.replaceChildren(...(data.length ? data.map(render) : [document.createTextNode(emptyText)]));
+      };
+      const itemText = (text, sub) => {
+        const item = document.createElement("div");
+        item.className = "item small";
+        item.innerHTML = `<strong>${text}</strong>${sub ? `<br><span class="muted">${sub}</span>` : ""}`;
+        return item;
+      };
+      async function loadConfiguracaoMaestro() {
+        if (!modoMaestroPermitido) return;
+        const res = await api("/equalizador/api/configuracao");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        fillList("config_palcos_ativos", data.palcos_ativos || [], (row) => itemText(row.titulo || "Palco", row.estado || "ativo"), "Nenhum palco ativo em TR4_EQUALIZADOR_PALCO_IDS.");
+        fillList("config_aliases", data.aliases || [], (row) => itemText(row.alias || "alias", `${row.estado || "estado"} · ${row.grp_ref || ""}`), "Nenhum alias configurado em GROUP_ALIASES.");
+        fillList("config_palcos_ocultos", data.palcos_ocultos || [], (row) => itemText(row.titulo || "Palco oculto", `${row.estado || "oculto"} · ${row.grp_ref || ""}`), "Nenhum palco antigo fora da variável ativa.");
+        fillList("config_operadores", data.operadores || [], (row) => {
+          const canais = (row.canais || []).map((canal) => canal.nome || canal.codigo).join(", ") || "sem canais";
+          return itemText(`${row.perfil || "Operador"} · ${row.usr_ref || ""}`, canais);
+        }, "Nenhum operador configurado.");
+        const matriz = data.matriz_permissoes || {};
+        const resumo = matriz.resumo || {};
+        const resumoEl = document.getElementById("config_matriz_resumo");
+        if (resumoEl) resumoEl.textContent = `${resumo.operadores || 0} operadores · ${resumo.palcos || 0} palcos · ${resumo.canais || 0} canais · ${resumo.canais_criticos || 0} críticos`;
+        const matrizRows = [];
+        (matriz.matriz || []).forEach((operador) => {
+          (operador.palcos || []).forEach((palco) => {
+            const concedidos = (palco.canais || []).filter((canal) => canal.concedido).map((canal) => canal.nome || canal.codigo);
+            const negadosCriticos = (palco.canais || []).filter((canal) => canal.critico && !canal.concedido).length;
+            matrizRows.push({
+              titulo: `${operador.perfil || "Operador"} · ${operador.usr_ref || ""} · ${palco.titulo || "Palco"}`,
+              detalhe: `${concedidos.length ? concedidos.join(", ") : "sem canais concedidos"}${negadosCriticos ? ` · ${negadosCriticos} críticos bloqueados` : ""}`,
+            });
+          });
+        });
+        fillList("config_matriz", matrizRows, (row) => itemText(row.titulo, row.detalhe), "Matriz sem operadores ou palcos configurados.");
+        const raw = document.getElementById("config_raw");
+        if (raw) raw.value = data.raw_editor || "";
+        const copy = document.getElementById("copiar_config_raw");
+        if (copy) copy.disabled = !(data.raw_editor || "");
+      }
+
       async function loadPalcoData() {
         if (!currentPalco) return;
         direitosDisponiveis = new Set();
@@ -404,7 +593,10 @@ _EQUALIZADOR_HTML = """<!doctype html>
           resumo: row.apagavel === false ? row.resumo + " · fora da janela de apagar" : row.resumo
         }));
         fillSelect("mensagem_select", mensagensOptions, "msg_ref", "resumo", "Nenhuma mensagem registrada");
-        fillSelect("alvo_select", alvosRes.alvos || [], "alvo_ref", "nome", "Nenhum membro registrado");
+        const alvosOptions = (alvosRes.alvos || []).map((row) => Object.assign({}, row, {
+          nome_label: `${row.nome || row.alvo_ref} · ${row.situacao || 'desconhecido'}`
+        }));
+        fillSelect("alvo_select", alvosOptions, "alvo_ref", "nome_label", "Nenhum membro registrado");
         const mensagensHint = document.getElementById("mensagens_hint");
         if (mensagensHint) mensagensHint.textContent = mensagensRows.length ? `${mensagensRows.length} mensagem(ns) recente(s) registradas.` : "Envie uma mensagem no palco e atualize a mesa para criar uma referência segura.";
         const alvosRows = alvosRes.alvos || [];
@@ -430,7 +622,51 @@ _EQUALIZADOR_HTML = """<!doctype html>
           item.textContent = `${operador} · ${palco} · ${(row.canais || []).map(canalNome).join(', ') || 'sem canais'}`;
           return item;
         }) : [document.createTextNode(modoMaestroPermitido ? "Nenhuma distribuição disponível." : "Distribuição restrita ao Maestro.")]));
+        if (modoMaestroPermitido) loadConfiguracaoMaestro().catch(() => null);
         updateButtons();
+      }
+      async function resolveMensagemManual() {
+        if (!currentPalco) { toast("Escolha um palco antes de resolver mensagem.", "warn"); return; }
+        const input = document.getElementById("mensagem_link_input");
+        const link = input.value.trim();
+        if (!link) { toast("Cole o link da mensagem.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/mensagens/resolver", {
+          method: "POST",
+          headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ link })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        const row = data.mensagem;
+        if (row && row.msg_ref) {
+          mensagensPorRef.set(row.msg_ref, row);
+          const select = document.getElementById("mensagem_select");
+          select.prepend(option(row.msg_ref, row.resumo || row.msg_ref));
+          select.value = row.msg_ref;
+          toast("Mensagem resolvida com segurança.", "ok");
+          updateButtons();
+        }
+      }
+      async function resolveAlvoManual() {
+        if (!currentPalco) { toast("Escolha um palco antes de resolver membro.", "warn"); return; }
+        const input = document.getElementById("alvo_manual_input");
+        const identificador = input.value.trim();
+        if (!identificador) { toast("Informe ID numérico ou @username.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/alvos/resolver", {
+          method: "POST",
+          headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ identificador })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        const row = data.alvo;
+        if (row && row.alvo_ref) {
+          const select = document.getElementById("alvo_select");
+          select.prepend(option(row.alvo_ref, `${row.nome || row.alvo_ref} · ${row.situacao || 'desconhecido'}`));
+          select.value = row.alvo_ref;
+          toast("Membro resolvido com segurança.", "ok");
+          updateButtons();
+        }
       }
       function buildPayload(action) {
         if (action.startsWith("mensagens.") || action.startsWith("fixados.")) {
@@ -445,21 +681,39 @@ _EQUALIZADOR_HTML = """<!doctype html>
         if (action.startsWith("membros.")) {
           const alvo = document.getElementById("alvo_select").value;
           if (!alvo) throw new Error("Escolha um membro registrado.");
-          return { alvo_ref: alvo, duracao_segundos: 3600, apenas_se_banido: true };
+          const duracao = Number(document.getElementById("silencio_duracao").value || 3600);
+          const revogar = Boolean(document.getElementById("remover_revogar").checked);
+          return { alvo_ref: alvo, duracao_segundos: duracao, revogar_mensagens: revogar, apenas_se_banido: true };
         }
-        if (action === "convites.criar") return { nome: document.getElementById("convite_nome").value || "Equalizador" };
-        if (action === "silencio.ativar") return { confirmacao: "CONFIRMAR AJUSTE" };
+        if (action === "convites.criar") {
+          const limite = Number(document.getElementById("convite_limite").value || 0);
+          const aprovacao = Boolean(document.getElementById("convite_aprovacao").checked);
+          return {
+            nome: document.getElementById("convite_nome").value || "Equalizador",
+            expira_em_segundos: Number(document.getElementById("convite_expira").value || 0),
+            limite_membros: aprovacao ? 0 : Math.max(0, Math.min(99999, limite || 0)),
+            solicitar_aprovacao: aprovacao,
+            enviar_dm: Boolean(document.getElementById("convite_dm").checked)
+          };
+        }
+        if (action === "silencio.ativar" || action === "silencio.desativar") return { confirmacao: "CONFIRMAR AJUSTE" };
         if (action === "transmissao.enviar") {
           const texto = document.getElementById("transmissao_texto").value.trim();
           if (!texto) throw new Error("Escreva o texto da transmissão.");
-          return { texto, confirmacao: "CONFIRMAR AJUSTE", sem_preview: true };
+          return {
+            texto,
+            confirmacao: "CONFIRMAR AJUSTE",
+            sem_preview: Boolean(document.getElementById("transmissao_preview").checked),
+            sem_notificacao: Boolean(document.getElementById("transmissao_silenciosa").checked),
+            fixar: Boolean(document.getElementById("transmissao_fixar").checked)
+          };
         }
         return {};
       }
       async function runAction(action) {
         if (!currentPalco) return;
         if (!confirm("Confirmar ajuste: " + (actionLabels[action] || action) + "?")) return;
-        if ((action === "silencio.ativar" || action === "transmissao.enviar") && !confirm("Ação crítica de Maestro. Confirmar novamente?")) return;
+        if (criticalActions.has(action) && !confirm("Ação crítica de Maestro. Confirmar novamente?")) return;
         let payload;
         try { payload = buildPayload(action); } catch (err) { toast(err.message, "warn"); return; }
         const button = document.querySelector(`button.action[data-action="${action}"]`);
@@ -470,9 +724,13 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); await loadPalcoData(); return; }
         if (data.convite) {
-          try { await navigator.clipboard.writeText(data.convite); toast("Convite criado e copiado.", "ok"); }
-          catch (_) { toast("Convite criado: " + data.convite, "ok"); }
+          setConviteResult(data.convite, data.dm || null, data.convite_info || null);
+          try { await navigator.clipboard.writeText(data.convite); toast("Convite criado, exibido e copiado.", "ok"); }
+          catch (_) { toast("Convite criado e exibido na Mesa.", "ok"); }
         } else {
+          if (data.mensagem) setMensagemResult(data.mensagem, data.resumo || "Ajuste de mensagem concluído.");
+          if (data.membro) setMembroResult(data.membro, data.resumo || "Ajuste de membro concluído.");
+          if (data.fixacao && data.fixacao.ok === false) toast("Transmissão enviada, mas não fixada: " + (data.fixacao.motivo || "afinação insuficiente"), "warn");
           toast(data.resumo || "Ajuste concluído.", "ok");
         }
         statusMesa("Último ajuste concluído: " + (actionLabels[action] || action) + ".", "ok");
@@ -480,6 +738,22 @@ _EQUALIZADOR_HTML = """<!doctype html>
       }
       document.getElementById("mensagem_select").addEventListener("change", updateButtons);
       document.getElementById("alvo_select").addEventListener("change", updateButtons);
+      document.getElementById("resolver_mensagem").addEventListener("click", resolveMensagemManual);
+      document.getElementById("resolver_alvo").addEventListener("click", resolveAlvoManual);
+      document.getElementById("copiar_convite").addEventListener("click", async () => {
+        const value = document.getElementById("convite_resultado").value.trim();
+        if (!value) return;
+        try { await navigator.clipboard.writeText(value); toast("Link copiado.", "ok"); }
+        catch (_) { toast("Não foi possível copiar automaticamente. Selecione o campo do link.", "warn"); }
+      });
+      document.getElementById("abrir_convite").addEventListener("click", () => {
+        const value = document.getElementById("convite_resultado").value.trim();
+        if (value) window.open(value, "_blank");
+      });
+      document.getElementById("transmissao_texto").addEventListener("input", () => {
+        const text = document.getElementById("transmissao_texto").value || "";
+        document.getElementById("transmissao_contador").textContent = `${text.length}/4096 caracteres`;
+      });
       document.querySelectorAll("button.action[data-action]").forEach((button) => button.addEventListener("click", () => runAction(button.dataset.action)));
       document.getElementById("exportar_historico").addEventListener("click", async () => {
         if (!modoMaestroPermitido) { toast("Exportação restrita ao Maestro.", "warn"); return; }
@@ -488,7 +762,16 @@ _EQUALIZADOR_HTML = """<!doctype html>
         if (!res.ok) { toast(data.detail || "Exportação indisponível.", "bad"); return; }
         const exp = data.exportacao || {};
         const total = typeof exp.total_registros === "number" ? ` · ${exp.total_registros} registros` : "";
+        const box = document.getElementById("exportacao_resultado");
+        if (box) box.value = exp.json_texto || JSON.stringify(exp, null, 2);
         toast("Exportação gerada: " + (exp.exportacao_ref || "pronta") + total, "ok");
+      });
+      document.getElementById("atualizar_configuracao").addEventListener("click", () => loadConfiguracaoMaestro());
+      document.getElementById("copiar_config_raw").addEventListener("click", async () => {
+        const value = document.getElementById("config_raw").value || "";
+        if (!value) return;
+        try { await navigator.clipboard.writeText(value); toast("Bloco Raw Editor copiado.", "ok"); }
+        catch (_) { toast("Não foi possível copiar automaticamente. Selecione o campo Raw Editor.", "warn"); }
       });
       if (!initData) { show("denied"); return; }
       const bootstrapHeaders = { "Authorization": "tma " + initData };
@@ -540,7 +823,16 @@ def _identity_from_authorization(authorization: str | None) -> TelegramWebAppIde
         raise HTTPException(status_code=401, detail="Acesso indisponível.") from exc
 
 
-def _require_identity(authorization: str | None) -> TelegramWebAppIdentity:
+def _rate_limit_for(kind: str) -> int:
+    base = int(settings.TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE)
+    if kind == "read":
+        return max(base * 6, 120)
+    if kind == "bootstrap":
+        return max(base * 3, 60)
+    return base
+
+
+def _require_identity(authorization: str | None, *, rate_kind: str = "action") -> TelegramWebAppIdentity:
     identity = _identity_from_authorization(authorization)
     if not settings.equalizador_user_is_allowed(identity.user_id):
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
@@ -548,7 +840,7 @@ def _require_identity(authorization: str | None) -> TelegramWebAppIdentity:
     try:
         check_equalizador_rate_limit(
             operator_ref=operador_ref,
-            limit_per_minute=settings.TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE,
+            limit_per_minute=_rate_limit_for(rate_kind),
         )
     except EqualizadorRateLimitError as exc:
         raise HTTPException(status_code=429, detail="Mesa temporariamente indisponível.") from exc
@@ -661,6 +953,17 @@ async def _execute_action_endpoint(
                 alias_secret=settings.equalizador_alias_secret(),
             )
         log_equalizador_event("EQUALIZADOR_AJUSTE_OK", ator_ref=ator_ref, palco_ref=palco_ref, ajuste=ajuste)
+        if ajuste == "convites.criar" and result.get("convite"):
+            payload_enviar_dm = bool(payload.get("enviar_dm", True))
+            if payload_enviar_dm:
+                dm_result = await send_operator_dm(
+                    bot_token=settings.TELEGRAM_BOT_TOKEN,
+                    user_id=identity.user_id,
+                    text=f"Equalizador · convite criado para {palco.get('titulo') or 'palco'}:\n{result['convite']}",
+                )
+            else:
+                dm_result = {"enviado": False, "motivo": "Envio por DM desativado nesta criação."}
+            result["dm"] = dm_result
         return result
     except EqualizadorMesaBusyError as exc:
         log_equalizador_event("EQUALIZADOR_AJUSTE_BUSY", ator_ref=ator_ref, palco_ref=palco_ref, ajuste=ajuste)
@@ -703,6 +1006,16 @@ async def _execute_maestro_endpoint(
                 )
                 log_equalizador_event("EQUALIZADOR_MAESTRO_OK", ator_ref=ator_ref, palco_ref=palco_ref, ajuste=ajuste)
                 return result
+            if ajuste == "silencio.desativar":
+                result = await executar_modo_silencio_desativar(
+                    palco=palco,
+                    ator_ref=ator_ref,
+                    payload=payload,
+                    bot_token=settings.TELEGRAM_BOT_TOKEN,
+                    alias_secret=settings.equalizador_alias_secret(),
+                )
+                log_equalizador_event("EQUALIZADOR_MAESTRO_OK", ator_ref=ator_ref, palco_ref=palco_ref, ajuste=ajuste)
+                return result
             if ajuste == "transmissao.enviar":
                 result = await executar_transmissao(
                     palco=palco,
@@ -733,13 +1046,13 @@ async def _execute_maestro_endpoint(
 
 @router.get("/api/me")
 def equalizador_me(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="bootstrap")
     return _public_operator_payload(identity)
 
 
 @router.get("/api/palcos")
 def equalizador_palcos(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palcos_visiveis = filter_palco_ids_by_canal(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
@@ -756,7 +1069,7 @@ def equalizador_palcos(authorization: str | None = Header(default=None)) -> dict
 
 @router.get("/api/canais")
 def equalizador_canais(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palco_ids = filter_palco_ids_by_canal(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
@@ -793,7 +1106,7 @@ async def equalizador_palco_afinacao(
     grp_ref: str,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palco = get_palco_internal_by_ref(grp_ref=grp_ref)
     if not palco:
         raise HTTPException(status_code=404, detail="Palco indisponível.")
@@ -812,7 +1125,7 @@ def equalizador_palco_mensagens(
     grp_ref: str,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palco = get_palco_internal_by_ref(grp_ref=grp_ref)
     if not palco:
         raise HTTPException(status_code=404, detail="Palco indisponível.")
@@ -825,7 +1138,7 @@ def equalizador_palco_alvos(
     grp_ref: str,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palco = get_palco_internal_by_ref(grp_ref=grp_ref)
     if not palco:
         raise HTTPException(status_code=404, detail="Palco indisponível.")
@@ -833,9 +1146,65 @@ def equalizador_palco_alvos(
     return {"alvos": list_alvos_publicos(palco_id=int(palco["telegram_chat_id"]))}
 
 
+@router.post("/api/palcos/{grp_ref}/mensagens/resolver")
+async def equalizador_resolver_mensagem(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(
+        identity,
+        palco_id=int(palco["telegram_chat_id"]),
+        canal_codigos=("mensagens.apagar", "fixados.criar", "fixados.remover"),
+    )
+    payload = await _read_json_payload(request)
+    try:
+        mensagem = register_mensagem_from_link(
+            palco_id=int(palco["telegram_chat_id"]),
+            link=str(payload.get("link") or ""),
+            aliases=settings.group_aliases(),
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+        return {"ok": True, "mensagem": mensagem}
+    except MesaTargetError as exc:
+        raise HTTPException(status_code=409, detail=mesa_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/alvos/resolver")
+async def equalizador_resolver_alvo(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(
+        identity,
+        palco_id=int(palco["telegram_chat_id"]),
+        canal_codigos=("membros.silenciar", "membros.liberar", "membros.remover", "membros.reintegrar"),
+    )
+    payload = await _read_json_payload(request)
+    try:
+        alvo = await resolve_alvo_manual(
+            palco_id=int(palco["telegram_chat_id"]),
+            identificador=str(payload.get("identificador") or ""),
+            bot_token=settings.TELEGRAM_BOT_TOKEN,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+        return {"ok": True, "alvo": alvo}
+    except MesaError as exc:
+        raise HTTPException(status_code=409, detail=mesa_error_public_detail(exc)) from exc
+
+
 @router.get("/api/historico")
 def equalizador_historico(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palco_ids = filter_palco_ids_by_canal(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
@@ -852,7 +1221,7 @@ def equalizador_historico(authorization: str | None = Header(default=None)) -> d
 
 @router.get("/api/historico/exportar")
 def equalizador_historico_exportar(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palco_ids = filter_palco_ids_by_canal(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
@@ -867,9 +1236,43 @@ def equalizador_historico_exportar(authorization: str | None = Header(default=No
     return {"exportacao": exportar_historico_publico(palco_refs=palco_refs, alias_secret=settings.equalizador_alias_secret())}
 
 
+@router.get("/api/configuracao")
+def equalizador_configuracao(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco_ids = filter_palco_ids_by_canal(
+        raw_canais=settings.equalizador_canais_raw(),
+        user_id=identity.user_id,
+        chat_ids=settings.equalizador_allowed_palco_ids(),
+        canal_codigo="canais.distribuir",
+        is_maestro=_is_maestro(identity),
+    )
+    if not palco_ids:
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    return {
+        "configuracao": True,
+        **configuracao_maestro_publica(alias_secret=settings.equalizador_alias_secret()),
+        "matriz_permissoes": matriz_permissoes_publica(alias_secret=settings.equalizador_alias_secret()),
+    }
+
+
+@router.get("/api/permissoes/matriz")
+def equalizador_permissoes_matriz(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco_ids = filter_palco_ids_by_canal(
+        raw_canais=settings.equalizador_canais_raw(),
+        user_id=identity.user_id,
+        chat_ids=settings.equalizador_allowed_palco_ids(),
+        canal_codigo="canais.distribuir",
+        is_maestro=_is_maestro(identity),
+    )
+    if not palco_ids:
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    return matriz_permissoes_publica(alias_secret=settings.equalizador_alias_secret())
+
+
 @router.get("/api/canais/distribuicao")
 def equalizador_canais_distribuicao(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    identity = _require_identity(authorization)
+    identity = _require_identity(authorization, rate_kind="read")
     palco_ids = filter_palco_ids_by_canal(
         raw_canais=settings.equalizador_canais_raw(),
         user_id=identity.user_id,
@@ -898,6 +1301,20 @@ async def equalizador_silencio_ativar(
     return await _execute_maestro_endpoint(
         grp_ref=grp_ref,
         ajuste="silencio.ativar",
+        request=request,
+        authorization=authorization,
+    )
+
+
+@router.post("/api/palcos/{grp_ref}/silencio/desativar")
+async def equalizador_silencio_desativar(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    return await _execute_maestro_endpoint(
+        grp_ref=grp_ref,
+        ajuste="silencio.desativar",
         request=request,
         authorization=authorization,
     )

@@ -25,7 +25,27 @@ from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service
 from app.services.spotify import spotify_service
-from app.equalizador.mesa import register_alvo_ref, register_mensagem_ref
+from app.equalizador.mesa import (
+    ACTION_SPECS,
+    MesaError,
+    MesaNotFoundError,
+    executar_ajuste,
+    mesa_error_public_detail,
+    parse_telegram_message_link,
+    register_alvo_ref,
+    register_mensagem_ref,
+    resolve_alvo_manual,
+)
+from app.equalizador.identity import make_ui_ref
+from app.equalizador.maestro import (
+    MaestroError,
+    executar_modo_silencio,
+    executar_modo_silencio_desativar,
+    executar_transmissao,
+    maestro_error_public_detail,
+)
+from app.equalizador.permissions import canal_is_allowed
+from app.equalizador.hardening import mesa_operation_lock
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +168,7 @@ async def _remember_equalizador_message(message: Message) -> None:
                 chat_id=int(message.chat.id),
                 user_id=int(message.from_user.id),
                 nome_publico=_equalizador_safe_label(message.from_user.full_name),
+                username=message.from_user.username,
                 alias_secret=alias_secret,
             )
         for member in getattr(message, "new_chat_members", None) or []:
@@ -156,6 +177,7 @@ async def _remember_equalizador_message(message: Message) -> None:
                     chat_id=int(message.chat.id),
                     user_id=int(member.id),
                     nome_publico=_equalizador_safe_label(member.full_name),
+                    username=getattr(member, "username", None),
                     alias_secret=alias_secret,
                 )
         replied = getattr(message, "reply_to_message", None)
@@ -172,6 +194,7 @@ async def _remember_equalizador_message(message: Message) -> None:
                     chat_id=int(message.chat.id),
                     user_id=int(replied.from_user.id),
                     nome_publico=_equalizador_safe_label(replied.from_user.full_name),
+                    username=replied.from_user.username,
                     alias_secret=alias_secret,
                 )
     except Exception:
@@ -340,6 +363,236 @@ async def _safe_delete(message: Message) -> None:
         logger.debug("SAFE_DELETE_FAILED chat=%s msg=%s", message.chat.id, message.message_id, exc_info=True)
 
 
+def _hidden_equalizador_allowed(message: Message) -> bool:
+    return bool(
+        message.chat.type == "private"
+        and message.from_user
+        and int(message.from_user.id) in settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET
+    )
+
+
+def _hidden_palco_id(value: str) -> int | None:
+    raw = str(value or "").strip().lstrip("@")
+    if raw.lstrip("-").isdigit():
+        chat_id = int(raw)
+        return chat_id if chat_id in settings.equalizador_allowed_palco_ids() else None
+    aliases = {str(name).casefold(): int(chat_id) for name, chat_id in settings.group_aliases().items()}
+    chat_id = aliases.get(raw.casefold())
+    return chat_id if chat_id in settings.equalizador_allowed_palco_ids() else None
+
+
+def _hidden_palco_label(chat_id: int) -> str:
+    return settings.group_alias_for_chat(chat_id) or "palco"
+
+
+async def _hidden_equalizador_denied(message: Message) -> None:
+    await message.answer("Acesso indisponível.")
+
+
+def _hidden_operator_ref(message: Message) -> str:
+    if not message.from_user:
+        return "usr_oculto"
+    return make_ui_ref("usr", int(message.from_user.id), settings.equalizador_alias_secret())
+
+
+def _hidden_palco_dict(chat_id: int) -> dict[str, object]:
+    return {
+        "telegram_chat_id": int(chat_id),
+        "ui_ref": make_ui_ref("grp", int(chat_id), settings.equalizador_alias_secret()),
+        "titulo": _hidden_palco_label(int(chat_id)),
+    }
+
+
+def _hidden_has_canal(message: Message, chat_id: int, canal_codigo: str) -> bool:
+    if not message.from_user:
+        return False
+    return canal_is_allowed(
+        raw_canais=settings.equalizador_canais_raw(),
+        user_id=int(message.from_user.id),
+        chat_id=int(chat_id),
+        canal_codigo=canal_codigo,
+        is_maestro=True,
+    )
+
+
+async def _hidden_require_canal(message: Message, chat_id: int, canal_codigo: str) -> bool:
+    if _hidden_has_canal(message, chat_id, canal_codigo):
+        return True
+    await message.answer("Canal indisponível para este palco.")
+    return False
+
+
+def _hidden_message_ref_from_input(chat_id: int, raw_value: str) -> str:
+    value = str(raw_value or "").strip()
+    if value.startswith("msg_"):
+        return value
+    parsed_chat_id, message_id = parse_telegram_message_link(link=value, aliases=settings.group_aliases())
+    if int(parsed_chat_id) != int(chat_id):
+        raise MesaNotFoundError("mensagem_indisponivel")
+    return register_mensagem_ref(
+        chat_id=int(chat_id),
+        message_id=int(message_id),
+        resumo_publico="Mensagem marcada por comando oculto",
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+
+
+async def _hidden_target_ref_from_input(chat_id: int, raw_value: str) -> str:
+    value = str(raw_value or "").strip()
+    if value.startswith("usr_"):
+        return value
+    alvo = await resolve_alvo_manual(
+        palco_id=int(chat_id),
+        identificador=value,
+        bot_token=settings.TELEGRAM_BOT_TOKEN,
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+    return str(alvo["alvo_ref"])
+
+
+async def _hidden_run_mesa_action(message: Message, chat_id: int, ajuste: str, payload: dict[str, object]) -> None:
+    spec = ACTION_SPECS.get(ajuste)
+    if spec is None:
+        await message.answer("Ajuste indisponível.")
+        return
+    if not await _hidden_require_canal(message, chat_id, spec.canal_codigo):
+        return
+    ator_ref = _hidden_operator_ref(message)
+    palco = _hidden_palco_dict(chat_id)
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:{ajuste}:hidden"):
+            result = await executar_ajuste(
+                ajuste=ajuste,
+                palco=palco,
+                ator_ref=ator_ref,
+                payload=payload,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+            )
+        lines = [f"Ajuste concluído: {ajuste}", f"Palco: {_hidden_palco_label(chat_id)}"]
+        if result.get("convite"):
+            lines.append(str(result["convite"]))
+        if result.get("msg_ref"):
+            lines.append(f"Mensagem: {result['msg_ref']}")
+        if result.get("membro") and isinstance(result["membro"], dict):
+            membro = result["membro"]
+            lines.append(f"Alvo: {membro.get('alvo_ref', 'alvo')}")
+        await message.answer("\n".join(lines), disable_web_page_preview=True)
+    except MesaError as exc:
+        await message.answer(mesa_error_public_detail(exc))
+    except Exception:
+        logger.debug("EQUALIZADOR_HIDDEN_ACTION_FAILED", exc_info=True)
+        await message.answer("Ajuste não concluído.")
+
+
+async def _hidden_run_maestro_action(message: Message, chat_id: int, ajuste: str, payload: dict[str, object]) -> None:
+    if not await _hidden_require_canal(message, chat_id, ajuste):
+        return
+    ator_ref = _hidden_operator_ref(message)
+    palco = _hidden_palco_dict(chat_id)
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:{ajuste}:hidden"):
+            if ajuste == "transmissao.enviar":
+                result = await executar_transmissao(
+                    palco=palco, ator_ref=ator_ref, payload=payload,
+                    bot_token=settings.TELEGRAM_BOT_TOKEN, alias_secret=settings.equalizador_alias_secret(),
+                )
+            elif ajuste == "silencio.ativar":
+                result = await executar_modo_silencio(
+                    palco=palco, ator_ref=ator_ref, payload=payload,
+                    bot_token=settings.TELEGRAM_BOT_TOKEN, alias_secret=settings.equalizador_alias_secret(),
+                )
+            elif ajuste == "silencio.desativar":
+                result = await executar_modo_silencio_desativar(
+                    palco=palco, ator_ref=ator_ref, payload=payload,
+                    bot_token=settings.TELEGRAM_BOT_TOKEN, alias_secret=settings.equalizador_alias_secret(),
+                )
+            else:
+                await message.answer("Ajuste indisponível.")
+                return
+        await message.answer(f"Ajuste concluído: {ajuste}\nPalco: {_hidden_palco_label(chat_id)}")
+    except MesaError as exc:
+        await message.answer(mesa_error_public_detail(exc))
+    except MaestroError as exc:
+        await message.answer(maestro_error_public_detail(exc))
+    except Exception:
+        logger.debug("EQUALIZADOR_HIDDEN_MAESTRO_FAILED", exc_info=True)
+        await message.answer("Ajuste crítico não concluído.")
+
+
+async def _hidden_message_action_command(message: Message, ajuste: str, usage: str) -> None:
+    if not _hidden_equalizador_allowed(message):
+        await _hidden_equalizador_denied(message)
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer(usage)
+        return
+    chat_id = _hidden_palco_id(parts[1])
+    if chat_id is None:
+        await message.answer("Palco indisponível.")
+        return
+    try:
+        msg_ref = _hidden_message_ref_from_input(chat_id, parts[2])
+    except MesaError as exc:
+        await message.answer(mesa_error_public_detail(exc))
+        return
+    await _hidden_run_mesa_action(message, chat_id, ajuste, {"msg_ref": msg_ref})
+
+
+async def _hidden_member_action_command(
+    message: Message,
+    ajuste: str,
+    usage: str,
+    *,
+    allow_duration: bool = False,
+) -> None:
+    if not _hidden_equalizador_allowed(message):
+        await _hidden_equalizador_denied(message)
+        return
+    parts = (message.text or "").split(maxsplit=3)
+    if len(parts) < 3:
+        await message.answer(usage)
+        return
+    chat_id = _hidden_palco_id(parts[1])
+    if chat_id is None:
+        await message.answer("Palco indisponível.")
+        return
+    try:
+        alvo_ref = await _hidden_target_ref_from_input(chat_id, parts[2])
+    except MesaError as exc:
+        await message.answer(mesa_error_public_detail(exc))
+        return
+    payload: dict[str, object] = {"alvo_ref": alvo_ref}
+    if allow_duration:
+        minutes = 10
+        if len(parts) >= 4:
+            try:
+                minutes = max(1, min(int(parts[3]), 60 * 24 * 7))
+            except ValueError:
+                await message.answer("Duração inválida. Use minutos em número.")
+                return
+        payload["duracao_segundos"] = minutes * 60
+    if ajuste == "membros.remover":
+        payload["revogar_mensagens"] = False
+    await _hidden_run_mesa_action(message, chat_id, ajuste, payload)
+
+
+async def _hidden_silencio_command(message: Message, ajuste: str, usage: str) -> None:
+    if not _hidden_equalizador_allowed(message):
+        await _hidden_equalizador_denied(message)
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer(usage)
+        return
+    chat_id = _hidden_palco_id(parts[1])
+    if chat_id is None:
+        await message.answer("Palco indisponível.")
+        return
+    await _hidden_run_maestro_action(message, chat_id, ajuste, {"confirmacao": parts[2].strip()})
+
+
 async def _send_playing(message: Message) -> None:
     if not message.from_user:
         return
@@ -473,6 +726,152 @@ def _register_handlers(dp: Dispatcher) -> None:
             _EFFECT_PARTY,
             parse_mode="HTML",
         )
+
+    @dp.message(Command("mesa_ajuda"))
+    async def equalizador_hidden_help(message: Message) -> None:
+        if not _hidden_equalizador_allowed(message):
+            await _hidden_equalizador_denied(message)
+            return
+        await message.answer(
+            "<b>Mesa oculta</b>\n"
+            "Uso somente no privado e somente Maestro.\n\n"
+            "<code>/mesa_msg &lt;link_da_mensagem&gt;</code>\n"
+            "<code>/mesa_alvo &lt;palco&gt; &lt;id_ou_username&gt;</code>\n"
+            "<code>/mesa_apagar &lt;palco&gt; &lt;link_ou_msg_ref&gt;</code>\n"
+            "<code>/mesa_fixar &lt;palco&gt; &lt;link_ou_msg_ref&gt;</code>\n"
+            "<code>/mesa_desfixar &lt;palco&gt; &lt;link_ou_msg_ref&gt;</code>\n"
+            "<code>/mesa_silenciar &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt; [minutos]</code>\n"
+            "<code>/mesa_liberar &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt;</code>\n"
+            "<code>/mesa_remover &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt;</code>\n"
+            "<code>/mesa_reintegrar &lt;palco&gt; &lt;id_ou_username_ou_alvo_ref&gt;</code>\n"
+            "<code>/mesa_convite &lt;palco&gt; [nome]</code>\n"
+            "<code>/mesa_tx &lt;palco&gt; CONFIRMAR AJUSTE | texto</code>\n"
+            "<code>/mesa_silencio &lt;palco&gt; CONFIRMAR AJUSTE</code>\n"
+            "<code>/mesa_silencio_off &lt;palco&gt; CONFIRMAR AJUSTE</code>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+
+    @dp.message(Command("mesa_msg"))
+    async def equalizador_hidden_msg(message: Message) -> None:
+        if not _hidden_equalizador_allowed(message):
+            await _hidden_equalizador_denied(message)
+            return
+        link = (message.text or "").split(maxsplit=1)[1].strip() if len((message.text or "").split(maxsplit=1)) > 1 else ""
+        if not link:
+            await message.answer("Uso: /mesa_msg <link_da_mensagem>")
+            return
+        try:
+            chat_id, message_id = parse_telegram_message_link(link=link, aliases=settings.group_aliases())
+            if chat_id not in settings.equalizador_allowed_palco_ids():
+                await message.answer("Palco do link não está autorizado no Equalizador.")
+                return
+            msg_ref = register_mensagem_ref(
+                chat_id=chat_id,
+                message_id=message_id,
+                resumo_publico="Mensagem marcada por comando oculto",
+                alias_secret=settings.equalizador_alias_secret(),
+            )
+            await message.answer(f"Mensagem marcada: {msg_ref}\nPalco: {_hidden_palco_label(chat_id)}")
+        except MesaError as exc:
+            await message.answer(mesa_error_public_detail(exc))
+
+    @dp.message(Command("mesa_alvo"))
+    async def equalizador_hidden_alvo(message: Message) -> None:
+        if not _hidden_equalizador_allowed(message):
+            await _hidden_equalizador_denied(message)
+            return
+        parts = (message.text or "").split(maxsplit=2)
+        if len(parts) < 3:
+            await message.answer("Uso: /mesa_alvo <palco> <id_ou_username>")
+            return
+        chat_id = _hidden_palco_id(parts[1])
+        if chat_id is None:
+            await message.answer("Palco indisponível.")
+            return
+        try:
+            alvo_ref = await _hidden_target_ref_from_input(chat_id, parts[2])
+            await message.answer(f"Alvo marcado: {alvo_ref}\nPalco: {_hidden_palco_label(chat_id)}")
+        except MesaError as exc:
+            await message.answer(mesa_error_public_detail(exc))
+
+    @dp.message(Command("mesa_apagar"))
+    async def equalizador_hidden_apagar(message: Message) -> None:
+        await _hidden_message_action_command(message, "mensagens.apagar", "Uso: /mesa_apagar <palco> <link_ou_msg_ref>")
+
+    @dp.message(Command("mesa_fixar"))
+    async def equalizador_hidden_fixar(message: Message) -> None:
+        await _hidden_message_action_command(message, "fixados.criar", "Uso: /mesa_fixar <palco> <link_ou_msg_ref>")
+
+    @dp.message(Command("mesa_desfixar"))
+    async def equalizador_hidden_desfixar(message: Message) -> None:
+        await _hidden_message_action_command(message, "fixados.remover", "Uso: /mesa_desfixar <palco> <link_ou_msg_ref>")
+
+    @dp.message(Command("mesa_silenciar"))
+    async def equalizador_hidden_silenciar(message: Message) -> None:
+        await _hidden_member_action_command(
+            message,
+            "membros.silenciar",
+            "Uso: /mesa_silenciar <palco> <id_ou_username_ou_alvo_ref> [minutos]",
+            allow_duration=True,
+        )
+
+    @dp.message(Command("mesa_liberar"))
+    async def equalizador_hidden_liberar(message: Message) -> None:
+        await _hidden_member_action_command(message, "membros.liberar", "Uso: /mesa_liberar <palco> <id_ou_username_ou_alvo_ref>")
+
+    @dp.message(Command("mesa_remover"))
+    async def equalizador_hidden_remover(message: Message) -> None:
+        await _hidden_member_action_command(message, "membros.remover", "Uso: /mesa_remover <palco> <id_ou_username_ou_alvo_ref>")
+
+    @dp.message(Command("mesa_reintegrar"))
+    async def equalizador_hidden_reintegrar(message: Message) -> None:
+        await _hidden_member_action_command(message, "membros.reintegrar", "Uso: /mesa_reintegrar <palco> <id_ou_username_ou_alvo_ref>")
+
+    @dp.message(Command("mesa_convite"))
+    async def equalizador_hidden_convite(message: Message) -> None:
+        if not _hidden_equalizador_allowed(message):
+            await _hidden_equalizador_denied(message)
+            return
+        parts = (message.text or "").split(maxsplit=2)
+        if len(parts) < 2:
+            await message.answer("Uso: /mesa_convite <palco> [nome]")
+            return
+        chat_id = _hidden_palco_id(parts[1])
+        if chat_id is None:
+            await message.answer("Palco indisponível.")
+            return
+        name = parts[2].strip() if len(parts) > 2 else "Equalizador"
+        await _hidden_run_mesa_action(message, chat_id, "convites.criar", {"nome": name, "enviar_dm": False})
+
+    @dp.message(Command("mesa_tx"))
+    async def equalizador_hidden_tx(message: Message) -> None:
+        if not _hidden_equalizador_allowed(message):
+            await _hidden_equalizador_denied(message)
+            return
+        parts = (message.text or "").split(maxsplit=2)
+        if len(parts) < 3 or "|" not in parts[2]:
+            await message.answer("Uso: /mesa_tx <palco> CONFIRMAR AJUSTE | texto")
+            return
+        chat_id = _hidden_palco_id(parts[1])
+        if chat_id is None:
+            await message.answer("Palco indisponível.")
+            return
+        confirmacao, texto = [chunk.strip() for chunk in parts[2].split("|", 1)]
+        await _hidden_run_maestro_action(
+            message,
+            chat_id,
+            "transmissao.enviar",
+            {"confirmacao": confirmacao, "texto": texto, "sem_preview": True},
+        )
+
+    @dp.message(Command("mesa_silencio"))
+    async def equalizador_hidden_silencio(message: Message) -> None:
+        await _hidden_silencio_command(message, "silencio.ativar", "Uso: /mesa_silencio <palco> CONFIRMAR AJUSTE")
+
+    @dp.message(Command("mesa_silencio_off"))
+    async def equalizador_hidden_silencio_off(message: Message) -> None:
+        await _hidden_silencio_command(message, "silencio.desativar", "Uso: /mesa_silencio_off <palco> CONFIRMAR AJUSTE")
 
     @dp.message(Command("help"))
     async def help_command(message: Message) -> None:

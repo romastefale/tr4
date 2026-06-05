@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.db.database import engine as default_engine
@@ -40,6 +41,7 @@ def maestro_error_public_detail(exc: BaseException) -> str:
         "transmissao_vazia": "Escreva o texto da transmissão.",
         "transmissao_longa": "Transmissão acima do limite do Telegram.",
         "modo_silencio_falhou": "Modo silêncio não concluído.",
+        "modo_silencio_desativar_falhou": "Desativação do modo silêncio não concluída.",
         "transmissao_falhou": "Transmissão não concluída.",
         "maestro_erro": "Ajuste crítico não concluído.",
     }
@@ -83,6 +85,117 @@ def _silencio_permissions() -> dict[str, bool]:
     }
 
 
+def _silencio_liberado_permissions() -> dict[str, bool]:
+    return {
+        "can_send_messages": True,
+        "can_send_audios": True,
+        "can_send_documents": True,
+        "can_send_photos": True,
+        "can_send_videos": True,
+        "can_send_video_notes": True,
+        "can_send_voice_notes": True,
+        "can_send_polls": True,
+        "can_send_other_messages": True,
+        "can_add_web_page_previews": True,
+        "can_change_info": False,
+        "can_invite_users": True,
+        "can_pin_messages": False,
+        "can_manage_topics": True,
+    }
+
+
+def _clean_permissions(raw: object) -> dict[str, bool]:
+    allowed = set(_silencio_permissions())
+    if not isinstance(raw, dict):
+        return _silencio_liberado_permissions()
+    cleaned: dict[str, bool] = {}
+    for key in allowed:
+        value = raw.get(key)
+        if value is not None:
+            cleaned[key] = bool(value is True)
+    return cleaned or _silencio_liberado_permissions()
+
+
+def ensure_maestro_tables(db_engine: Engine = default_engine) -> None:
+    ensure_phase5_tables(db_engine)
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS eq_silencio_estado (
+                    palco_ref TEXT PRIMARY KEY,
+                    previous_permissions_json TEXT,
+                    ativo INTEGER NOT NULL DEFAULT 0,
+                    ator_ref TEXT,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+
+
+def _store_silencio_estado(*, palco_ref: str, previous_permissions: dict[str, bool], ator_ref: str, ativo: bool, db_engine: Engine) -> None:
+    ensure_maestro_tables(db_engine)
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO eq_silencio_estado (palco_ref, previous_permissions_json, ativo, ator_ref, updated_at)
+                VALUES (:palco_ref, :previous_permissions_json, :ativo, :ator_ref, :updated_at)
+                ON CONFLICT(palco_ref) DO UPDATE SET
+                    previous_permissions_json = excluded.previous_permissions_json,
+                    ativo = excluded.ativo,
+                    ator_ref = excluded.ator_ref,
+                    updated_at = excluded.updated_at
+                """
+            ),
+            {
+                "palco_ref": palco_ref,
+                "previous_permissions_json": json.dumps(previous_permissions, ensure_ascii=False),
+                "ativo": 1 if ativo else 0,
+                "ator_ref": ator_ref,
+                "updated_at": _now_iso(),
+            },
+        )
+
+
+def _load_silencio_permissions(*, palco_ref: str, db_engine: Engine) -> tuple[dict[str, bool], bool]:
+    ensure_maestro_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT previous_permissions_json
+                FROM eq_silencio_estado
+                WHERE palco_ref = :palco_ref AND ativo = 1
+                """
+            ),
+            {"palco_ref": palco_ref},
+        ).mappings().first()
+    if not row:
+        return _silencio_liberado_permissions(), True
+    try:
+        raw = json.loads(str(row.get("previous_permissions_json") or "{}"))
+    except json.JSONDecodeError:
+        raw = {}
+    return _clean_permissions(raw), False
+
+
+def _mark_silencio_inativo(*, palco_ref: str, db_engine: Engine) -> None:
+    ensure_maestro_tables(db_engine)
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE eq_silencio_estado
+                SET ativo = 0, updated_at = :updated_at
+                WHERE palco_ref = :palco_ref
+                """
+            ),
+            {"palco_ref": palco_ref, "updated_at": _now_iso()},
+        )
+
+
 def build_silencio_payload(*, palco_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     require_maestro_confirmation(payload)
     return {
@@ -107,6 +220,16 @@ def build_transmissao_payload(*, palco_id: int, payload: dict[str, Any]) -> dict
     }
 
 
+def build_silencio_desativar_payload(*, palco_id: int, payload: dict[str, Any], palco_ref: str, db_engine: Engine) -> tuple[dict[str, Any], bool]:
+    require_maestro_confirmation(payload)
+    permissions, usado_fallback = _load_silencio_permissions(palco_ref=palco_ref, db_engine=db_engine)
+    return {
+        "chat_id": int(palco_id),
+        "permissions": permissions,
+        "use_independent_chat_permissions": True,
+    }, usado_fallback
+
+
 async def executar_modo_silencio(
     *,
     palco: dict[str, object],
@@ -127,6 +250,15 @@ async def executar_modo_silencio(
             chat_id=palco_id,
             required_right="can_restrict_members",
             telegram_api_call=telegram_api_call,
+        )
+        chat_info = await telegram_api_call(bot_token, "getChat", {"chat_id": palco_id})
+        previous_permissions = _clean_permissions(chat_info.get("permissions") if isinstance(chat_info, dict) else {})
+        _store_silencio_estado(
+            palco_ref=palco_ref,
+            previous_permissions=previous_permissions,
+            ator_ref=ator_ref,
+            ativo=True,
+            db_engine=db_engine,
         )
         await telegram_api_call(bot_token, "setChatPermissions", telegram_payload)
         history = record_historico(
@@ -166,6 +298,72 @@ async def executar_modo_silencio(
         raise MaestroError("modo_silencio_falhou") from exc
 
 
+async def executar_modo_silencio_desativar(
+    *,
+    palco: dict[str, object],
+    ator_ref: str,
+    payload: dict[str, Any],
+    bot_token: str,
+    alias_secret: str,
+    db_engine: Engine = default_engine,
+    telegram_api_call: TelegramApiCallable = _telegram_api_call,
+) -> dict[str, object]:
+    """Restore non-administrator chat permissions saved before modo silêncio."""
+    palco_id = int(palco["telegram_chat_id"])
+    palco_ref = str(palco["ui_ref"])
+    telegram_payload, usado_fallback = build_silencio_desativar_payload(
+        palco_id=palco_id, payload=payload, palco_ref=palco_ref, db_engine=db_engine
+    )
+    try:
+        await ensure_bot_right(
+            bot_token=bot_token,
+            chat_id=palco_id,
+            required_right="can_restrict_members",
+            telegram_api_call=telegram_api_call,
+        )
+        await telegram_api_call(bot_token, "setChatPermissions", telegram_payload)
+        _mark_silencio_inativo(palco_ref=palco_ref, db_engine=db_engine)
+        resumo = f"Modo silêncio desativado em {palco.get('titulo') or 'Palco'}"
+        if usado_fallback:
+            resumo += " · permissões amplas aplicadas por ausência de estado anterior"
+        history = record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=None,
+            ajuste="silencio.desativar",
+            status="concluido",
+            resumo_publico=resumo,
+            payload_tecnico={"method": "setChatPermissions", "fallback": usado_fallback},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        return {
+            "ok": True,
+            "ajuste": "silencio.desativar",
+            "status": "concluido",
+            "historico_ref": history["historico_ref"],
+            "resumo": history["resumo"],
+            "fallback": usado_fallback,
+        }
+    except Exception as exc:
+        record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=None,
+            ajuste="silencio.desativar",
+            status="falhou",
+            resumo_publico=f"Desativação do modo silêncio não concluída · {_safe_text(exc, fallback='Telegram recusou a operação')}",
+            payload_tecnico={"erro": _safe_text(exc, fallback=exc.__class__.__name__), "method": "setChatPermissions"},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        if isinstance(exc, MaestroError):
+            raise
+        if isinstance(exc, MesaError):
+            raise
+        raise MaestroError("modo_silencio_desativar_falhou") from exc
+
+
 async def executar_transmissao(
     *,
     palco: dict[str, object],
@@ -189,14 +387,33 @@ async def executar_transmissao(
         )
         result = await telegram_api_call(bot_token, "sendMessage", telegram_payload)
         msg_ref: str | None = None
+        message_id: int | None = None
         if isinstance(result, dict) and result.get("message_id") is not None:
+            message_id = int(result["message_id"])
             msg_ref = register_mensagem_ref(
                 chat_id=palco_id,
-                message_id=int(result["message_id"]),
+                message_id=message_id,
                 resumo_publico="Transmissão",
                 alias_secret=alias_secret,
                 db_engine=db_engine,
             )
+        fixacao: dict[str, object] | None = None
+        if bool(payload.get("fixar")) and message_id is not None:
+            try:
+                await ensure_bot_right(
+                    bot_token=bot_token,
+                    chat_id=palco_id,
+                    required_right="can_pin_messages",
+                    telegram_api_call=telegram_api_call,
+                )
+                await telegram_api_call(
+                    bot_token,
+                    "pinChatMessage",
+                    {"chat_id": palco_id, "message_id": message_id, "disable_notification": True},
+                )
+                fixacao = {"ok": True}
+            except MesaError as exc:
+                fixacao = {"ok": False, "motivo": mesa_error_public_detail(exc)}
         history = record_historico(
             ator_ref=ator_ref,
             palco_ref=palco_ref,
@@ -204,7 +421,7 @@ async def executar_transmissao(
             ajuste="transmissao.enviar",
             status="concluido",
             resumo_publico=f"Transmissão enviada em {palco.get('titulo') or 'Palco'}",
-            payload_tecnico={"method": "sendMessage", "payload": telegram_payload},
+            payload_tecnico={"method": "sendMessage", "payload": telegram_payload, "fixacao": fixacao},
             alias_secret=alias_secret,
             db_engine=db_engine,
         )
@@ -217,6 +434,8 @@ async def executar_transmissao(
         }
         if msg_ref:
             response["msg_ref"] = msg_ref
+        if fixacao is not None:
+            response["fixacao"] = fixacao
         return response
     except Exception as exc:
         record_historico(
@@ -248,13 +467,15 @@ def exportar_historico_publico(
     generated_at = _now_iso()
     rows = list_historico_publico(palco_refs=palco_refs, limit=100, db_engine=db_engine)
     export_ref = "exp_" + make_ui_ref("grp", f"historico:{generated_at}:{len(rows)}", alias_secret).split("_", 1)[1]
-    return {
+    payload = {
         "exportacao_ref": export_ref,
         "gerado_em": generated_at,
         "formato": "json",
         "total_registros": len(rows),
         "registros": rows,
     }
+    payload["json_texto"] = json.dumps(payload, ensure_ascii=False, indent=2)
+    return payload
 
 
 def distribuicao_canais_publica(

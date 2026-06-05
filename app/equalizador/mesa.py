@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
@@ -109,11 +110,57 @@ def _safe_text(value: object, *, fallback: str = "") -> str:
     return text_value.replace("@", "").strip()[:180] or fallback
 
 
+def _safe_username(value: object) -> str | None:
+    text_value = str(value or "").strip().lstrip("@")
+    if not re.fullmatch(r"[A-Za-z0-9_]{3,32}", text_value):
+        return None
+    return text_value
+
+
+def _safe_int(value: object, *, default: int = 0, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        number = int(str(value or "").strip() or default)
+    except (TypeError, ValueError):
+        number = int(default)
+    if minimum is not None:
+        number = max(int(minimum), number)
+    if maximum is not None:
+        number = min(int(maximum), number)
+    return number
+
+
 def _safe_error_text(value: object, *, fallback: str = "") -> str:
     text_value = _safe_text(value, fallback=fallback)
     text_value = re.sub(r"bot\d+:[A-Za-z0-9_-]+", "bot_token_oculto", text_value)
     text_value = re.sub(r"-?\d{6,}", "ref_oculta", text_value)
     return text_value[:220] or fallback
+
+
+def _public_target_row(*, alvo_ref: str, nome: str, updated_at: str | None = None, situacao: str | None = None) -> dict[str, object]:
+    return {
+        "alvo_ref": str(alvo_ref),
+        "nome": _safe_text(nome, fallback="Membro"),
+        "situacao": _safe_text(situacao, fallback="desconhecido"),
+        "updated_at": str(updated_at or _now_iso()),
+    }
+
+
+def _public_message_row(*, msg_ref: str, resumo: str, message_date: int | None = None, updated_at: str | None = None) -> dict[str, object]:
+    now_ts = _now_unix()
+    age_seconds = None
+    if message_date is not None:
+        try:
+            age_seconds = max(0, now_ts - int(message_date))
+        except (TypeError, ValueError):
+            age_seconds = None
+    apagavel = True if age_seconds is None else age_seconds < 48 * 60 * 60
+    return {
+        "msg_ref": str(msg_ref),
+        "resumo": _safe_text(resumo, fallback="Mensagem"),
+        "updated_at": str(updated_at or _now_iso()),
+        "idade_segundos": age_seconds,
+        "apagavel": apagavel,
+    }
 
 
 async def _telegram_api_call(token: str, method: str, payload: dict[str, Any] | None = None) -> Any:
@@ -130,6 +177,30 @@ async def _telegram_api_call(token: str, method: str, payload: dict[str, Any] | 
         description = _safe_error_text(data.get("description"), fallback="telegram_erro")
         raise MesaTelegramError(description)
     return data.get("result")
+
+
+async def send_operator_dm(
+    *,
+    bot_token: str,
+    user_id: int,
+    text: str,
+    telegram_api_call: TelegramApiCallable = _telegram_api_call,
+) -> dict[str, object]:
+    """Try to send a private operational message to the Mini App operator.
+
+    Telegram can reject the DM when the user never opened the bot privately or
+    blocked it. The caller must keep the link visible in the Mini App regardless
+    of this best-effort delivery result.
+    """
+    try:
+        await telegram_api_call(
+            bot_token,
+            "sendMessage",
+            {"chat_id": int(user_id), "text": _safe_text(text, fallback="Equalizador")[:4096], "disable_web_page_preview": True},
+        )
+        return {"enviado": True}
+    except MesaError as exc:
+        return {"enviado": False, "motivo": mesa_error_public_detail(exc)}
 
 
 def _rights_from_member(member: dict[str, Any]) -> dict[str, bool]:
@@ -175,7 +246,9 @@ def ensure_phase5_tables(db_engine: Engine = default_engine) -> None:
                     telegram_chat_id INTEGER NOT NULL,
                     telegram_user_id INTEGER NOT NULL,
                     ui_ref TEXT NOT NULL UNIQUE,
+                    username TEXT,
                     nome_publico TEXT NOT NULL,
+                    telegram_status TEXT,
                     habilitado INTEGER NOT NULL DEFAULT 1,
                     updated_at TEXT NOT NULL,
                     UNIQUE (telegram_chat_id, telegram_user_id)
@@ -220,7 +293,12 @@ def ensure_phase5_tables(db_engine: Engine = default_engine) -> None:
         )
         if not _sqlite_column_exists(conn, "eq_mensagens", "telegram_message_date"):
             conn.execute(text("ALTER TABLE eq_mensagens ADD COLUMN telegram_message_date INTEGER"))
+        if not _sqlite_column_exists(conn, "eq_alvos", "username"):
+            conn.execute(text("ALTER TABLE eq_alvos ADD COLUMN username TEXT"))
+        if not _sqlite_column_exists(conn, "eq_alvos", "telegram_status"):
+            conn.execute(text("ALTER TABLE eq_alvos ADD COLUMN telegram_status TEXT"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_alvos_ui_ref ON eq_alvos(ui_ref)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_alvos_username ON eq_alvos(telegram_chat_id, username)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_mensagens_ui_ref ON eq_mensagens(ui_ref)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_historico_palco_ref ON eq_historico(palco_ref)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_historico_created_at ON eq_historico(created_at)"))
@@ -232,6 +310,8 @@ def register_alvo_ref(
     user_id: int,
     nome_publico: str,
     alias_secret: str,
+    username: str | None = None,
+    telegram_status: str | None = None,
     db_engine: Engine = default_engine,
 ) -> str:
     """Register a target user seen internally and return its public alias.
@@ -246,11 +326,13 @@ def register_alvo_ref(
         conn.execute(
             text(
                 """
-                INSERT INTO eq_alvos (telegram_chat_id, telegram_user_id, ui_ref, nome_publico, habilitado, updated_at)
-                VALUES (:chat_id, :user_id, :ui_ref, :nome_publico, 1, :updated_at)
+                INSERT INTO eq_alvos (telegram_chat_id, telegram_user_id, ui_ref, username, nome_publico, telegram_status, habilitado, updated_at)
+                VALUES (:chat_id, :user_id, :ui_ref, :username, :nome_publico, :telegram_status, 1, :updated_at)
                 ON CONFLICT(telegram_chat_id, telegram_user_id) DO UPDATE SET
                     ui_ref=excluded.ui_ref,
+                    username=COALESCE(excluded.username, eq_alvos.username),
                     nome_publico=excluded.nome_publico,
+                    telegram_status=COALESCE(excluded.telegram_status, eq_alvos.telegram_status),
                     habilitado=1,
                     updated_at=excluded.updated_at
                 """
@@ -259,7 +341,9 @@ def register_alvo_ref(
                 "chat_id": int(chat_id),
                 "user_id": int(user_id),
                 "ui_ref": ui_ref,
+                "username": _safe_username(username),
                 "nome_publico": _safe_text(nome_publico, fallback="Membro"),
+                "telegram_status": _safe_text(telegram_status, fallback="") or None,
                 "updated_at": _now_iso(),
             },
         )
@@ -307,13 +391,132 @@ def register_mensagem_ref(
     return ui_ref
 
 
+def parse_telegram_message_link(*, link: str, aliases: dict[str, int]) -> tuple[int, int]:
+    """Parse supported Telegram message links into internal chat/message IDs.
+
+    Supported formats:
+    - https://t.me/c/<internal_chat>/<message_id>
+    - https://t.me/<alias_or_public_username>/<message_id>
+
+    The caller must still verify that the parsed chat belongs to the selected
+    palco. No public endpoint should accept the parsed IDs directly.
+    """
+    value = str(link or "").strip()
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {"t.me", "telegram.me"}:
+        raise MesaTargetError("Link de mensagem inválido.")
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 2:
+        raise MesaTargetError("Link de mensagem incompleto.")
+    message_part = parts[-1]
+    if not message_part.isdigit():
+        raise MesaTargetError("Link sem número de mensagem.")
+    message_id = int(message_part)
+    if parts[0] == "c":
+        if len(parts) < 3 or not parts[1].isdigit():
+            raise MesaTargetError("Link interno de mensagem inválido.")
+        return int(f"-100{parts[1]}"), message_id
+    alias = parts[0].lstrip("@").casefold()
+    normalized = {str(name).lstrip("@").casefold(): int(chat_id) for name, chat_id in aliases.items()}
+    if alias not in normalized:
+        raise MesaTargetError("Palco do link não está configurado no Equalizador.")
+    return normalized[alias], message_id
+
+
+def register_mensagem_from_link(
+    *,
+    palco_id: int,
+    link: str,
+    aliases: dict[str, int],
+    alias_secret: str,
+    db_engine: Engine = default_engine,
+) -> dict[str, object]:
+    chat_id, message_id = parse_telegram_message_link(link=link, aliases=aliases)
+    if int(chat_id) != int(palco_id):
+        raise MesaTargetError("Link pertence a outro palco.")
+    msg_ref = register_mensagem_ref(
+        chat_id=int(chat_id),
+        message_id=int(message_id),
+        resumo_publico="Mensagem marcada por link",
+        alias_secret=alias_secret,
+        db_engine=db_engine,
+    )
+    return _public_message_row(msg_ref=msg_ref, resumo="Mensagem marcada por link")
+
+
+def resolve_alvo_by_username(*, palco_id: int, username: str, db_engine: Engine = default_engine) -> dict[str, object]:
+    ensure_phase5_tables(db_engine)
+    safe_username = _safe_username(username)
+    if not safe_username:
+        raise MesaTargetError("Username inválido.")
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT telegram_user_id, ui_ref, nome_publico, telegram_status, updated_at
+                FROM eq_alvos
+                WHERE telegram_chat_id=:chat_id AND lower(username)=lower(:username) AND habilitado=1
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """
+            ),
+            {"chat_id": int(palco_id), "username": safe_username},
+        ).mappings().first()
+    if not row:
+        raise MesaTargetError("Username ainda não reconhecido. Peça para a pessoa enviar mensagem no palco ou use ID numérico.")
+    return dict(row)
+
+
+async def resolve_alvo_manual(
+    *,
+    palco_id: int,
+    identificador: str,
+    bot_token: str,
+    alias_secret: str,
+    telegram_api_call: TelegramApiCallable = _telegram_api_call,
+    db_engine: Engine = default_engine,
+) -> dict[str, object]:
+    """Resolve a manual target input into an internal ``alvo_ref``.
+
+    Numeric IDs are verified with getChatMember. Usernames are supported only
+    when the bot has already seen and stored the username inside the selected
+    palco; Bot API does not provide a general username-to-user-id resolver.
+    """
+    raw = str(identificador or "").strip()
+    if not raw:
+        raise MesaTargetError("Informe ID numérico ou username.")
+    if raw.startswith("@") or not re.fullmatch(r"-?\d{4,15}", raw):
+        row = resolve_alvo_by_username(palco_id=palco_id, username=raw, db_engine=db_engine)
+        user_id = int(row["telegram_user_id"])
+        member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": int(palco_id), "user_id": user_id})
+    else:
+        user_id = int(raw)
+        member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": int(palco_id), "user_id": user_id})
+    if not isinstance(member, dict):
+        raise MesaTargetError("Alvo não encontrado no palco.")
+    user = member.get("user") if isinstance(member.get("user"), dict) else {}
+    first_name = str(user.get("first_name") or "").strip()
+    last_name = str(user.get("last_name") or "").strip()
+    nome = " ".join(part for part in [first_name, last_name] if part).strip() or "Membro"
+    alvo_ref = register_alvo_ref(
+        chat_id=int(palco_id),
+        user_id=user_id,
+        nome_publico=nome,
+        username=str(user.get("username") or "") or None,
+        telegram_status=_target_member_status(member),
+        alias_secret=alias_secret,
+        db_engine=db_engine,
+    )
+    return _public_target_row(alvo_ref=alvo_ref, nome=nome, situacao=_target_member_status(member))
+
+
 def resolve_alvo_ref(*, palco_id: int, alvo_ref: str, db_engine: Engine = default_engine) -> dict[str, object]:
     ensure_phase5_tables(db_engine)
     with db_engine.begin() as conn:
         row = conn.execute(
             text(
                 """
-                SELECT telegram_user_id, ui_ref, nome_publico
+                SELECT telegram_user_id, ui_ref, nome_publico, telegram_status
                 FROM eq_alvos
                 WHERE telegram_chat_id=:chat_id AND ui_ref=:ui_ref AND habilitado=1
                 """
@@ -331,7 +534,7 @@ def resolve_mensagem_ref(*, palco_id: int, msg_ref: str, db_engine: Engine = def
         row = conn.execute(
             text(
                 """
-                SELECT telegram_message_id, ui_ref, resumo_publico
+                SELECT telegram_message_id, telegram_message_date, ui_ref, resumo_publico
                 FROM eq_mensagens
                 WHERE telegram_chat_id=:chat_id AND ui_ref=:ui_ref AND habilitado=1
                 """
@@ -341,6 +544,61 @@ def resolve_mensagem_ref(*, palco_id: int, msg_ref: str, db_engine: Engine = def
     if not row:
         raise MesaNotFoundError("mensagem_indisponivel")
     return dict(row)
+
+
+def mensagem_fora_da_janela_apagar(message: dict[str, object]) -> bool:
+    """Return True when a message is known to be outside Telegram delete limits."""
+    raw_date = message.get("telegram_message_date")
+    if raw_date is None:
+        return False
+    try:
+        age_seconds = max(0, _now_unix() - int(raw_date))
+    except (TypeError, ValueError):
+        return False
+    return age_seconds >= 48 * 60 * 60
+
+
+def mark_mensagem_inativa(*, palco_id: int, msg_ref: str, db_engine: Engine = default_engine) -> None:
+    """Hide a message alias after successful deletion to prevent repeated action."""
+    ensure_phase5_tables(db_engine)
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE eq_mensagens
+                SET habilitado=0, updated_at=:updated_at
+                WHERE telegram_chat_id=:chat_id AND ui_ref=:ui_ref
+                """
+            ),
+            {"chat_id": int(palco_id), "ui_ref": str(msg_ref), "updated_at": _now_iso()},
+        )
+
+
+def mark_alvo_status(
+    *,
+    palco_id: int,
+    alvo_ref: str,
+    telegram_status: str,
+    db_engine: Engine = default_engine,
+) -> None:
+    """Persist the last known public-safe member state after a Mesa action."""
+    ensure_phase5_tables(db_engine)
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE eq_alvos
+                SET telegram_status=:telegram_status, updated_at=:updated_at
+                WHERE telegram_chat_id=:chat_id AND ui_ref=:ui_ref
+                """
+            ),
+            {
+                "chat_id": int(palco_id),
+                "ui_ref": str(alvo_ref),
+                "telegram_status": _safe_text(telegram_status, fallback="desconhecido"),
+                "updated_at": _now_iso(),
+            },
+        )
 
 
 def _history_ref(*, ator_ref: str, palco_ref: str, ajuste: str, created_at: str, alias_secret: str) -> str:
@@ -492,7 +750,7 @@ async def ensure_member_target_eligible(
     user_id: int,
     ajuste: str,
     telegram_api_call: TelegramApiCallable = _telegram_api_call,
-) -> None:
+) -> dict[str, Any]:
     """Validate target member state before member adjustments.
 
     Telegram itself is still the final authority. This preflight converts common
@@ -515,6 +773,7 @@ async def ensure_member_target_eligible(
         raise MesaTargetError("Alvo não está ativo no palco.")
     if ajuste == "membros.reintegrar" and status != "kicked":
         raise MesaTargetError("Alvo não está removido do palco.")
+    return member
 
 
 def build_action_payload(
@@ -537,6 +796,8 @@ def build_action_payload(
             "chat_id": int(palco_id),
             "message_id": int(message["telegram_message_id"]),
         }
+        if ajuste == "mensagens.apagar" and mensagem_fora_da_janela_apagar(message):
+            raise MesaTargetError("Mensagem fora da janela de apagamento do Telegram.")
         if ajuste == "fixados.criar":
             telegram_payload["disable_notification"] = bool(payload.get("sem_notificacao", True))
         return telegram_payload, str(message["ui_ref"]), str(message.get("resumo_publico") or "Mensagem")
@@ -573,13 +834,14 @@ def build_action_payload(
     if ajuste == "convites.criar":
         name = _safe_text(payload.get("nome"), fallback="Equalizador")[:32]
         telegram_payload = {"chat_id": int(palco_id), "name": name}
-        expire_seconds = int(payload.get("expira_em_segundos") or 0)
+        expire_seconds = _safe_int(payload.get("expira_em_segundos"), default=0, minimum=0, maximum=30 * 24 * 60 * 60)
         if expire_seconds > 0:
-            telegram_payload["expire_date"] = _now_unix() + min(expire_seconds, 30 * 24 * 60 * 60)
-        member_limit = int(payload.get("limite_membros") or 0)
+            telegram_payload["expire_date"] = _now_unix() + expire_seconds
+        member_limit = _safe_int(payload.get("limite_membros"), default=0, minimum=0, maximum=99999)
         if member_limit > 0:
-            telegram_payload["member_limit"] = max(1, min(member_limit, 99999))
+            telegram_payload["member_limit"] = member_limit
         if bool(payload.get("solicitar_aprovacao", False)):
+            # Telegram does not allow member_limit together with join-request links.
             telegram_payload.pop("member_limit", None)
             telegram_payload["creates_join_request"] = True
         return telegram_payload, None, "Convite"
@@ -618,8 +880,9 @@ async def executar_ajuste(
             required_right=spec.direito,
             telegram_api_call=telegram_api_call,
         )
+        member_before: dict[str, Any] | None = None
         if spec.target_kind == "alvo":
-            await ensure_member_target_eligible(
+            member_before = await ensure_member_target_eligible(
                 bot_token=bot_token,
                 chat_id=palco_id,
                 user_id=int(telegram_payload["user_id"]),
@@ -627,6 +890,23 @@ async def executar_ajuste(
                 telegram_api_call=telegram_api_call,
             )
         result = await telegram_api_call(bot_token, spec.telegram_method, telegram_payload)
+        if ajuste == "mensagens.apagar" and alvo_ref:
+            mark_mensagem_inativa(palco_id=palco_id, msg_ref=alvo_ref, db_engine=db_engine)
+        membro_estado = None
+        if spec.target_kind == "alvo" and alvo_ref:
+            membro_estado = {
+                "membros.silenciar": "silenciado",
+                "membros.liberar": "liberado",
+                "membros.remover": "removido",
+                "membros.reintegrar": "reintegrado",
+            }.get(ajuste, "ajustado")
+            telegram_status = {
+                "membros.silenciar": "restricted",
+                "membros.liberar": "member",
+                "membros.remover": "kicked",
+                "membros.reintegrar": "left",
+            }.get(ajuste, _target_member_status(member_before or {}))
+            mark_alvo_status(palco_id=palco_id, alvo_ref=alvo_ref, telegram_status=telegram_status, db_engine=db_engine)
         invite_link = None
         if ajuste == "convites.criar" and isinstance(result, dict):
             invite_link = str(result.get("invite_link") or "") or None
@@ -651,8 +931,23 @@ async def executar_ajuste(
             "historico_ref": history["historico_ref"],
             "resumo": history["resumo"],
         }
+        if ajuste in {"mensagens.apagar", "fixados.criar", "fixados.remover"} and alvo_ref:
+            estado = {
+                "mensagens.apagar": "apagada",
+                "fixados.criar": "fixada",
+                "fixados.remover": "fixado_removido",
+            }.get(ajuste, "ajustada")
+            response["mensagem"] = {"msg_ref": alvo_ref, "resumo": alvo_label, "estado": estado}
+        if spec.target_kind == "alvo" and alvo_ref:
+            response["membro"] = {"alvo_ref": alvo_ref, "nome": alvo_label, "estado": membro_estado or "ajustado"}
         if invite_link:
             response["convite"] = invite_link
+            response["convite_info"] = {
+                "nome": telegram_payload.get("name"),
+                "expira_em": telegram_payload.get("expire_date"),
+                "limite_membros": telegram_payload.get("member_limit"),
+                "solicitar_aprovacao": bool(telegram_payload.get("creates_join_request", False)),
+            }
         return response
     except Exception as exc:
         detail = mesa_error_public_detail(exc)
@@ -735,7 +1030,7 @@ def list_alvos_publicos(
         rows = conn.execute(
             text(
                 """
-                SELECT ui_ref, nome_publico, updated_at
+                SELECT ui_ref, nome_publico, telegram_status, updated_at
                 FROM eq_alvos
                 WHERE telegram_chat_id=:chat_id AND habilitado=1
                 ORDER BY updated_at DESC, id DESC
@@ -748,6 +1043,7 @@ def list_alvos_publicos(
         {
             "alvo_ref": str(row["ui_ref"]),
             "nome": str(row["nome_publico"] or "Membro"),
+            "situacao": str(row["telegram_status"] or "desconhecido"),
             "updated_at": str(row["updated_at"]),
         }
         for row in rows
