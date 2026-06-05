@@ -1011,6 +1011,12 @@ async def executar_ajuste(
         invite_link = None
         if ajuste == "convites.criar" and isinstance(result, dict):
             invite_link = str(result.get("invite_link") or "") or None
+            try:
+                from app.equalizador.entradas import register_invite_from_result
+
+                register_invite_from_result(chat_id=palco_id, result=result, alias_secret=alias_secret, db_engine=db_engine)
+            except Exception:
+                pass
         resumo = f"{spec.ajuste} concluído em {palco.get('titulo') or 'Palco'}"
         if alvo_label:
             resumo = f"{spec.ajuste} concluído: {alvo_label}"

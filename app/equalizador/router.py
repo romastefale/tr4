@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.config import settings
+from app.db.database import engine as default_engine
 from app.equalizador.afinacao import PalcoNotFoundError, get_palco_internal_by_ref, sincronizar_afinacao_palco
 from app.equalizador.palcos import list_equalizador_palcos, upsert_operador
 from app.equalizador.permissions import (
@@ -50,7 +51,33 @@ from app.equalizador.hardening import (
     validate_equalizador_session,
 )
 from app.equalizador.security import InitDataError, TelegramWebAppIdentity, extract_tma_authorization, validate_init_data
-from app.equalizador.configuracao import configuracao_maestro_publica
+from app.equalizador.configuracao import configuracao_maestro_publica, raw_editor_from_form_payload
+from app.equalizador.painel import PainelDinamicoError, montar_painel_dinamico_palco
+from app.equalizador.entradas import (
+    EntradasError,
+    entradas_error_public_detail,
+    list_join_requests_publicos,
+    executar_pedido_entrada,
+    list_invites_publicos,
+    editar_convite,
+    revogar_convite,
+    exportar_link_primario,
+)
+from app.equalizador.avancado import (
+    ADVANCED_SPECS,
+    AvancadoError,
+    avancado_error_public_detail,
+    executar_ajuste_avancado,
+    list_sender_chats_publicos,
+    list_topics_publicos,
+)
+from app.equalizador.admin import (
+    ADMIN_SPECS,
+    AdminCriticoError,
+    AdminConfirmationError,
+    admin_error_public_detail,
+    executar_admin_critico,
+)
 
 router = APIRouter(prefix="/equalizador", tags=["equalizador"], include_in_schema=False)
 
@@ -76,6 +103,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
     .pill { display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: var(--tg-theme-hint-color, #a1a1aa); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
     .panel { border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.035); }
     .palco { width: 100%; text-align: left; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.06); color: inherit; font: inherit; }
     .palco.active { outline: 2px solid var(--tg-theme-button-color, #5b8cff); }
@@ -201,6 +229,46 @@ _EQUALIZADOR_HTML = """<!doctype html>
                 <button id="abrir_convite" class="action secondary" type="button" disabled>Abrir link</button>
               </div>
               <p id="convite_dm_status" class="muted small">O link também será enviado por DM quando o bot puder conversar com o operador.</p>
+              <h3>Convites criados</h3>
+              <select id="convite_select"></select>
+              <div class="toolbar">
+                <button class="action secondary" data-action="convites.editar">Editar convite</button>
+                <button class="action danger" data-action="convites.revogar">Revogar convite</button>
+                <button class="action secondary" data-action="convites.exportar_primario">Exportar link primário</button>
+              </div>
+              <div id="convites_hint" class="empty small">Nenhum convite carregado.</div>
+              <h3>Pedidos de entrada</h3>
+              <select id="entrada_select"></select>
+              <div class="toolbar">
+                <button class="action secondary" data-action="entradas.aprovar">Aprovar entrada</button>
+                <button class="action danger" data-action="entradas.recusar">Recusar entrada</button>
+              </div>
+              <div id="entradas_hint" class="empty small">Nenhum pedido de entrada capturado.</div>
+            </div>
+          </div>
+          <h3>Avançado</h3>
+          <div class="grid">
+            <div class="panel">
+              <strong>Tópicos/fóruns</strong>
+              <p class="muted small">Aparece conforme can_manage_topics, can_delete_messages e can_pin_messages.</p>
+              <select id="topico_select"></select>
+              <input id="topico_nome" maxlength="128" placeholder="Nome do tópico" />
+              <div class="toolbar"><button class="action secondary" data-action="topicos.criar" type="button">Criar</button><button class="action secondary" data-action="topicos.editar" type="button">Editar</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.fechar" type="button">Fechar</button><button class="action secondary" data-action="topicos.reabrir" type="button">Reabrir</button><button class="action danger" data-action="topicos.apagar" type="button">Apagar</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.desfixar" type="button">Desfixar tópico</button><button class="action secondary" data-action="topicos.geral.desfixar" type="button">Desfixar geral</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.geral.fechar" type="button">Fechar geral</button><button class="action secondary" data-action="topicos.geral.reabrir" type="button">Reabrir geral</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="topicos.geral.ocultar" type="button">Ocultar geral</button><button class="action secondary" data-action="topicos.geral.exibir" type="button">Exibir geral</button></div>
+              <div id="topicos_hint" class="empty small">Nenhum tópico registrado.</div>
+            </div>
+            <div class="panel">
+              <strong>Reações e canais remetentes</strong>
+              <p class="muted small">Para reações escolha uma mensagem e um membro ou canal remetente.</p>
+              <select id="sender_select"></select>
+              <input id="membro_tag" maxlength="16" placeholder="Tag do membro" />
+              <div class="toolbar"><button class="action secondary" data-action="reacoes.mensagem.limpar" type="button">Limpar reação da mensagem</button><button class="action secondary" data-action="reacoes.recentes.limpar" type="button">Limpar reações recentes</button></div>
+              <div class="toolbar"><button class="action danger" data-action="canais_remetentes.banir" type="button">Banir canal remetente</button><button class="action secondary" data-action="canais_remetentes.liberar" type="button">Liberar canal remetente</button></div>
+              <div class="toolbar"><button class="action secondary" data-action="membros.tag.definir" type="button">Definir tag</button></div>
+              <div id="remetentes_hint" class="empty small">Nenhum canal remetente capturado.</div>
             </div>
           </div>
         </section>
@@ -208,6 +276,9 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <p class="section-note">A Afinação mostra o que o bot realmente consegue executar neste palco.</p>
           <div id="afinacao_resumo" class="statusbar muted">Aguardando sincronização.</div>
           <div id="afinacao" class="list muted">Afinação não carregada.</div>
+          <h3>Painel dinâmico</h3>
+          <p class="section-note">Descrição do palco, administradores, bots administradores e funções liberadas conforme direitos reais do bot.</p>
+          <div id="painel_dinamico" class="list muted">Painel dinâmico não carregado.</div>
         </section>
         <section id="historico_view" class="view hidden">
           <p class="section-note">Histórico público da mesa, sem IDs técnicos ou payload interno.</p>
@@ -229,14 +300,48 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <label class="small"><input id="transmissao_silenciosa" type="checkbox" /> enviar sem notificação</label>
             <label class="small"><input id="transmissao_fixar" type="checkbox" /> fixar transmissão depois do envio</label>
             <textarea id="exportacao_resultado" readonly placeholder="Exportação sanitizada aparece aqui"></textarea>
+            <h3>Administração crítica</h3>
+            <p class="muted small">Essas ações exigem direito real do bot e confirmação dupla. Use somente em palco de teste antes de produção.</p>
+            <input id="grupo_titulo_input" maxlength="128" placeholder="Novo título do grupo" />
+            <textarea id="grupo_descricao_input" maxlength="255" placeholder="Nova descrição do grupo"></textarea>
+            <input id="admin_titulo_input" maxlength="16" placeholder="Título personalizado do admin" />
+            <label class="small muted">Perfil de promoção</label>
+            <select id="admin_perfil_select"><option value="moderador" selected>Moderador seguro</option><option value="maestro">Maestro delegado</option></select>
+            <label class="small"><input id="admin_ciente" type="checkbox" /> confirmo que entendo o risco da administração crítica</label>
+            <div class="toolbar">
+              <button class="action secondary" data-action="grupo.titulo" type="button">Alterar título</button>
+              <button class="action secondary" data-action="grupo.descricao" type="button">Alterar descrição</button>
+              <button class="action danger" data-action="admins.promover" type="button">Promover admin</button>
+              <button class="action danger" data-action="admins.rebaixar" type="button">Rebaixar admin</button>
+              <button class="action secondary" data-action="admins.titulo" type="button">Definir título admin</button>
+            </div>
+            <div id="admin_resultado" class="empty small">Nenhuma administração crítica executada nesta sessão.</div>
             <div id="distribuicao" class="list muted"></div>
           </div>
         </section>
         <section id="config_view" class="view hidden">
           <div class="panel">
             <h3>Configuração do Maestro</h3>
-            <p class="muted small">Área somente leitura para conferência. O app não edita Railway diretamente; ele gera bloco seguro para copiar no Raw Editor.</p>
+            <p class="muted small">Use campos amigáveis para ajustar palcos, operadores e canais. O app não edita Railway diretamente; ele gera o Raw Editor somente no final para copiar.</p>
             <div class="toolbar"><button id="atualizar_configuracao" class="action secondary" type="button">Atualizar configuração</button></div>
+            <h3>Assistente de configuração</h3>
+            <div class="formgrid">
+              <label class="small muted">Mini App<br><input id="cfg_app_name" placeholder="equalizador" /></label>
+              <label class="small muted">Equalizador ligado<br><select id="cfg_enabled"><option value="true">Ligado</option><option value="false">Desligado</option></select></label>
+              <label class="small muted">Maestros<br><input id="cfg_maestros" placeholder="8505890439" /></label>
+              <label class="small muted">Operadores<br><input id="cfg_operadores" placeholder="8505890439,1759115970" /></label>
+              <label class="small muted">Palcos ativos<br><input id="cfg_palcos" placeholder="-100...,-100..." /></label>
+              <label class="small muted">Rate limit/min<br><input id="cfg_rate" type="number" min="10" max="600" placeholder="30" /></label>
+            </div>
+            <label class="small muted">Aliases dos grupos, um por linha: nome=-100...</label>
+            <textarea id="cfg_aliases" placeholder="radio=-1003818494866"></textarea>
+            <label class="small muted">Canais por operador</label>
+            <textarea id="cfg_canais" placeholder="8505890439:*:*"></textarea>
+            <div class="toolbar">
+              <button id="gerar_config_raw" class="action" type="button">Gerar Raw Editor</button>
+              <button id="resetar_config_form" class="action secondary" type="button">Restaurar valores atuais</button>
+            </div>
+            <div id="config_preview_resumo" class="empty small">Preencha os campos e gere o Raw Editor somente no final.</div>
             <h3>Palcos ativos</h3>
             <div id="config_palcos_ativos" class="list muted">Configuração não carregada.</div>
             <h3>Aliases configurados</h3>
@@ -249,8 +354,9 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <p class="muted small">Leitura de segurança por operador, palco e canal. Canais críticos ficam marcados e operadores comuns permanecem bloqueados.</p>
             <div id="config_matriz_resumo" class="empty small">Matriz não carregada.</div>
             <div id="config_matriz" class="list muted">Configuração não carregada.</div>
-            <h3>Raw Editor</h3>
-            <textarea id="config_raw" readonly placeholder="Bloco gerado pelo backend"></textarea>
+            <h3>Raw Editor final</h3>
+            <p class="muted small">Só copie este bloco depois de revisar os campos acima. Preserve as outras variáveis do Railway.</p>
+            <textarea id="config_raw" readonly placeholder="Clique em Gerar Raw Editor para montar o bloco final"></textarea>
             <div class="toolbar"><button id="copiar_config_raw" class="action secondary" type="button" disabled>Copiar Raw Editor</button></div>
           </div>
         </section>
@@ -270,7 +376,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
       let direitosDisponiveis = new Set();
       let afinacaoLoaded = false;
       let modoMaestroPermitido = false;
-      const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar"]);
+      const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar", "grupo.titulo", "grupo.descricao", "admins.promover", "admins.rebaixar", "admins.titulo"]);
       const endpoints = {
         "mensagens.apagar": "mensagens/apagar",
         "membros.silenciar": "membros/silenciar",
@@ -280,9 +386,35 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "fixados.criar": "fixados/criar",
         "fixados.remover": "fixados/remover",
         "convites.criar": "convites/criar",
+        "convites.editar": "convites/editar",
+        "convites.revogar": "convites/revogar",
+        "convites.exportar_primario": "convites/exportar-primario",
+        "entradas.aprovar": "entradas/aprovar",
+        "entradas.recusar": "entradas/recusar",
         "silencio.ativar": "silencio/ativar",
         "silencio.desativar": "silencio/desativar",
-        "transmissao.enviar": "transmissao/enviar"
+        "transmissao.enviar": "transmissao/enviar",
+        "reacoes.mensagem.limpar": "reacoes/mensagem/limpar",
+        "reacoes.recentes.limpar": "reacoes/recentes/limpar",
+        "canais_remetentes.banir": "canais-remetentes/banir",
+        "canais_remetentes.liberar": "canais-remetentes/liberar",
+        "membros.tag.definir": "membros/tag/definir",
+        "topicos.criar": "topicos/criar",
+        "topicos.editar": "topicos/editar",
+        "topicos.fechar": "topicos/fechar",
+        "topicos.reabrir": "topicos/reabrir",
+        "topicos.apagar": "topicos/apagar",
+        "topicos.desfixar": "topicos/desfixar",
+        "topicos.geral.fechar": "topicos/geral/fechar",
+        "topicos.geral.reabrir": "topicos/geral/reabrir",
+        "topicos.geral.ocultar": "topicos/geral/ocultar",
+        "topicos.geral.exibir": "topicos/geral/exibir",
+        "topicos.geral.desfixar": "topicos/geral/desfixar",
+        "grupo.titulo": "grupo/titulo",
+        "grupo.descricao": "grupo/descricao",
+        "admins.promover": "admins/promover",
+        "admins.rebaixar": "admins/rebaixar",
+        "admins.titulo": "admins/titulo"
       };
       const actionLabels = {
         "palco.ver": "Ver palco",
@@ -297,13 +429,40 @@ _EQUALIZADOR_HTML = """<!doctype html>
         "fixados.criar": "Fixar mensagem",
         "fixados.remover": "Remover fixado",
         "convites.criar": "Criar convite",
+        "convites.ver": "Ver convites",
+        "convites.editar": "Editar convite",
+        "convites.revogar": "Revogar convite",
+        "entradas.ver": "Ver pedidos de entrada",
+        "entradas.aprovar": "Aprovar entrada",
+        "entradas.recusar": "Recusar entrada",
         "canais.ver": "Ver canais",
         "canais.distribuir": "Distribuição de canais",
         "historico.ver": "Ver histórico",
         "historico.exportar": "Exportar histórico",
         "silencio.ativar": "Ativar modo silêncio",
         "silencio.desativar": "Desativar modo silêncio",
-        "transmissao.enviar": "Enviar transmissão"
+        "transmissao.enviar": "Enviar transmissão",
+        "reacoes.mensagem.limpar": "Limpar reação da mensagem",
+        "reacoes.recentes.limpar": "Limpar reações recentes",
+        "canais_remetentes.banir": "Banir canal remetente",
+        "canais_remetentes.liberar": "Liberar canal remetente",
+        "membros.tag.definir": "Definir tag de membro",
+        "topicos.criar": "Criar tópico",
+        "topicos.editar": "Editar tópico",
+        "topicos.fechar": "Fechar tópico",
+        "topicos.reabrir": "Reabrir tópico",
+        "topicos.apagar": "Apagar tópico",
+        "topicos.desfixar": "Remover fixados do tópico",
+        "topicos.geral.fechar": "Fechar tópico geral",
+        "topicos.geral.reabrir": "Reabrir tópico geral",
+        "topicos.geral.ocultar": "Ocultar tópico geral",
+        "topicos.geral.exibir": "Exibir tópico geral",
+        "topicos.geral.desfixar": "Remover fixados do tópico geral",
+        "grupo.titulo": "Alterar título do grupo",
+        "grupo.descricao": "Alterar descrição do grupo",
+        "admins.promover": "Promover administrador",
+        "admins.rebaixar": "Rebaixar administrador",
+        "admins.titulo": "Título personalizado de admin"
       };
       const canalNome = (codigo) => actionLabels[codigo] || String(codigo || "canal").replace(/[._]/g, " ");
       const statusMesa = (text, kind) => {
@@ -460,6 +619,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const mensagemRef = document.getElementById("mensagem_select").value;
         const alvoRef = document.getElementById("alvo_select").value;
         const mensagem = mensagensPorRef.get(mensagemRef);
+        const entradaRef = (document.getElementById("entrada_select") || {}).value || "";
+        const conviteRef = (document.getElementById("convite_select") || {}).value || "";
         document.querySelectorAll("button.action[data-action]").forEach((button) => {
           const action = button.dataset.action;
           let disabled = !currentPalco || !canRun(action);
@@ -476,9 +637,37 @@ _EQUALIZADOR_HTML = """<!doctype html>
             disabled = true;
             title = "Mensagem fora da janela de apagamento do Telegram";
           }
+          if (!disabled && action.startsWith("entradas.") && !entradaRef) {
+            disabled = true;
+            title = "Escolha um pedido de entrada";
+          }
+          if (!disabled && (action === "convites.editar" || action === "convites.revogar") && !conviteRef) {
+            disabled = true;
+            title = "Escolha um convite criado";
+          }
           if (!disabled && action.startsWith("membros.") && !alvoRef) {
             disabled = true;
             title = "Escolha um membro registrado";
+          }
+          if (!disabled && action.startsWith("admins.") && !alvoRef) {
+            disabled = true;
+            title = "Escolha um membro registrado";
+          }
+          if (!disabled && action.startsWith("topicos.") && !action.startsWith("topicos.geral") && action !== "topicos.criar" && !((document.getElementById("topico_select") || {}).value || "")) {
+            disabled = true;
+            title = "Escolha um tópico registrado";
+          }
+          if (!disabled && action.startsWith("canais_remetentes.") && !((document.getElementById("sender_select") || {}).value || "")) {
+            disabled = true;
+            title = "Escolha um canal remetente";
+          }
+          if (!disabled && action === "reacoes.mensagem.limpar" && !mensagemRef) {
+            disabled = true;
+            title = "Escolha uma mensagem registrada";
+          }
+          if (!disabled && action === "reacoes.mensagem.limpar" && !alvoRef && !((document.getElementById("sender_select") || {}).value || "")) {
+            disabled = true;
+            title = "Escolha um membro ou canal remetente";
           }
           button.disabled = disabled;
           button.title = title;
@@ -512,11 +701,97 @@ _EQUALIZADOR_HTML = """<!doctype html>
         item.innerHTML = `<strong>${text}</strong>${sub ? `<br><span class="muted">${sub}</span>` : ""}`;
         return item;
       };
+      function renderPainelDinamico(data) {
+        const el = document.getElementById("painel_dinamico");
+        if (!el) return;
+        if (!data || data.erro) {
+          el.className = "list muted";
+          el.textContent = data && data.erro ? detailPublico(data.erro) : "Painel dinâmico indisponível.";
+          return;
+        }
+        const palco = data.palco || {};
+        const resumo = data.resumo || {};
+        const rows = [];
+        rows.push(itemText(palco.titulo || "Palco", `${palco.tipo || "tipo desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`));
+        rows.push(itemText("Descrição", palco.descricao || "Sem descrição pública disponível."));
+        rows.push(itemText("Administração", `${resumo.administradores || 0} administradores · ${resumo.bots_administradores || 0} bots administradores`));
+        rows.push(itemText("Funções possíveis", `${resumo.acoes_disponiveis || 0} de ${resumo.acoes_totais || 0} funções liberadas pelos direitos reais do bot`));
+        const categorias = new Map();
+        (data.acoes || []).forEach((acao) => {
+          const key = acao.categoria || "Outras";
+          if (!categorias.has(key)) categorias.set(key, []);
+          categorias.get(key).push(`${acao.disponivel ? "✓" : "•"} ${acao.nome}${acao.critico ? " · crítico" : ""}${acao.futuro ? " · etapa futura" : ""}`);
+        });
+        categorias.forEach((items, categoria) => rows.push(itemText(categoria, items.join(" · "))));
+        const admins = (data.administradores || []).slice(0, 12);
+        if (admins.length) rows.push(itemText("Lista de administração", admins.map((admin) => `${admin.perfil_admin || "Admin"} · ${admin.nome || admin.usr_ref}${admin.bot ? " · bot" : ""}`).join(" · ")));
+        const bots = (data.bots_administradores || []).slice(0, 12);
+        if (bots.length) rows.push(itemText("Bots administradores", bots.map((bot) => bot.nome || bot.usr_ref).join(" · ")));
+        el.className = "list";
+        el.replaceChildren(...rows);
+      }
+      function fillConfigForm(formulario) {
+        const data = formulario || {};
+        const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value == null ? "" : String(value); };
+        set("cfg_app_name", data.app_name || "equalizador");
+        set("cfg_enabled", String(data.enabled !== false));
+        set("cfg_maestros", data.maestro_ids || "");
+        set("cfg_operadores", data.operador_ids || "");
+        set("cfg_palcos", data.palco_ids || "");
+        set("cfg_rate", data.rate_limit_per_minute || 30);
+        set("cfg_aliases", data.aliases_linhas || "");
+        set("cfg_canais", data.canais || "");
+        const raw = document.getElementById("config_raw");
+        if (raw) raw.value = "";
+        const copy = document.getElementById("copiar_config_raw");
+        if (copy) copy.disabled = true;
+        const resumo = document.getElementById("config_preview_resumo");
+        if (resumo) resumo.textContent = "Campos carregados. Revise e clique em Gerar Raw Editor somente no final.";
+      }
+      function configPayloadFromForm() {
+        const value = (id) => (document.getElementById(id) && document.getElementById(id).value) || "";
+        return {
+          app_name: value("cfg_app_name"),
+          enabled: value("cfg_enabled"),
+          maestro_ids: value("cfg_maestros"),
+          operador_ids: value("cfg_operadores"),
+          palco_ids: value("cfg_palcos"),
+          aliases_linhas: value("cfg_aliases"),
+          canais: value("cfg_canais"),
+          rate_limit_per_minute: value("cfg_rate"),
+          hide_technical_ids: true,
+          initdata_max_age_seconds: 600,
+          session_ttl_seconds: 900
+        };
+      }
+      async function gerarConfigRaw() {
+        if (!modoMaestroPermitido) { toast("Configuração restrita ao Maestro.", "warn"); return; }
+        const res = await api("/equalizador/api/configuracao/raw-preview", {
+          method: "POST",
+          headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}),
+          body: JSON.stringify(configPayloadFromForm())
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        const raw = document.getElementById("config_raw");
+        if (raw) raw.value = data.raw_editor || "";
+        const copy = document.getElementById("copiar_config_raw");
+        if (copy) copy.disabled = !(data.raw_editor || "");
+        const resumo = document.getElementById("config_preview_resumo");
+        const r = data.resumo || {};
+        if (resumo) {
+          const avisos = (data.avisos || []).length ? " · " + data.avisos.join(" · ") : "";
+          resumo.textContent = `${r.aliases || 0} aliases · ${r.palcos || 0} palcos · ${r.maestros || 0} maestro(s) · ${r.operadores || 0} operador(es)${avisos}`;
+          resumo.className = "empty small " + ((data.avisos || []).length ? "warn" : "ok");
+        }
+        toast("Raw Editor final gerado para conferência.", "ok");
+      }
       async function loadConfiguracaoMaestro() {
         if (!modoMaestroPermitido) return;
         const res = await api("/equalizador/api/configuracao");
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        fillConfigForm(data.formulario || {});
         fillList("config_palcos_ativos", data.palcos_ativos || [], (row) => itemText(row.titulo || "Palco", row.estado || "ativo"), "Nenhum palco ativo em TR4_EQUALIZADOR_PALCO_IDS.");
         fillList("config_aliases", data.aliases || [], (row) => itemText(row.alias || "alias", `${row.estado || "estado"} · ${row.grp_ref || ""}`), "Nenhum alias configurado em GROUP_ALIASES.");
         fillList("config_palcos_ocultos", data.palcos_ocultos || [], (row) => itemText(row.titulo || "Palco oculto", `${row.estado || "oculto"} · ${row.grp_ref || ""}`), "Nenhum palco antigo fora da variável ativa.");
@@ -540,10 +815,6 @@ _EQUALIZADOR_HTML = """<!doctype html>
           });
         });
         fillList("config_matriz", matrizRows, (row) => itemText(row.titulo, row.detalhe), "Matriz sem operadores ou palcos configurados.");
-        const raw = document.getElementById("config_raw");
-        if (raw) raw.value = data.raw_editor || "";
-        const copy = document.getElementById("copiar_config_raw");
-        if (copy) copy.disabled = !(data.raw_editor || "");
       }
 
       async function loadPalcoData() {
@@ -551,13 +822,19 @@ _EQUALIZADOR_HTML = """<!doctype html>
         direitosDisponiveis = new Set();
         afinacaoLoaded = false;
         const base = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref);
-        const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes] = await Promise.all([
+        const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes] = await Promise.all(
           api(base + "/afinacao").then((r) => r.ok ? r.json() : null).catch(() => null),
           api(base + "/mensagens").then((r) => r.ok ? r.json() : { mensagens: [] }).catch(() => ({ mensagens: [] })),
           api(base + "/alvos").then((r) => r.ok ? r.json() : { alvos: [] }).catch(() => ({ alvos: [] })),
           api("/equalizador/api/historico").then((r) => r.ok ? r.json() : { historico: [] }).catch(() => ({ historico: [] })),
-          (modoMaestroPermitido ? api("/equalizador/api/canais/distribuicao").then((r) => r.ok ? r.json() : { distribuicao: [] }).catch(() => ({ distribuicao: [] })) : Promise.resolve({ distribuicao: [] }))
+          (modoMaestroPermitido ? api("/equalizador/api/canais/distribuicao").then((r) => r.ok ? r.json() : { distribuicao: [] }).catch(() => ({ distribuicao: [] })) : Promise.resolve({ distribuicao: [] })),
+          api(base + "/painel").then((r) => r.ok ? r.json() : null).catch(() => null),
+          api(base + "/entradas").then((r) => r.ok ? r.json() : { entradas: [] }).catch(() => ({ entradas: [] })),
+          api(base + "/convites").then((r) => r.ok ? r.json() : { convites: [] }).catch(() => ({ convites: [] })),
+          api(base + "/topicos").then((r) => r.ok ? r.json() : { topicos: [] }).catch(() => ({ topicos: [] })),
+          api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] }).catch(() => ({ remetentes: [] }))
         ]);
+        renderPainelDinamico(painelRes);
         if (afinacaoRes && Array.isArray(afinacaoRes.canais)) {
           afinacaoLoaded = true;
           direitosDisponiveis = new Set(afinacaoRes.canais.filter((canal) => canal.disponivel).map((canal) => canal.codigo));
@@ -602,6 +879,14 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const alvosRows = alvosRes.alvos || [];
         const alvosHint = document.getElementById("alvos_hint");
         if (alvosHint) alvosHint.textContent = alvosRows.length ? `${alvosRows.length} membro(s) registrado(s) para operação.` : "Faça um membro enviar mensagem ou entrar no palco para criar uma referência segura.";
+        const entradaRows = entradasRes.entradas || [];
+        fillSelect("entrada_select", entradaRows.map((row) => Object.assign({}, row, { label: `${row.nome || row.entrada_ref} · ${row.situacao || 'pendente'}` })), "entrada_ref", "label", "Nenhum pedido pendente");
+        const entradasHint = document.getElementById("entradas_hint");
+        if (entradasHint) entradasHint.textContent = entradaRows.length ? `${entradaRows.length} pedido(s) de entrada registrado(s).` : "Nenhum pedido de entrada capturado. Crie convite com aprovação para receber pedidos.";
+        const conviteRows = convitesRes.convites || [];
+        fillSelect("convite_select", conviteRows.map((row) => Object.assign({}, row, { label: `${row.nome || row.invite_ref} · ${row.revogado ? 'revogado' : 'ativo'}` })), "invite_ref", "label", "Nenhum convite criado");
+        const convitesHint = document.getElementById("convites_hint");
+        if (convitesHint) convitesHint.textContent = conviteRows.length ? `${conviteRows.length} convite(s) conhecido(s).` : "Convites criados pelo Equalizador aparecerão aqui.";
         const hist = document.getElementById("historico");
         const rows = (historicoRes.historico || []).filter((row) => row.palco_ref === currentPalco.grp_ref).slice(0, 20);
         hist.className = rows.length ? "list" : "list muted";
@@ -685,6 +970,26 @@ _EQUALIZADOR_HTML = """<!doctype html>
           const revogar = Boolean(document.getElementById("remover_revogar").checked);
           return { alvo_ref: alvo, duracao_segundos: duracao, revogar_mensagens: revogar, apenas_se_banido: true };
         }
+        if (action === "entradas.aprovar" || action === "entradas.recusar") {
+          const entrada = document.getElementById("entrada_select").value;
+          if (!entrada) throw new Error("Escolha um pedido de entrada.");
+          return { entrada_ref: entrada };
+        }
+        if (action === "convites.editar" || action === "convites.revogar") {
+          const convite = document.getElementById("convite_select").value;
+          if (!convite) throw new Error("Escolha um convite criado.");
+          if (action === "convites.revogar") return { invite_ref: convite };
+          const limite = Number(document.getElementById("convite_limite").value || 0);
+          const aprovacao = Boolean(document.getElementById("convite_aprovacao").checked);
+          return {
+            invite_ref: convite,
+            nome: document.getElementById("convite_nome").value || "Equalizador",
+            expira_em_segundos: Number(document.getElementById("convite_expira").value || 0),
+            limite_membros: aprovacao ? 0 : Math.max(0, Math.min(99999, limite || 0)),
+            solicitar_aprovacao: aprovacao
+          };
+        }
+        if (action === "convites.exportar_primario") return {};
         if (action === "convites.criar") {
           const limite = Number(document.getElementById("convite_limite").value || 0);
           const aprovacao = Boolean(document.getElementById("convite_aprovacao").checked);
@@ -708,6 +1013,53 @@ _EQUALIZADOR_HTML = """<!doctype html>
             fixar: Boolean(document.getElementById("transmissao_fixar").checked)
           };
         }
+        if (action.startsWith("topicos.")) {
+          const nome = (document.getElementById("topico_nome") || {}).value || "";
+          const topico = (document.getElementById("topico_select") || {}).value || "";
+          if (action === "topicos.criar") return { nome: nome || "Novo tópico" };
+          if (!action.startsWith("topicos.geral") && !topico) throw new Error("Escolha um tópico registrado.");
+          return { topico_ref: topico, nome: nome || undefined };
+        }
+        if (action.startsWith("canais_remetentes.")) {
+          const sender = (document.getElementById("sender_select") || {}).value || "";
+          if (!sender) throw new Error("Escolha um canal remetente.");
+          return { sender_ref: sender };
+        }
+        if (action === "reacoes.mensagem.limpar" || action === "reacoes.recentes.limpar") {
+          const msg = document.getElementById("mensagem_select").value;
+          const alvo = document.getElementById("alvo_select").value;
+          const sender = (document.getElementById("sender_select") || {}).value || "";
+          const base = {};
+          if (action === "reacoes.mensagem.limpar") { if (!msg) throw new Error("Escolha uma mensagem registrada."); base.msg_ref = msg; }
+          if (alvo) base.alvo_ref = alvo;
+          else if (sender) base.sender_ref = sender;
+          else throw new Error("Escolha um membro ou canal remetente.");
+          return base;
+        }
+        if (action === "membros.tag.definir") {
+          const alvo = document.getElementById("alvo_select").value;
+          if (!alvo) throw new Error("Escolha um membro registrado.");
+          return { alvo_ref: alvo, tag: (document.getElementById("membro_tag") || {}).value || "" };
+        }
+        if (action === "grupo.titulo") {
+          const titulo = (document.getElementById("grupo_titulo_input") || {}).value || "";
+          if (!titulo.trim()) throw new Error("Informe o novo título do grupo.");
+          return { titulo, confirmacao: "CONFIRMAR AJUSTE", ciente: Boolean((document.getElementById("admin_ciente") || {}).checked) };
+        }
+        if (action === "grupo.descricao") {
+          return { descricao: (document.getElementById("grupo_descricao_input") || {}).value || "", confirmacao: "CONFIRMAR AJUSTE", ciente: Boolean((document.getElementById("admin_ciente") || {}).checked) };
+        }
+        if (action.startsWith("admins.")) {
+          const alvo = document.getElementById("alvo_select").value;
+          if (!alvo) throw new Error("Escolha um membro registrado.");
+          return {
+            alvo_ref: alvo,
+            perfil: (document.getElementById("admin_perfil_select") || {}).value || "moderador",
+            titulo_admin: (document.getElementById("admin_titulo_input") || {}).value || "",
+            confirmacao: "CONFIRMAR AJUSTE",
+            ciente: Boolean((document.getElementById("admin_ciente") || {}).checked)
+          };
+        }
         return {};
       }
       async function runAction(action) {
@@ -723,13 +1075,23 @@ _EQUALIZADOR_HTML = """<!doctype html>
         const res = await api(url, { method: "POST", headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }), body: JSON.stringify(payload) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); await loadPalcoData(); return; }
-        if (data.convite) {
+        if (data.convite && typeof data.convite === "string") {
           setConviteResult(data.convite, data.dm || null, data.convite_info || null);
           try { await navigator.clipboard.writeText(data.convite); toast("Convite criado, exibido e copiado.", "ok"); }
           catch (_) { toast("Convite criado e exibido na Mesa.", "ok"); }
         } else {
           if (data.mensagem) setMensagemResult(data.mensagem, data.resumo || "Ajuste de mensagem concluído.");
+          if (data.entrada) toast(`Pedido de entrada: ${data.entrada.situacao || 'tratado'}.`, "ok");
+          if (data.convite && typeof data.convite === "object") toast(data.resumo || "Convite ajustado.", "ok");
           if (data.membro) setMembroResult(data.membro, data.resumo || "Ajuste de membro concluído.");
+          if (data.resultado) {
+            toast(`${data.resultado.estado || 'ajuste'}: ${data.resultado.nome || 'referência'}`, "ok");
+            const adminBox = document.getElementById("admin_resultado");
+            if (adminBox && action.startsWith("admins.") || action.startsWith("grupo.")) {
+              const box = document.getElementById("admin_resultado");
+              if (box) { box.textContent = data.resumo || `${data.resultado.estado || 'ajuste'}: ${data.resultado.nome || 'referência'}`; box.className = "empty small ok"; }
+            }
+          }
           if (data.fixacao && data.fixacao.ok === false) toast("Transmissão enviada, mas não fixada: " + (data.fixacao.motivo || "afinação insuficiente"), "warn");
           toast(data.resumo || "Ajuste concluído.", "ok");
         }
@@ -738,6 +1100,10 @@ _EQUALIZADOR_HTML = """<!doctype html>
       }
       document.getElementById("mensagem_select").addEventListener("change", updateButtons);
       document.getElementById("alvo_select").addEventListener("change", updateButtons);
+      document.getElementById("entrada_select").addEventListener("change", updateButtons);
+      document.getElementById("convite_select").addEventListener("change", updateButtons);
+      document.getElementById("topico_select").addEventListener("change", updateButtons);
+      document.getElementById("sender_select").addEventListener("change", updateButtons);
       document.getElementById("resolver_mensagem").addEventListener("click", resolveMensagemManual);
       document.getElementById("resolver_alvo").addEventListener("click", resolveAlvoManual);
       document.getElementById("copiar_convite").addEventListener("click", async () => {
@@ -767,6 +1133,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
         toast("Exportação gerada: " + (exp.exportacao_ref || "pronta") + total, "ok");
       });
       document.getElementById("atualizar_configuracao").addEventListener("click", () => loadConfiguracaoMaestro());
+      document.getElementById("gerar_config_raw").addEventListener("click", () => gerarConfigRaw());
+      document.getElementById("resetar_config_form").addEventListener("click", () => loadConfiguracaoMaestro());
       document.getElementById("copiar_config_raw").addEventListener("click", async () => {
         const value = document.getElementById("config_raw").value || "";
         if (!value) return;
@@ -1120,6 +1488,26 @@ async def equalizador_palco_afinacao(
         raise HTTPException(status_code=404, detail="Palco indisponível.") from exc
 
 
+@router.get("/api/palcos/{grp_ref}/painel")
+async def equalizador_palco_painel_dinamico(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("palco.status", "palco.ver"))
+    try:
+        return await montar_painel_dinamico_palco(
+            grp_ref=grp_ref,
+            bot_token=settings.TELEGRAM_BOT_TOKEN,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+    except PainelDinamicoError as exc:
+        raise HTTPException(status_code=409, detail="Painel dinâmico indisponível.") from exc
+
+
 @router.get("/api/palcos/{grp_ref}/mensagens")
 def equalizador_palco_mensagens(
     grp_ref: str,
@@ -1253,6 +1641,25 @@ def equalizador_configuracao(authorization: str | None = Header(default=None)) -
         **configuracao_maestro_publica(alias_secret=settings.equalizador_alias_secret()),
         "matriz_permissoes": matriz_permissoes_publica(alias_secret=settings.equalizador_alias_secret()),
     }
+
+
+@router.post("/api/configuracao/raw-preview")
+async def equalizador_configuracao_raw_preview(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco_ids = filter_palco_ids_by_canal(
+        raw_canais=settings.equalizador_canais_raw(),
+        user_id=identity.user_id,
+        chat_ids=settings.equalizador_allowed_palco_ids(),
+        canal_codigo="canais.distribuir",
+        is_maestro=_is_maestro(identity),
+    )
+    if not palco_ids:
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    payload = await _read_json_payload(request)
+    return raw_editor_from_form_payload(payload)
 
 
 @router.get("/api/permissoes/matriz")
@@ -1432,6 +1839,191 @@ async def equalizador_fixados_remover(
     )
 
 
+
+
+
+@router.get("/api/palcos/{grp_ref}/topicos")
+def equalizador_topicos_listar(grp_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("topicos.criar", "topicos.editar", "topicos.fechar", "topicos.reabrir", "topicos.apagar", "topicos.desfixar", "topicos.geral.fechar"))
+    return {"topicos": list_topics_publicos(palco_id=int(palco["telegram_chat_id"]))}
+
+
+@router.get("/api/palcos/{grp_ref}/canais-remetentes")
+def equalizador_sender_chats_listar(grp_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("canais_remetentes.banir", "canais_remetentes.liberar", "reacoes.recentes.limpar", "reacoes.limpar"))
+    return {"remetentes": list_sender_chats_publicos(palco_id=int(palco["telegram_chat_id"]))}
+
+
+async def _execute_avancado_endpoint(*, grp_ref: str, ajuste: str, request: Request, authorization: str | None) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    spec = ADVANCED_SPECS.get(ajuste)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Ajuste indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
+    payload = await _read_json_payload(request)
+    ator_ref = _operator_ref(identity)
+    palco_ref = str(palco["ui_ref"])
+    try:
+        async with mesa_operation_lock(f"{palco_ref}:{ajuste}"):
+            return await executar_ajuste_avancado(ajuste=ajuste, palco=palco, ator_ref=ator_ref, payload=payload, bot_token=settings.TELEGRAM_BOT_TOKEN, alias_secret=settings.equalizador_alias_secret())
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except (MesaError, AvancadoError) as exc:
+        raise HTTPException(status_code=409, detail=avancado_error_public_detail(exc)) from exc
+
+
+async def _execute_admin_endpoint(*, grp_ref: str, ajuste: str, request: Request, authorization: str | None) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    spec = ADMIN_SPECS.get(ajuste)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Ajuste indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=spec.canal_codigo)
+    payload = await _read_json_payload(request)
+    ator_ref = _operator_ref(identity)
+    palco_ref = str(palco["ui_ref"])
+    try:
+        async with mesa_operation_lock(f"{palco_ref}:{ajuste}"):
+            return await executar_admin_critico(
+                ajuste=ajuste,
+                palco=palco,
+                ator_ref=ator_ref,
+                payload=payload,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+                db_engine=default_engine,
+            )
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except AdminConfirmationError as exc:
+        raise HTTPException(status_code=428, detail="Confirmação crítica exigida.") from exc
+    except (AdminCriticoError, MesaError) as exc:
+        raise HTTPException(status_code=409, detail=admin_error_public_detail(exc)) from exc
+
+@router.get("/api/palcos/{grp_ref}/entradas")
+def equalizador_entradas_listar(grp_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("entradas.ver", "entradas.aprovar", "entradas.recusar", "convites.criar"))
+    return {"entradas": list_join_requests_publicos(palco_id=int(palco["telegram_chat_id"]))}
+
+
+@router.get("/api/palcos/{grp_ref}/convites")
+def equalizador_convites_listar(grp_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("convites.ver", "convites.criar", "convites.editar", "convites.revogar"))
+    return {"convites": list_invites_publicos(palco_id=int(palco["telegram_chat_id"]))}
+
+
+async def _execute_entrada_endpoint(*, grp_ref: str, acao: str, request: Request, authorization: str | None) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    canal = "entradas.aprovar" if acao == "aprovar" else "entradas.recusar"
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=canal)
+    payload = await _read_json_payload(request)
+    ator_ref = _operator_ref(identity)
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:entradas.{acao}"):
+            return await executar_pedido_entrada(
+                acao=acao,
+                palco=palco,
+                ator_ref=ator_ref,
+                entrada_ref=str(payload.get("entrada_ref") or ""),
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+            )
+    except EntradasError as exc:
+        raise HTTPException(status_code=409, detail=entradas_error_public_detail(exc)) from exc
+    except MesaError as exc:
+        raise HTTPException(status_code=409, detail=mesa_error_public_detail(exc)) from exc
+
+
+async def _execute_convite_extra_endpoint(*, grp_ref: str, acao: str, request: Request, authorization: str | None) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Palco indisponível.")
+    canal = {"editar": "convites.editar", "revogar": "convites.revogar", "exportar_primario": "convites.criar"}[acao]
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo=canal)
+    payload = await _read_json_payload(request) if acao != "exportar_primario" else {}
+    ator_ref = _operator_ref(identity)
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:convites.{acao}"):
+            if acao == "editar":
+                return await editar_convite(
+                    palco=palco,
+                    ator_ref=ator_ref,
+                    invite_ref=str(payload.get("invite_ref") or ""),
+                    payload=payload,
+                    bot_token=settings.TELEGRAM_BOT_TOKEN,
+                    alias_secret=settings.equalizador_alias_secret(),
+                )
+            if acao == "revogar":
+                return await revogar_convite(
+                    palco=palco,
+                    ator_ref=ator_ref,
+                    invite_ref=str(payload.get("invite_ref") or ""),
+                    bot_token=settings.TELEGRAM_BOT_TOKEN,
+                    alias_secret=settings.equalizador_alias_secret(),
+                )
+            return await exportar_link_primario(
+                palco=palco,
+                ator_ref=ator_ref,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+            )
+    except EntradasError as exc:
+        raise HTTPException(status_code=409, detail=entradas_error_public_detail(exc)) from exc
+    except MesaError as exc:
+        raise HTTPException(status_code=409, detail=mesa_error_public_detail(exc)) from exc
+
+
+@router.post("/api/palcos/{grp_ref}/entradas/aprovar")
+async def equalizador_entradas_aprovar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_entrada_endpoint(grp_ref=grp_ref, acao="aprovar", request=request, authorization=authorization)
+
+
+@router.post("/api/palcos/{grp_ref}/entradas/recusar")
+async def equalizador_entradas_recusar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_entrada_endpoint(grp_ref=grp_ref, acao="recusar", request=request, authorization=authorization)
+
+
+@router.post("/api/palcos/{grp_ref}/convites/editar")
+async def equalizador_convites_editar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_convite_extra_endpoint(grp_ref=grp_ref, acao="editar", request=request, authorization=authorization)
+
+
+@router.post("/api/palcos/{grp_ref}/convites/revogar")
+async def equalizador_convites_revogar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_convite_extra_endpoint(grp_ref=grp_ref, acao="revogar", request=request, authorization=authorization)
+
+
+@router.post("/api/palcos/{grp_ref}/convites/exportar-primario")
+async def equalizador_convites_exportar_primario(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_convite_extra_endpoint(grp_ref=grp_ref, acao="exportar_primario", request=request, authorization=authorization)
+
 @router.post("/api/palcos/{grp_ref}/convites/criar")
 async def equalizador_convites_criar(
     grp_ref: str,
@@ -1445,3 +2037,61 @@ async def equalizador_convites_criar(
         authorization=authorization,
     )
 
+
+
+@router.post("/api/palcos/{grp_ref}/reacoes/mensagem/limpar")
+async def equalizador_reacoes_mensagem_limpar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_avancado_endpoint(grp_ref=grp_ref, ajuste="reacoes.mensagem.limpar", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/reacoes/recentes/limpar")
+async def equalizador_reacoes_recentes_limpar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_avancado_endpoint(grp_ref=grp_ref, ajuste="reacoes.recentes.limpar", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/canais-remetentes/banir")
+async def equalizador_sender_banir(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_avancado_endpoint(grp_ref=grp_ref, ajuste="canais_remetentes.banir", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/canais-remetentes/liberar")
+async def equalizador_sender_liberar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_avancado_endpoint(grp_ref=grp_ref, ajuste="canais_remetentes.liberar", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/membros/tag/definir")
+async def equalizador_membros_tag_definir(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_avancado_endpoint(grp_ref=grp_ref, ajuste="membros.tag.definir", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/grupo/titulo")
+async def equalizador_grupo_titulo(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_admin_endpoint(grp_ref=grp_ref, ajuste="grupo.titulo", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/grupo/descricao")
+async def equalizador_grupo_descricao(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_admin_endpoint(grp_ref=grp_ref, ajuste="grupo.descricao", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/admins/promover")
+async def equalizador_admins_promover(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_admin_endpoint(grp_ref=grp_ref, ajuste="admins.promover", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/admins/rebaixar")
+async def equalizador_admins_rebaixar(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_admin_endpoint(grp_ref=grp_ref, ajuste="admins.rebaixar", request=request, authorization=authorization)
+
+@router.post("/api/palcos/{grp_ref}/admins/titulo")
+async def equalizador_admins_titulo(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    return await _execute_admin_endpoint(grp_ref=grp_ref, ajuste="admins.titulo", request=request, authorization=authorization)
+
+def _topico_route(ajuste: str):
+    async def _handler(grp_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+        return await _execute_avancado_endpoint(grp_ref=grp_ref, ajuste=ajuste, request=request, authorization=authorization)
+    return _handler
+
+router.add_api_route("/api/palcos/{grp_ref}/topicos/criar", _topico_route("topicos.criar"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/editar", _topico_route("topicos.editar"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/fechar", _topico_route("topicos.fechar"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/reabrir", _topico_route("topicos.reabrir"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/apagar", _topico_route("topicos.apagar"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/desfixar", _topico_route("topicos.desfixar"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/fechar", _topico_route("topicos.geral.fechar"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/reabrir", _topico_route("topicos.geral.reabrir"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/ocultar", _topico_route("topicos.geral.ocultar"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/exibir", _topico_route("topicos.geral.exibir"), methods=["POST"], include_in_schema=False)
+router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/desfixar", _topico_route("topicos.geral.desfixar"), methods=["POST"], include_in_schema=False)

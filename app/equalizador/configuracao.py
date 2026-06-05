@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable
+from typing import Any, Iterable
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -26,6 +26,12 @@ _CANAL_NOMES: dict[str, str] = {
     "fixados.criar": "Fixar mensagem",
     "fixados.remover": "Remover fixado",
     "convites.criar": "Criar convite",
+    "convites.ver": "Ver convites",
+    "convites.editar": "Editar convites",
+    "convites.revogar": "Revogar convites",
+    "entradas.ver": "Ver pedidos de entrada",
+    "entradas.aprovar": "Aprovar pedidos de entrada",
+    "entradas.recusar": "Recusar pedidos de entrada",
     "canais.ver": "Ver canais",
     "canais.distribuir": "Distribuição de canais",
     "historico.ver": "Ver histórico",
@@ -117,6 +123,129 @@ def mark_unconfigured_palcos_inactive(*, allowed_palco_ids: set[int], db_engine:
             conn.execute(text("UPDATE eq_palcos SET habilitado=0"))
 
 
+
+def _split_ids_text(value: object) -> list[int]:
+    if isinstance(value, (list, tuple, set)):
+        parts = value
+    else:
+        parts = str(value or "").replace(";", ",").replace("\n", ",").split(",")
+    ids: list[int] = []
+    for part in parts:
+        text_value = str(part).strip().strip('"').strip("'")
+        if not text_value:
+            continue
+        try:
+            ids.append(int(text_value))
+        except ValueError:
+            continue
+    return _sorted_ids(ids)
+
+
+def _aliases_from_lines(value: object) -> dict[str, int]:
+    if isinstance(value, dict):
+        result: dict[str, int] = {}
+        for key, chat_id in value.items():
+            try:
+                label = str(key).strip()
+                if label:
+                    result[label] = int(chat_id)
+            except (TypeError, ValueError):
+                continue
+        return dict(sorted(result.items(), key=lambda item: item[0].casefold()))
+    text_value = str(value or "").strip()
+    if text_value.startswith("{"):
+        try:
+            data = json.loads(text_value)
+            return _aliases_from_lines(data)
+        except Exception:
+            pass
+    result: dict[str, int] = {}
+    for line in text_value.splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        if "=" in raw:
+            name, raw_id = raw.split("=", 1)
+        elif ":" in raw:
+            name, raw_id = raw.split(":", 1)
+        else:
+            continue
+        label = name.strip().strip('"').strip("'")
+        try:
+            chat_id = int(raw_id.strip().strip('"').strip("'"))
+        except ValueError:
+            continue
+        if label:
+            result[label] = chat_id
+    return dict(sorted(result.items(), key=lambda item: item[0].casefold()))
+
+
+def formulario_maestro_atual() -> dict[str, object]:
+    aliases = settings.group_aliases()
+    alias_lines = "\n".join(f"{name}={chat_id}" for name, chat_id in sorted(aliases.items(), key=lambda item: item[0].casefold()))
+    return {
+        "enabled": bool(settings.TR4_EQUALIZADOR_ENABLED),
+        "app_name": settings.TR4_EQUALIZADOR_APP_NAME,
+        "aliases_linhas": alias_lines,
+        "palco_ids": ",".join(str(value) for value in _sorted_ids(settings.equalizador_allowed_palco_ids())),
+        "maestro_ids": ",".join(str(value) for value in _sorted_ids(settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET)),
+        "operador_ids": ",".join(str(value) for value in _sorted_ids(settings.TR4_EQUALIZADOR_OPERADOR_IDS_SET)),
+        "canais": settings.equalizador_canais_raw(),
+        "hide_technical_ids": bool(settings.TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS),
+        "initdata_max_age_seconds": int(settings.TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS),
+        "session_ttl_seconds": int(settings.TR4_EQUALIZADOR_SESSION_TTL_SECONDS),
+        "rate_limit_per_minute": int(settings.TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE),
+    }
+
+
+def raw_editor_from_form_payload(payload: dict[str, Any]) -> dict[str, object]:
+    """Generate a Raw Editor block from Maestro-friendly fields without mutating Railway."""
+    aliases = _aliases_from_lines(payload.get("aliases_linhas") or payload.get("aliases") or "")
+    palco_ids = _split_ids_text(payload.get("palco_ids"))
+    maestro_ids = _split_ids_text(payload.get("maestro_ids"))
+    operador_ids = _split_ids_text(payload.get("operador_ids"))
+    app_name = str(payload.get("app_name") or settings.TR4_EQUALIZADOR_APP_NAME or "equalizador").strip() or "equalizador"
+    enabled = str(payload.get("enabled", "true")).strip().lower() not in {"0", "false", "no", "não", "off"}
+    hide_ids = str(payload.get("hide_technical_ids", "true")).strip().lower() not in {"0", "false", "no", "não", "off"}
+    canais_raw = str(payload.get("canais") or "").strip()
+    if not canais_raw and maestro_ids:
+        canais_raw = ";".join(f"{user_id}:*: *".replace(":*:", ":*:*") for user_id in maestro_ids)
+    aliases_json = json.dumps(aliases, ensure_ascii=False, separators=(",", ":"))
+    linhas = [
+        f'GROUP_ALIASES={json.dumps(aliases_json, ensure_ascii=False)}',
+        f'TR4_EQUALIZADOR_ENABLED="{str(enabled).lower()}"',
+        f'TR4_EQUALIZADOR_APP_NAME="{app_name}"',
+        f'TR4_EQUALIZADOR_MAESTRO_IDS="{",".join(str(value) for value in maestro_ids)}"',
+        f'TR4_EQUALIZADOR_OPERADOR_IDS="{",".join(str(value) for value in operador_ids)}"',
+        f'TR4_EQUALIZADOR_PALCO_IDS="{",".join(str(value) for value in palco_ids)}"',
+        f'TR4_EQUALIZADOR_CANAIS={json.dumps(canais_raw, ensure_ascii=False)}',
+        f'TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS="{str(hide_ids).lower()}"',
+        f'TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS="{int(payload.get("initdata_max_age_seconds") or settings.TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS)}"',
+        f'TR4_EQUALIZADOR_SESSION_TTL_SECONDS="{int(payload.get("session_ttl_seconds") or settings.TR4_EQUALIZADOR_SESSION_TTL_SECONDS)}"',
+        f'TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE="{int(payload.get("rate_limit_per_minute") or settings.TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE)}"',
+    ]
+    avisos: list[str] = []
+    alias_ids = set(aliases.values())
+    palco_set = set(palco_ids)
+    fora_de_alias = sorted(palco_set - alias_ids)
+    fora_de_palco = sorted(alias_ids - palco_set)
+    if fora_de_alias:
+        avisos.append("Há palcos ativos sem alias público.")
+    if fora_de_palco:
+        avisos.append("Há aliases fora da lista de palcos ativos; eles ficarão ocultos.")
+    if not maestro_ids:
+        avisos.append("Nenhum Maestro informado.")
+    return {
+        "raw_editor": "\n".join(linhas),
+        "resumo": {
+            "aliases": len(aliases),
+            "palcos": len(palco_ids),
+            "maestros": len(maestro_ids),
+            "operadores": len(operador_ids),
+        },
+        "avisos": avisos,
+    }
+
 def raw_editor_equalizador_block() -> str:
     """Generate a Railway Raw Editor block for the Equalizador keys only."""
     aliases = settings.group_aliases()
@@ -172,6 +301,7 @@ def configuracao_maestro_publica(*, alias_secret: str, db_engine: Engine = defau
         "aliases": aliases_ativos_publicos(alias_secret=alias_secret),
         "palcos_ocultos": palcos_ocultos_publicos(allowed_palco_ids=allowed_palcos, alias_secret=alias_secret, db_engine=db_engine),
         "operadores": matriz_operadores_publica(alias_secret=alias_secret),
+        "formulario": formulario_maestro_atual(),
         "raw_editor": raw_editor_equalizador_block(),
-        "observacao": "Confira no Railway Raw Editor. Não deixe chaves duplicadas.",
+        "observacao": "Use os campos amigáveis para montar a configuração. Gere Raw Editor apenas no final e não deixe chaves duplicadas.",
     }

@@ -13,6 +13,7 @@ from aiogram.types import (
     InlineQueryResultPhoto,
     Message,
     MessageReactionUpdated,
+    ChatJoinRequest,
     ReactionTypeEmoji,
 )
 
@@ -36,6 +37,8 @@ from app.equalizador.mesa import (
     register_mensagem_ref,
     resolve_alvo_manual,
 )
+from app.equalizador.entradas import register_join_request_from_update
+from app.equalizador.avancado import register_sender_chat_ref, register_topic_ref
 from app.equalizador.identity import make_ui_ref
 from app.equalizador.maestro import (
     MaestroError,
@@ -163,6 +166,23 @@ async def _remember_equalizador_message(message: Message) -> None:
             alias_secret=alias_secret,
             message_unix_time=int(message.date.timestamp()) if message.date else None,
         )
+        sender_chat = getattr(message, "sender_chat", None)
+        if sender_chat is not None and getattr(sender_chat, "id", None):
+            register_sender_chat_ref(
+                chat_id=int(message.chat.id),
+                sender_chat_id=int(sender_chat.id),
+                titulo_publico=_equalizador_safe_label(getattr(sender_chat, "title", None), fallback="Canal remetente"),
+                username=getattr(sender_chat, "username", None),
+                alias_secret=alias_secret,
+            )
+        thread_id = getattr(message, "message_thread_id", None)
+        if thread_id:
+            register_topic_ref(
+                chat_id=int(message.chat.id),
+                message_thread_id=int(thread_id),
+                nome_publico=f"Tópico {int(thread_id)}",
+                alias_secret=alias_secret,
+            )
         if message.from_user and not message.from_user.is_bot:
             register_alvo_ref(
                 chat_id=int(message.chat.id),
@@ -217,6 +237,33 @@ class EqualizadorCaptureMiddleware(BaseMiddleware):
         await _remember_equalizador_message(event)
         return await handler(event, data)
 
+
+
+async def _remember_equalizador_join_request(event: ChatJoinRequest) -> None:
+    """Register pending join requests for the Equalizador entry queue."""
+    try:
+        allowed_palcos = settings.equalizador_allowed_palco_ids()
+        if not settings.TR4_EQUALIZADOR_ENABLED or int(event.chat.id) not in allowed_palcos:
+            return
+        invite_link = None
+        raw_invite = getattr(event, "invite_link", None)
+        if raw_invite is not None:
+            invite_link = getattr(raw_invite, "invite_link", None)
+        user = event.from_user
+        register_join_request_from_update(
+            chat_id=int(event.chat.id),
+            user={
+                "id": int(user.id),
+                "first_name": getattr(user, "first_name", None),
+                "last_name": getattr(user, "last_name", None),
+                "username": getattr(user, "username", None),
+            },
+            bio=getattr(event, "bio", None),
+            invite_link=invite_link,
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+    except Exception:
+        logger.debug("EQUALIZADOR_JOIN_REQUEST_CAPTURE_FAILED", exc_info=True)
 
 def _bold_unicode(text: str) -> str:
     out: list[str] = []
@@ -912,6 +959,10 @@ def _register_handlers(dp: Dispatcher) -> None:
             _EFFECT_FIRE,
             parse_mode="HTML",
         )
+
+    @dp.chat_join_request()
+    async def equalizador_join_request(event: ChatJoinRequest) -> None:
+        await _remember_equalizador_join_request(event)
 
     @dp.message(Command("login"))
     async def login(message: Message) -> None:

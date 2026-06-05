@@ -133,3 +133,18 @@ O Modo Maestro passou a depender da Afinação também na interface: `silencio.a
 ### Equalizador — Etapa 29
 
 A interface do Equalizador recebeu polimento final para uso mobile: status da Mesa, estados vazios para mensagens e membros, nomes públicos de canais na distribuição, resumo visual de Afinação, mensagens de erro sanitizadas no frontend e bloqueio operacional mais explícito quando a Afinação não está carregada. Esta etapa não adiciona novos poderes; apenas melhora usabilidade, clareza e segurança visual.
+
+### Etapa 42 — Configuração amigável do Maestro
+
+Esta etapa adiciona um assistente visual de configuração dentro do Equalizador. O Maestro passa a revisar e montar a configuração por campos, sem editar Raw Editor durante o uso normal.
+
+O app continua sem alterar variáveis do Railway diretamente. Ao final, o Maestro gera um bloco Raw Editor para copiar e aplicar manualmente, preservando rollback e evitando duplicidade de chaves.
+
+Inclui:
+
+- campos para Mini App, status ligado/desligado, Maestros, Operadores, Palcos ativos e rate limit;
+- campo de aliases por linha no formato `nome=-100...`;
+- campo de canais por operador;
+- endpoint `POST /equalizador/api/configuracao/raw-preview` restrito ao Maestro;
+- geração de Raw Editor somente no final;
+- avisos quando houver palco sem alias ou alias fora da lista ativa.
