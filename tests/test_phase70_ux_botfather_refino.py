@@ -26,7 +26,7 @@ def test_phase70_removes_duplicate_group_name_element_and_long_intro_noise():
     html = _html()
     assert html.count('id="grupo_nome"') == 1
     assert "Revisões importantes:" not in html
-    assert "Pronto. Ações disponíveis conforme permissões." in html
+    assert 'statusMesa("Pronto", "ok");' in html
     assert "Pronto. Ações liberadas conforme permissão" not in html
 
 

@@ -448,7 +448,41 @@ _EQUALIZADOR_HTML = """<!doctype html>
     body.phase68-minimal .status-row { display: none; }
     body.phase68-minimal .refresh-state { margin-top: 8px; border: 0; background: transparent; padding: 0; font-size: 12px; color: #8490a0; }
     body.phase68-minimal #palcos_hint { margin-top: 14px; }
+    /* Fase 72: limpeza minimalista estrita conforme prints. */
+    body.phase68-minimal { background: #12171d; font-size: 14px; }
+    body.phase68-minimal main { max-width: 720px; }
+    body.phase68-minimal .bot-hero { padding-top: 8px; margin-bottom: 4px; }
+    body.phase68-minimal .bot-avatar { width: 62px; height: 62px; }
+    body.phase68-minimal .bot-hero h2 { font-size: 23px; margin-top: 7px; letter-spacing: -.035em; }
+    body.phase68-minimal #bot_usuario { margin-bottom: 5px !important; }
+    body.phase68-minimal #bot_metricas { font-size: 12px; margin-top: 6px; color: #8793a1; }
+    body.phase68-minimal .global-search-wrap { margin: 14px 0 12px; }
+    body.phase68-minimal #global_search { min-height: 50px; border-radius: 12px; background: #1f2a34; font-size: 14px; }
+    body.phase68-minimal #inicio_view > .section-note,
+    body.phase68-minimal #palcos_hint { display: none !important; }
+    body.phase68-minimal .group-picker { margin: 14px 0 10px; }
+    body.phase68-minimal .group-picker > label { font-size: 12px; }
+    body.phase68-minimal .group-picker select { min-height: 50px; font-size: 14px; }
+    body.phase68-minimal .group-card { padding: 14px; background: #17212a; }
+    body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; gap: 11px; }
+    body.phase68-minimal .group-head .avatar { width: 56px; height: 56px; border-radius: 16px; }
+    body.phase68-minimal .group-title strong { display: inline; font-size: 17px; }
+    body.phase68-minimal #grupo_descricao { display: none !important; }
+    body.phase68-minimal .inline-dot,
+    body.phase68-minimal .group-desc-inline { color: #98a3b2; font-weight: 500; }
+    body.phase68-minimal .group-meta-line { font-size: 12px; margin-top: 6px; }
+    body.phase68-minimal .mini-status-button { min-height: 30px; padding: 5px 10px; font-size: 11px; }
+    body.phase68-minimal #mesa_titulo { display: none !important; }
+    body.phase68-minimal .refresh-state { display: none !important; }
+    body.phase68-minimal .app-tabs { margin-top: 14px; }
+    body.phase68-minimal button.nav { min-height: 54px; padding-top: 10px; padding-bottom: 10px; }
+    body.phase68-minimal button.nav strong { font-size: 14px; }
+    body.phase68-minimal button.nav span:not(.nav-state) { font-size: 12px; }
+    body.phase68-minimal .view .toolbar:not(.app-tabs),
+    body.phase68-minimal .panel .toolbar:not(.app-tabs),
+    body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
+    @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
@@ -482,13 +516,13 @@ _EQUALIZADOR_HTML = """<!doctype html>
           </div>
         </div>
         <div class="global-search-wrap">
-          <input id="global_search" autocomplete="off" placeholder="Buscar @, ID, grupo ou ação" />
+          <input id="global_search" autocomplete="off" placeholder="Buscar @, ID, grupo ou ação" aria-label="Buscar por usuário, identificador, grupo ou ação" />
           <div id="global_search_results" class="search-results hidden"></div>
         </div>
-        <p class="section-note">Escolha um grupo ou pesquise uma ação.</p>
+        
       </section>
       <section id="palco_header" class="group-picker header-select">
-        <label class="small muted">Escolha o grupo</label>
+        <label class="small muted">Grupo</label>
         <select id="palco_header_select"></select>
         <div id="grupo_resumo_card" class="panel group-card">
           <div id="grupo_resumo" class="group-head">
@@ -503,7 +537,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         </div>
       </section>
       <h2 class="hidden">Grupos</h2>
-      <p id="palcos_hint" class="section-note">Abra uma janela para operar.</p>
+      <p id="palcos_hint" class="section-note"></p>
       <div id="palcos" class="grid hidden"></div>
       <div id="mesa" class="hidden">
         <div class="status-row">
@@ -1957,6 +1991,15 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         await loadPalcoData();
       });
       let palcosDisponiveis = [];
+      function syncPalcoHeaderSelect(selectedRef) {
+        const headerSelect = document.getElementById("palco_header_select");
+        if (!headerSelect) return;
+        for (const opt of Array.from(headerSelect.options || [])) {
+          if (!opt.value) { opt.textContent = selectedRef ? "Alterar grupo" : "Selecionar grupo"; continue; }
+          const palco = (palcosDisponiveis || []).find((item) => item.grp_ref === opt.value);
+          opt.textContent = opt.value === selectedRef ? "Grupo selecionado" : (palco && palco.titulo ? palco.titulo : "Grupo");
+        }
+      }
       function renderPalcos(palcos) {
         palcosDisponiveis = palcos || [];
         const container = document.getElementById("palcos");
@@ -1971,15 +2014,16 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           container.className = "empty hidden";
           return;
         }
-        headerSelect.appendChild(option("", "Selecione um grupo"));
+        headerSelect.appendChild(option("", "Selecionar grupo"));
         for (const palco of palcosDisponiveis) {
-          headerSelect.appendChild(option(palco.grp_ref, (palco.titulo || "Grupo") + " · " + (palco.estado || "ativo")));
+          headerSelect.appendChild(option(palco.grp_ref, palco.titulo || "Grupo"));
         }
         headerSelect.onchange = () => {
           const palco = palcosDisponiveis.find((item) => item.grp_ref === headerSelect.value);
           if (palco) selectPalco(palco, null);
         };
-        if (hint) hint.textContent = "Selecione um grupo para exibir janelas e ações.";
+        if (hint) hint.textContent = "";
+        syncPalcoHeaderSelect(currentPalco && currentPalco.grp_ref);
         renderGlobalSearch();
       }
       function renderCanais(rows) {
@@ -2143,9 +2187,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         updateBulkDeleteControls();
         applyPreventiveAccessUI();
         if (currentPalco && afinacaoLoaded) {
-          statusMesa("Pronto. Ações disponíveis conforme permissões.", "ok");
+          statusMesa("Pronto", "ok");
         } else if (currentPalco) {
-          statusMesa("Painel aguardando permissões do bot. Ações permanecem bloqueadas até confirmação.", "warn");
+          statusMesa("Atenção", "warn");
         }
         renderDiagnosticoPermissoes();
       }
@@ -2153,14 +2197,15 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         currentPalco = palco;
         const headerSelect = document.getElementById("palco_header_select");
         if (headerSelect && headerSelect.value !== palco.grp_ref) headerSelect.value = palco.grp_ref;
+        syncPalcoHeaderSelect(palco.grp_ref);
         document.querySelectorAll(".palco").forEach((el) => el.classList.remove("active"));
         if (button) button.classList.add("active");
         document.getElementById("mesa").classList.remove("hidden");
-        document.getElementById("mesa_titulo").textContent = (palco.titulo || "Grupo");
+        document.getElementById("mesa_titulo").textContent = "Ações";
         const refreshButton = document.getElementById("mesa_refresh");
         if (refreshButton) refreshButton.disabled = false;
         statusMesa("Carregando painel…", "muted");
-        setRefreshState("Abrindo grupo…", "loading");
+        setRefreshState("", "loading");
         closeAllViews();
         await loadPalcoData();
         renderGlobalSearch();
@@ -2410,11 +2455,17 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       function renderGrupoResumo(data) {
         const palco = (data && data.palco) || {};
-        document.getElementById("grupo_nome").innerHTML = grupoHtml(palco.titulo || (currentPalco && currentPalco.titulo) || "Grupo", palco.username || palco.endereco_publico || (currentPalco && currentPalco.username));
-        document.getElementById("grupo_descricao").textContent = palco.descricao || "Sem descrição pública disponível.";
+        const grupoTitulo = palco.titulo || (currentPalco && currentPalco.titulo) || "Grupo";
+        const grupoDescricao = safeText(palco.descricao || "", "");
+        const tituloEl = document.getElementById("grupo_nome");
+        if (tituloEl) {
+          tituloEl.innerHTML = grupoHtml(grupoTitulo, palco.username || palco.endereco_publico || (currentPalco && currentPalco.username)) + (grupoDescricao ? ` <span class="inline-dot">•</span> <span class="group-desc-inline">${escapeHtml(grupoDescricao)}</span>` : "");
+        }
+        const descEl = document.getElementById("grupo_descricao");
+        if (descEl) descEl.textContent = "";
         const estado = currentPalco && currentPalco.estado ? currentPalco.estado : (palco.habilitado === false ? "desabilitado" : "habilitado");
         const membros = typeof palco.membros_count === "number" ? `${palco.membros_count} membros` : "membros indisponíveis";
-        const recursos = [`${palco.tipo || "desconhecido"}`, membros, estado, palco.forum ? "fórum" : "sem fórum", palco.modo_lento_segundos ? `modo lento ${palco.modo_lento_segundos}s` : "sem modo lento", (palco.username || palco.endereco_publico) ? "público" : "privado"];
+        const recursos = [`${palco.tipo || "grupo"}`, membros, estado, palco.forum ? "fórum" : "sem fórum", palco.modo_lento_segundos ? `modo lento ${palco.modo_lento_segundos}s` : "sem modo lento", (palco.username || palco.endereco_publico) ? "público" : "privado"];
         const metaLinha = document.getElementById("grupo_meta_linha");
         if (metaLinha) metaLinha.textContent = recursos.filter(Boolean).join(" • ");
         const perfilResumo = document.getElementById("perfil_grupo_resumo");
