@@ -451,6 +451,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <h2 id="bot_nome">Bot</h2>
             <p id="bot_usuario" class="muted small" style="margin:0 0 8px;">Carregando dados do bot…</p>
             <div id="bot_metricas" class="small"><span class="badge">Usuários conhecidos: —</span></div>
+            <div id="bot_revisoes" class="bot-revisoes small muted"></div>
           </div>
         </div>
         <div class="global-search-wrap">
@@ -2325,10 +2326,13 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         }
         const revisoes = document.getElementById("bot_revisoes");
         const importantes = (data && data.revisoes_importantes) || [];
-        if (importantes.length) {
-          const box = document.createElement("div");
-          box.innerHTML = `<strong>Revisões importantes:</strong> ${importantes.map((item) => safeText(item, "revisar")).join(" · ")}`;
-          revisoes.appendChild(box);
+        if (revisoes) {
+          revisoes.replaceChildren();
+          if (importantes.length) {
+            const box = document.createElement("div");
+            box.innerHTML = `<strong>Revisões importantes:</strong> ${importantes.map((item) => safeText(item, "revisar")).join(" · ")}`;
+            revisoes.appendChild(box);
+          }
         }
         loadBotPhoto(Boolean(bot.foto_disponivel));
       }
