@@ -3148,7 +3148,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       const aliasLinesMap = () => {
         const value = String((document.getElementById("cfg_aliases") || {}).value || "");
         const map = new Map();
-        value.split(/\n+/).forEach((line) => {
+        value.split(/\\n+/).forEach((line) => {
           const clean = line.trim();
           if (!clean || !clean.includes("=")) return;
           const [alias, raw] = clean.split("=", 2);
