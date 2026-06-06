@@ -937,12 +937,71 @@ _EQUALIZADOR_HTML = """<!doctype html>
     body.phase78-internal-pages button.nav { min-height: 49px; }
     body.phase78-internal-pages button.nav strong { font-size: 14px; }
 
+
+    /* Fase 81: a busca volta a conduzir a entrada no painel sem deixar a home vazia. */
+    body.phase81-search-suggestions:not(.group-selected) #global_search_results {
+      display: block;
+      margin-top: 10px;
+    }
+    body.phase81-search-suggestions .search-result.quick-suggestion strong::before {
+      content: '';
+    }
+    body.phase81-search-suggestions .search-result.quick-suggestion {
+      min-height: 48px;
+    }
+    body.phase81-search-suggestions .search-result .search-kind {
+      color: #8995a3;
+      font-size: 12px;
+    }
+    body.phase81-search-suggestions .search-empty {
+      min-height: 88px;
+      padding: 16px;
+    }
+
+    /* Fase 82: estados compactos e feedback único, sem card vazio gigante. */
+    body.phase82-state-feedback .search-empty,
+    body.phase82-state-feedback .empty,
+    body.phase82-state-feedback .statusbar,
+    body.phase82-state-feedback .refresh-state {
+      border-radius: 13px;
+      background: var(--eq-surface-2, #14191f);
+      border: 1px solid var(--eq-border, rgba(255,255,255,.08));
+      color: var(--eq-muted, #8f9baa);
+      min-height: auto;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    body.phase82-state-feedback .search-empty strong,
+    body.phase82-state-feedback .empty strong {
+      color: var(--eq-text, #f3f5f7);
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+    body.phase82-state-feedback .feedback-panel {
+      border-radius: 14px;
+      background: var(--eq-surface, #161b20);
+      border-color: var(--eq-border, rgba(255,255,255,.08));
+      padding: 10px;
+    }
+    body.phase82-state-feedback .feedback-panel.ok { border-color: rgba(80,216,144,.20); }
+    body.phase82-state-feedback .feedback-panel.bad { border-color: rgba(255,111,111,.22); }
+    body.phase82-state-feedback .feedback-panel.warn { border-color: rgba(255,202,87,.22); }
+    body.phase82-state-feedback .loading-shell,
+    body.phase82-state-feedback #loading.card {
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      background: #101419;
+      border: 0;
+      box-shadow: none;
+    }
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
-  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system");</script>
+  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback");</script>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -2400,8 +2459,20 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       function buildGlobalSearchResults(query) {
         const q = String(query || "").trim();
-        if (q.length < 2) return [];
         const results = [];
+        if (q.length < 2) {
+          if (!currentPalco) {
+            (palcosDisponiveis || []).slice(0, 8).forEach((palco) => results.push({ kind: "Grupo", title: palco.titulo || "Grupo", sub: "abrir grupo", palco, quick: true }));
+          } else {
+            document.querySelectorAll("button.nav[data-view]").forEach((button) => {
+              if (button.classList.contains("hidden")) return;
+              const title = (button.querySelector("strong") || {}).textContent || "Janela";
+              const sub = (button.querySelector("span:not(.nav-state)") || {}).textContent || "";
+              results.push({ kind: "Janela", title, sub, view: button.dataset.view, quick: true });
+            });
+          }
+          return results.slice(0, 12);
+        }
         document.querySelectorAll("button.nav[data-view]").forEach((button) => {
           if (button.classList.contains("hidden")) return;
           const title = (button.querySelector("strong") || {}).textContent || "Janela";
@@ -2437,20 +2508,20 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (!input || !box) return;
         const rows = buildGlobalSearchResults(input.value);
         const query = String(input.value || "").trim();
-        box.classList.toggle("hidden", query.length < 2);
-        if (query.length < 2) { box.replaceChildren(); return; }
+        box.classList.toggle("hidden", !rows.length && query.length < 2);
+        if (!rows.length && query.length < 2) { box.replaceChildren(); return; }
         if (!rows.length) {
           const empty = document.createElement("div");
           empty.className = "search-empty";
-          empty.innerHTML = `<div><strong>Sem resultados</strong><span>Não houve resultado para “${escapeHtml(query)}”.</span></div>`;
+          empty.innerHTML = `<div><strong>Sem resultados</strong><span>Nada encontrado para “${escapeHtml(query)}”.</span></div>`;
           box.replaceChildren(empty);
           return;
         }
         box.replaceChildren(...rows.map((row) => {
           const button = document.createElement("button");
           button.type = "button";
-          button.className = "search-result";
-          button.innerHTML = `<span><strong>${escapeHtml(row.title)}</strong><span>${escapeHtml(row.kind + " · " + (row.sub || "abrir"))}</span></span>`;
+          button.className = "search-result" + (row.quick ? " quick-suggestion" : "");
+          button.innerHTML = `<span><strong>${escapeHtml(row.title)}</strong><span class="search-kind">${escapeHtml(row.kind + " · " + (row.sub || "abrir"))}</span></span>`;
           button.addEventListener("click", () => {
             if (row.palco) selectPalco(row.palco, null);
             else if (row.view) openView(row.view);
