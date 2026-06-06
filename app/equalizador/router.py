@@ -996,12 +996,178 @@ _EQUALIZADOR_HTML = """<!doctype html>
       border: 0;
       box-shadow: none;
     }
+
+
+    /* Fase 85: limpeza pós-print — remove card sobre card, listas imensas abertas e overflow de botões. */
+    body.phase85-cleanup {
+      --eq-bg: #101418;
+      --eq-surface: #151a20;
+      --eq-surface-2: #12171d;
+      --eq-surface-3: #0f141a;
+      --eq-border: rgba(255,255,255,.075);
+      --eq-border-strong: rgba(255,255,255,.12);
+      overflow-x: hidden;
+    }
+    body.phase85-cleanup main,
+    body.phase85-cleanup .view,
+    body.phase85-cleanup .panel,
+    body.phase85-cleanup .feedback-panel,
+    body.phase85-cleanup .grid,
+    body.phase85-cleanup .toolbar,
+    body.phase85-cleanup button.action,
+    body.phase85-cleanup input,
+    body.phase85-cleanup textarea,
+    body.phase85-cleanup select { box-sizing: border-box; min-width: 0; max-width: 100%; }
+    body.phase85-cleanup .view,
+    body.phase85-cleanup .panel,
+    body.phase85-cleanup .feedback-panel,
+    body.phase85-cleanup .group-card,
+    body.phase85-cleanup .app-tabs {
+      background: var(--eq-surface);
+      border-color: var(--eq-border);
+      box-shadow: none;
+    }
+    body.phase85-cleanup.detail-mode .view {
+      padding: 10px;
+      background: transparent;
+      border-color: transparent;
+    }
+    body.phase85-cleanup.detail-mode .view > .grid,
+    body.phase85-cleanup.detail-mode .view > .panel-split,
+    body.phase85-cleanup.detail-mode .view > .panel,
+    body.phase85-cleanup .panel.owner-only {
+      background: var(--eq-surface);
+      border: 1px solid var(--eq-border);
+      border-radius: 18px;
+      padding: 12px;
+      overflow: hidden;
+    }
+    body.phase85-cleanup .view .panel {
+      background: var(--eq-surface-2);
+      border-color: var(--eq-border);
+      box-shadow: none;
+      overflow: hidden;
+    }
+    body.phase85-cleanup .view .panel .panel,
+    body.phase85-cleanup .panel .panel,
+    body.phase85-cleanup .diagnostic-card .diagnostic-card {
+      background: var(--eq-surface-3);
+      border-color: var(--eq-border);
+    }
+    body.phase85-cleanup .toolbar,
+    body.phase85-cleanup .config-actions,
+    body.phase85-cleanup .feedback-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+      overflow: hidden;
+    }
+    body.phase85-cleanup .toolbar > button,
+    body.phase85-cleanup .config-actions > button,
+    body.phase85-cleanup .feedback-actions > button,
+    body.phase85-cleanup button.action {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.2;
+    }
+    body.phase85-cleanup .toolbar > button:only-child,
+    body.phase85-cleanup .toolbar > button:nth-child(odd):last-child,
+    body.phase85-cleanup .config-actions > button:only-child,
+    body.phase85-cleanup .config-actions > button:nth-child(odd):last-child,
+    body.phase85-cleanup .feedback-actions > button:only-child,
+    body.phase85-cleanup .feedback-actions > button:nth-child(odd):last-child { grid-column: 1 / -1; }
+    body.phase85-cleanup #seguranca_view .toolbar,
+    body.phase85-cleanup #config_view .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    body.phase85-cleanup #seguranca_modo_restrito,
+    body.phase85-cleanup #seguranca_exportar_criptografado,
+    body.phase85-cleanup #seguranca_limpar_locks { grid-column: 1 / -1; }
+    body.phase85-cleanup .feedback-panel { padding: 12px; }
+    body.phase85-cleanup .feedback-head {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    body.phase85-cleanup .feedback-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+      overflow: hidden;
+    }
+    body.phase85-cleanup .feedback-copy-one {
+      max-width: 84px;
+      min-width: 66px;
+      white-space: nowrap;
+    }
+    body.phase85-cleanup .disclosure-list {
+      display: grid;
+      gap: 8px;
+    }
+    body.phase85-cleanup details.disclosure-row,
+    body.phase85-cleanup details.diagnostic-section {
+      background: var(--eq-surface-2);
+      border: 1px solid var(--eq-border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    body.phase85-cleanup details.disclosure-row > summary,
+    body.phase85-cleanup details.diagnostic-section > summary {
+      list-style: none;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 12px;
+    }
+    body.phase85-cleanup details.disclosure-row > summary::-webkit-details-marker,
+    body.phase85-cleanup details.diagnostic-section > summary::-webkit-details-marker { display: none; }
+    body.phase85-cleanup details.disclosure-row > summary::after,
+    body.phase85-cleanup details.diagnostic-section > summary::after {
+      content: '›';
+      color: var(--eq-muted, #8f9baa);
+      font-size: 22px;
+      transform: rotate(90deg);
+      transition: transform .16s ease;
+    }
+    body.phase85-cleanup details.disclosure-row[open] > summary::after,
+    body.phase85-cleanup details.diagnostic-section[open] > summary::after { transform: rotate(-90deg); }
+    body.phase85-cleanup .disclosure-title { font-weight: 700; color: var(--eq-text, #f4f7fa); }
+    body.phase85-cleanup .disclosure-sub { display: block; color: var(--eq-muted, #8f9baa); font-size: 12px; line-height: 1.3; margin-top: 3px; }
+    body.phase85-cleanup .disclosure-body,
+    body.phase85-cleanup .diagnostic-section-body {
+      border-top: 1px solid var(--eq-border);
+      padding: 10px 12px 12px;
+      color: var(--eq-muted, #8f9baa);
+      overflow-wrap: anywhere;
+    }
+    body.phase85-cleanup .diagnostic-grid { gap: 8px; }
+    body.phase85-cleanup .diagnostic-section-body { display: grid; gap: 8px; }
+    body.phase85-cleanup .diagnostic-card { background: var(--eq-surface-2); border-color: var(--eq-border); }
+    body.phase85-cleanup .diagnostic-card.ok { background: rgba(22,138,85,.10); }
+    body.phase85-cleanup .diagnostic-card.bad { background: rgba(180,35,24,.12); }
+    body.phase85-cleanup .diagnostic-card.warn { background: rgba(199,120,0,.10); }
+    body.phase85-cleanup .matrix-summary { display: block; color: var(--eq-muted, #8f9baa); font-size: 12px; margin-top: 3px; }
+    @media (max-width: 560px) {
+      body.phase85-cleanup .toolbar,
+      body.phase85-cleanup .config-actions,
+      body.phase85-cleanup .feedback-actions,
+      body.phase85-cleanup #seguranca_view .toolbar,
+      body.phase85-cleanup #config_view .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      body.phase85-cleanup button.action { min-height: 42px; padding-left: 10px; padding-right: 10px; font-size: 13px; }
+      body.phase85-cleanup .view .panel { padding: 12px; }
+    }
+
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
-  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback");</script>
+  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback", "phase85-cleanup");</script>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -2791,6 +2957,25 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         el.className = data.length ? "list" : "list muted";
         el.replaceChildren(...(data.length ? data.map(render) : [document.createTextNode(emptyText)]));
       };
+      const disclosureRow = (title, summary, detail) => {
+        const row = document.createElement("details");
+        row.className = "disclosure-row small";
+        const head = document.createElement("summary");
+        head.innerHTML = `<span><span class="disclosure-title">${escapeHtml(title)}</span>${summary ? `<span class="disclosure-sub">${escapeHtml(summary)}</span>` : ""}</span>`;
+        const body = document.createElement("div");
+        body.className = "disclosure-body";
+        body.textContent = detail || "Sem detalhes.";
+        row.appendChild(head);
+        row.appendChild(body);
+        return row;
+      };
+      const fillDisclosureList = (id, rows, emptyText) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const data = rows || [];
+        el.className = data.length ? "disclosure-list" : "list muted";
+        el.replaceChildren(...(data.length ? data.map((row) => disclosureRow(row.titulo, row.resumo || "Toque para ver canais.", row.detalhe)) : [document.createTextNode(emptyText)]));
+      };
       const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
       const safeText = (value, fallback) => String(value || fallback || "").replace(/[<>]/g, "");
       const safeUsername = (value) => {
@@ -3147,20 +3332,25 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           }
           acoesEl.className = "diagnostic-grid";
           for (const [categoria, codigos] of diagnosticActionGroups) {
-            const wrapper = document.createElement("div");
-            wrapper.className = "diagnostic-card";
-            const titulo = document.createElement("strong");
-            titulo.textContent = categoria;
-            wrapper.appendChild(titulo);
-            for (const codigo of codigos) {
-              const check = diagnosticForAction(codigo);
+            const checksCategoria = codigos.map((codigo) => ({ codigo, check: diagnosticForAction(codigo) }));
+            const liberadosCategoria = checksCategoria.filter((row) => row.check.ok).length;
+            const wrapper = document.createElement("details");
+            wrapper.className = "diagnostic-section";
+            const summary = document.createElement("summary");
+            summary.innerHTML = `<span><span class="disclosure-title">${escapeHtml(categoria)}</span><span class="disclosure-sub">${liberadosCategoria} de ${checksCategoria.length} liberado(s)</span></span>`;
+            const body = document.createElement("div");
+            body.className = "diagnostic-section-body";
+            for (const row of checksCategoria) {
+              const check = row.check;
               const line = document.createElement("div");
               line.className = `diagnostic-card ${check.ok ? 'ok' : (check.botOk ? 'warn' : 'bad')}`;
               const status = check.ok ? "Liberado" : "Bloqueado";
               const motivos = check.motivos.length ? check.motivos.join(" · ") : "canal e direito real confirmados";
-              line.innerHTML = `<strong>${escapeHtml(canalNome(codigo))}</strong><span class="small ${check.ok ? 'ok' : 'warn'}">${status}</span><div class="diagnostic-reasons small">${escapeHtml(motivos)}</div>`;
-              wrapper.appendChild(line);
+              line.innerHTML = `<strong>${escapeHtml(canalNome(row.codigo))}</strong><span class="small ${check.ok ? 'ok' : 'warn'}">${status}</span><div class="diagnostic-reasons small">${escapeHtml(motivos)}</div>`;
+              body.appendChild(line);
             }
+            wrapper.appendChild(summary);
+            wrapper.appendChild(body);
             acoesEl.appendChild(wrapper);
           }
         }
@@ -4064,7 +4254,13 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
             });
           });
         });
-        fillList("config_matriz", matrizRows, (row) => itemText(row.titulo, row.detalhe), "Matriz sem operadores ou grupos configurados.");
+        fillDisclosureList("config_matriz", matrizRows.map((row) => {
+          const parts = String(row.titulo || "").split(" · ");
+          const grupo = parts[parts.length - 1] || "Grupo";
+          const operador = parts.slice(0, -1).join(" · ") || "Participante com permissão";
+          const canais = String(row.detalhe || "").split(",").filter(Boolean).length;
+          return { titulo: grupo, resumo: `${operador}${canais ? ` · ${canais} item(ns)` : ""}`, detalhe: row.detalhe };
+        }), "Matriz sem operadores ou grupos configurados.");
       }
 
       async function loadPalcoData() {
