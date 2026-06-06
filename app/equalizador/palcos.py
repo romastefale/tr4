@@ -5,6 +5,7 @@ from typing import Iterable
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.database import engine as default_engine
 from app.config import settings
@@ -161,7 +162,31 @@ def get_operador_public_by_user_id(
             username=row["username"],
             perfil=row["perfil"] or perfil,
         )
-    return _public_person_payload(ui_ref=ui_ref, nome=perfil, username="", perfil=perfil)
+    alvo = None
+    try:
+        with db_engine.begin() as conn:
+            alvo = conn.execute(
+                text(
+                    """
+                    SELECT ui_ref, nome_publico AS nome, username
+                    FROM eq_alvos
+                    WHERE telegram_user_id=:telegram_user_id
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"telegram_user_id": int(user_id)},
+            ).mappings().first()
+    except SQLAlchemyError:
+        alvo = None
+    if alvo:
+        return _public_person_payload(
+            ui_ref=str(alvo["ui_ref"] or ui_ref),
+            nome=alvo["nome"],
+            username=alvo["username"],
+            perfil=perfil,
+        )
+    return _public_person_payload(ui_ref=ui_ref, nome="Nome público ainda não visto", username="", perfil=perfil)
 
 
 def get_operador_public_by_ref(*, usr_ref: str, db_engine: Engine = default_engine) -> dict[str, object] | None:

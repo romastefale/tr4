@@ -580,12 +580,206 @@ _EQUALIZADOR_HTML = """<!doctype html>
       body.phase74-botfather-pages.detail-mode .view { padding: 14px; }
     }
 
+    /* Fase 75: auditoria visual global do Mini App.
+       Mantém backend intacto e consolida padrão cinza/preto, listas secas e botões consistentes. */
+    body.phase75-miniapp-review {
+      background: #11161c;
+      color: #f3f5f8;
+      font-size: 13px;
+    }
+    body.phase75-miniapp-review main { max-width: 720px; }
+    body.phase75-miniapp-review .bot-hero,
+    body.phase75-miniapp-review .group-card,
+    body.phase75-miniapp-review .app-tabs,
+    body.phase75-miniapp-review .view,
+    body.phase75-miniapp-review .panel,
+    body.phase75-miniapp-review .feedback-panel {
+      background: #171d23;
+      border-color: rgba(255,255,255,.075);
+      box-shadow: none;
+    }
+    body.phase75-miniapp-review .bot-hero {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 8px 4px 6px;
+      margin-bottom: 10px;
+    }
+    body.phase75-miniapp-review .bot-avatar { width: 54px; height: 54px; border-radius: 16px; }
+    body.phase75-miniapp-review .bot-hero h2 { font-size: 20px; margin: 0 0 2px; letter-spacing: -.03em; }
+    body.phase75-miniapp-review #bot_usuario,
+    body.phase75-miniapp-review #bot_metricas { font-size: 12px; line-height: 1.25; color: #8f9baa; }
+    body.phase75-miniapp-review .global-search-wrap { margin: 10px 0 12px; }
+    body.phase75-miniapp-review #global_search {
+      min-height: 48px;
+      border-radius: 13px;
+      background: #1b232b;
+      border-color: rgba(255,255,255,.08);
+      font-size: 13px;
+    }
+    body.phase75-miniapp-review .group-picker { margin: 8px 0 10px; }
+    body.phase75-miniapp-review .group-picker > label { font-size: 11px; color: #7f8b99; margin-bottom: 6px; }
+    body.phase75-miniapp-review .group-picker select {
+      min-height: 48px;
+      border-radius: 13px;
+      background: #11161c;
+      border-color: rgba(255,255,255,.09);
+      font-size: 13px;
+    }
+    body.phase75-miniapp-review .group-card { padding: 13px; border-radius: 18px; }
+    body.phase75-miniapp-review .group-head { grid-template-columns: 52px 1fr auto; gap: 11px; }
+    body.phase75-miniapp-review .group-head .avatar { width: 52px; height: 52px; border-radius: 15px; }
+    body.phase75-miniapp-review .group-title strong { font-size: 16px; line-height: 1.15; }
+    body.phase75-miniapp-review .group-desc-inline { font-size: 13px; color: #8e99a8; }
+    body.phase75-miniapp-review .group-meta-line { font-size: 12px; color: #8e99a8; line-height: 1.35; }
+    body.phase75-miniapp-review .mini-status-button { background: #16221d; border-color: rgba(80,216,144,.20); color: #9debc0; }
+    body.phase75-miniapp-review .app-tabs { border-radius: 16px; overflow: hidden; margin-top: 12px; }
+    body.phase75-miniapp-review button.nav {
+      min-height: 46px;
+      padding: 12px 42px 12px 14px;
+      background: transparent;
+      border-top: 1px solid rgba(255,255,255,.055);
+    }
+    body.phase75-miniapp-review button.nav:first-child { border-top: 0; }
+    body.phase75-miniapp-review button.nav strong { font-size: 14px; line-height: 1.1; margin: 0; }
+    body.phase75-miniapp-review button.nav span:not(.nav-state),
+    body.phase75-miniapp-review .detail-subtitle { display: none !important; }
+    body.phase75-miniapp-review button.nav.active { background: rgba(255,255,255,.035); }
+    body.phase75-miniapp-review button.nav::after,
+    body.phase75-miniapp-review button.nav.active::after { content: '›'; right: 15px; color: #707b89; font-size: 24px; }
+    body.phase75-miniapp-review.detail-mode .view {
+      background: #171d23;
+      border-radius: 18px;
+      padding: 14px;
+      overflow: hidden;
+    }
+    body.phase75-miniapp-review .view .panel { background: #141a20; border-color: rgba(255,255,255,.065); }
+    body.phase75-miniapp-review .panel h3 { font-size: 15px; margin: 4px 0 10px; }
+    body.phase75-miniapp-review .panel p.muted.small,
+    body.phase75-miniapp-review .empty.small { font-size: 12px; line-height: 1.35; }
+    body.phase75-miniapp-review .toolbar {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      align-items: stretch;
+    }
+    body.phase75-miniapp-review .toolbar > button:only-child,
+    body.phase75-miniapp-review .toolbar > button:nth-child(odd):last-child { grid-column: 1 / -1; }
+    body.phase75-miniapp-review button.action {
+      width: 100%;
+      min-height: 44px;
+      border-radius: 12px;
+      background: #232a32;
+      border: 1px solid rgba(255,255,255,.09);
+      color: #f3f5f8;
+      box-shadow: none;
+    }
+    body.phase75-miniapp-review button.action.secondary { background: #232a32; color: #f3f5f8; }
+    body.phase75-miniapp-review button.action:hover { box-shadow: none; filter: brightness(1.06); }
+    body.phase75-miniapp-review select,
+    body.phase75-miniapp-review textarea,
+    body.phase75-miniapp-review input { background: #111722; border-color: rgba(255,255,255,.12); }
+    body.phase75-miniapp-review .empty { background: #111722; border-color: rgba(255,255,255,.08); }
+    @media (max-width: 560px) {
+      body.phase75-miniapp-review { padding-left: 12px; padding-right: 12px; }
+      body.phase75-miniapp-review .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      body.phase75-miniapp-review .toolbar > button:only-child,
+      body.phase75-miniapp-review .toolbar > button:nth-child(odd):last-child { grid-column: 1 / -1; }
+    }
+
+    /* Fase 76: governantes recolhidos e cinza/preto real, sem listas imensas abertas. */
+    body.phase76-governance-compact {
+      background: #101418;
+      color: #f3f5f7;
+    }
+    body.phase76-governance-compact .bot-hero,
+    body.phase76-governance-compact .group-card,
+    body.phase76-governance-compact .app-tabs,
+    body.phase76-governance-compact .view,
+    body.phase76-governance-compact .panel,
+    body.phase76-governance-compact .feedback-panel {
+      background: #161b20;
+      border-color: rgba(255,255,255,.075);
+      box-shadow: none;
+    }
+    body.phase76-governance-compact .panel,
+    body.phase76-governance-compact .governance-card,
+    body.phase76-governance-compact .governance-role,
+    body.phase76-governance-compact .empty { background: #14191f; }
+    body.phase76-governance-compact .view .panel { background: #14191f; }
+    body.phase76-governance-compact input,
+    body.phase76-governance-compact textarea,
+    body.phase76-governance-compact select { background: #11161c; }
+    body.phase76-governance-compact .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    body.phase76-governance-compact .toolbar > button:only-child,
+    body.phase76-governance-compact .toolbar > button:nth-child(odd):last-child { grid-column: 1 / -1; }
+    body.phase76-governance-compact .governance-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    body.phase76-governance-compact .governance-card {
+      border: 1px solid rgba(255,255,255,.075);
+      border-radius: 15px;
+      padding: 0;
+      overflow: hidden;
+    }
+    body.phase76-governance-compact .governance-card > summary {
+      list-style: none;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 48px;
+      padding: 12px 14px;
+      color: #f3f5f7;
+    }
+    body.phase76-governance-compact .governance-card > summary::-webkit-details-marker { display: none; }
+    body.phase76-governance-compact .governance-card > summary::after {
+      content: '›';
+      color: #8c96a3;
+      font-size: 22px;
+      line-height: 1;
+      transform: rotate(90deg);
+      transition: transform .16s ease;
+    }
+    body.phase76-governance-compact .governance-card[open] > summary::after { transform: rotate(-90deg); }
+    body.phase76-governance-compact .governance-person-main {
+      display: block;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    body.phase76-governance-compact .governance-person-sub {
+      display: block;
+      color: #8f9baa;
+      font-size: 12px;
+      margin-top: 3px;
+      line-height: 1.25;
+    }
+    body.phase76-governance-compact .governance-detail {
+      border-top: 1px solid rgba(255,255,255,.06);
+      padding: 10px 12px 12px;
+    }
+    body.phase76-governance-compact .governance-role {
+      border: 1px solid rgba(255,255,255,.075);
+      border-radius: 12px;
+      padding: 10px;
+      margin-top: 8px;
+    }
+    body.phase76-governance-compact .governance-role.active { border-color: rgba(68, 201, 132, .26); }
+    body.phase76-governance-compact .governance-role .muted { display: none; }
+    body.phase76-governance-compact .governance-chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+    body.phase76-governance-compact .badge { background: rgba(255,255,255,.055); border-color: rgba(255,255,255,.08); }
+
+
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
-  <script>document.body.classList.add("phase74-botfather-pages");</script>
+  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact");</script>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -2402,21 +2596,31 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         el.replaceChildren(...(data.length ? data.slice(0, 24).map((row) => adminCard(row, fallback)) : [document.createTextNode(emptyText)]));
       };
       function governancaCard(row, palcoFilter) {
-        const item = document.createElement("div");
+        const item = document.createElement("details");
         item.className = "governance-card small";
         const palcos = Array.isArray(row && row.palcos) ? row.palcos : [];
         const palco = palcoFilter ? (palcos.find((p) => String(p.grp_ref || "") === String(palcoFilter)) || palcos[0]) : palcos[0];
         const perfis = Array.isArray(palco && palco.perfis) ? palco.perfis : [];
         const ativos = perfis.filter((perfil) => perfil && perfil.ativo);
-        const nome = pessoaHtml(row, row && row.perfil || "Governante");
+        const username = safeUsername(row && row.username);
+        const nomeRaw = String(row && row.nome || "").trim();
+        const nomePublico = nomeRaw && nomeRaw !== "Governante" && nomeRaw !== "Operador" ? nomeRaw : (username ? `@${username}` : "Nome público ainda não visto");
         const perfilBase = escapeHtml(row && row.perfil || "Governante");
-        const grupoTitulo = palco && palco.titulo ? `<div class="muted">Grupo: ${escapeHtml(palco.titulo)}</div>` : "";
-        const roles = ativos.length ? ativos.map((perfil) => {
+        const grupoTitulo = palco && palco.titulo ? String(palco.titulo) : "Grupo";
+        const canaisTotal = ativos.reduce((total, perfil) => total + (Array.isArray(perfil.concedidos) ? perfil.concedidos.length : 0), 0);
+        const summary = document.createElement("summary");
+        const title = username ? `<a class="person-link" href="https://t.me/${username}" target="_blank" rel="noopener"><span class="governance-person-main">${escapeHtml(nomePublico)} · @${username}</span></a>` : `<span class="governance-person-main">${escapeHtml(nomePublico)}</span>`;
+        summary.innerHTML = `<span>${title}<span class="governance-person-sub">${perfilBase}${row && row.modo_maestro ? ' · dono' : ''} · ${escapeHtml(grupoTitulo)} · ${ativos.length} janela(s) · ${canaisTotal} canal(is)</span></span>`;
+        const detail = document.createElement("div");
+        detail.className = "governance-detail";
+        detail.innerHTML = ativos.length ? ativos.map((perfil) => {
           const canais = Array.isArray(perfil.concedidos) ? perfil.concedidos : [];
           const chips = canais.slice(0, 8).map((canal) => `<span class="badge">${escapeHtml(canal.nome || canal.codigo)}</span>`).join("");
-          return `<div class="governance-role active"><strong>${escapeHtml(perfil.nome || perfil.codigo)}</strong><span class="muted">${escapeHtml(perfil.descricao || "")}</span><div class="governance-chips">${chips || '<span class="muted">sem canal detalhado</span>'}</div></div>`;
-        }).join("") : '<div class="governance-role locked"><strong>Sem janela ativa neste grupo</strong><span class="muted">Nenhum canal concedido para as janelas principais.</span></div>';
-        item.innerHTML = `<div class="person-line">${nome}<span class="badge">${perfilBase}</span>${row && row.modo_maestro ? '<span class="badge">dono</span>' : ''}</div>${grupoTitulo}${roles}`;
+          const extra = canais.length > 8 ? `<span class="badge">+${canais.length - 8}</span>` : "";
+          return `<div class="governance-role active"><strong>${escapeHtml(perfil.nome || perfil.codigo)}</strong><div class="governance-chips">${chips}${extra || ""}</div></div>`;
+        }).join("") : '<div class="governance-role locked"><strong>Sem janela ativa neste grupo</strong></div>';
+        item.appendChild(summary);
+        item.appendChild(detail);
         return item;
       }
       function renderGovernanca(containerId, data, opts) {
@@ -2432,7 +2636,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const palco = palcoRef ? (palcos.find((p) => String(p.grp_ref || "") === palcoRef) || palcos[0]) : palcos[0];
           return Array.isArray(palco && palco.perfis) && palco.perfis.some((perfil) => perfil && perfil.ativo);
         });
-        el.className = filtered.length ? "governance-grid" : "governance-grid muted";
+        el.className = filtered.length ? "governance-grid governance-collapsed" : "governance-grid muted";
         el.replaceChildren(...(filtered.length ? filtered.map((row) => governancaCard(row, palcoRef)) : [document.createTextNode("Nenhum governante com janela ativa carregado.")]));
       }
       function renderPessoasPainel(data, alvosRows) {
