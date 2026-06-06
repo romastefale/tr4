@@ -368,10 +368,63 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .governance-role.active { border-color: rgba(80,216,144,.52); background: rgba(22,138,85,.14); }
     .governance-role.locked { opacity: .72; }
     .governance-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+    /* Fase 68: padrão minimalista inspirado em listas do BotFather, com tema cinza/preto real. */
+    body.phase68-minimal { background: #14191f; color: #f5f7fb; padding-top: max(14px, var(--tg-safe-area-inset-top, 0px)); }
+    body.phase68-minimal::before { background: none; }
+    body.phase68-minimal main { max-width: 840px; }
+    body.phase68-minimal .card { background: transparent; border: 0; box-shadow: none; padding: 0; }
+    body.phase68-minimal .top { justify-content: center; text-align: center; margin: 8px 0 18px; }
+    body.phase68-minimal .top > div { width: 100%; }
+    body.phase68-minimal .top h1 { font-size: 28px; margin-top: 10px; }
+    body.phase68-minimal .top p { margin: 4px 0 0; color: #8792a2; }
+    body.phase68-minimal #perfil { position: absolute; right: 0; top: 4px; background: #0c1016; border-color: rgba(255,255,255,.08); color: #a9b3c2; }
+    body.phase68-minimal .row { display: none; }
+    body.phase68-minimal #inicio_view { background: transparent; border: 0; padding: 0; margin: 0 0 16px; }
+    body.phase68-minimal .bot-hero { grid-template-columns: 1fr; justify-items: center; text-align: center; border: 0; background: transparent; box-shadow: none; padding: 18px 8px 8px; margin: 0; }
+    body.phase68-minimal .bot-avatar { width: 78px; height: 78px; border-radius: 999px; font-size: 24px; box-shadow: 0 18px 40px rgba(0,0,0,.34); }
+    body.phase68-minimal .bot-hero h2 { font-size: 30px; letter-spacing: -.03em; }
+    body.phase68-minimal #bot_metricas { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    body.phase68-minimal .global-search-wrap { margin: 16px 0 18px; position: relative; }
+    body.phase68-minimal .global-search-wrap::before { content: '⌕'; position: absolute; left: 18px; top: 14px; color: #7d8795; font-size: 22px; z-index: 1; }
+    body.phase68-minimal #global_search { width: 100%; min-height: 58px; border-radius: 12px; border: 0; background: #222c36; color: #f7f8fb; padding-left: 52px; font-size: 16px; }
+    body.phase68-minimal #global_search:focus { outline: 2px solid rgba(73,150,236,.42); }
+    body.phase68-minimal .search-results { margin-top: 8px; border-radius: 14px; overflow: hidden; background: #202832; border: 1px solid rgba(255,255,255,.06); }
+    body.phase68-minimal .search-result { width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,.06); background: transparent; color: inherit; text-align: left; padding: 13px 14px; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+    body.phase68-minimal .search-result:first-child { border-top: 0; }
+    body.phase68-minimal .search-result strong { display:block; }
+    body.phase68-minimal .search-result span { color:#8792a2; font-size: 12px; }
+    body.phase68-minimal .search-result::after { content:'›'; color:#7d8795; font-size: 24px; }
+    body.phase68-minimal .group-picker { margin: 18px 0; }
+    body.phase68-minimal .group-picker > label { color: #7d8795; margin-left: 2px; }
+    body.phase68-minimal .group-picker select { border-radius: 13px; min-height: 58px; background: #10151c; border: 1px solid rgba(255,255,255,.09); }
+    body.phase68-minimal .group-card { background: #191f28; border-color: rgba(255,255,255,.08); border-radius: 18px; padding: 14px; box-shadow: none; }
+    body.phase68-minimal .headline { grid-template-columns: 68px 1fr; }
+    body.phase68-minimal .avatar { border-radius: 18px; }
+    body.phase68-minimal .group-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    body.phase68-minimal .group-meta .item { background: #10161f; border: 1px solid rgba(255,255,255,.06); border-radius: 12px; padding: 10px; }
+    body.phase68-minimal .status-row { margin-top: 8px; }
+    body.phase68-minimal .statusbar, body.phase68-minimal .refresh-state { border-radius: 14px; background: #10161f; border-color: rgba(255,255,255,.08); }
+    body.phase68-minimal #mesa_titulo { margin-top: 22px; font-size: 22px; }
+    body.phase68-minimal .app-tabs { display: grid; grid-template-columns: 1fr; gap: 0; background: #202832; border: 1px solid rgba(255,255,255,.07); border-radius: 16px; overflow: hidden; margin: 12px 0 16px; }
+    body.phase68-minimal button.nav { width: 100%; min-height: 64px; border-radius: 0; border: 0; border-top: 1px solid rgba(255,255,255,.06); background: transparent; padding: 13px 44px 13px 16px; text-align: left; position: relative; display: block; }
+    body.phase68-minimal button.nav:first-child { border-top: 0; }
+    body.phase68-minimal button.nav::after { content: '›'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: #748091; font-size: 28px; font-weight: 500; }
+    body.phase68-minimal button.nav.active { background: rgba(53, 145, 255, .14); color: #fff; }
+    body.phase68-minimal button.nav.active::after { content: '⌄'; font-size: 20px; }
+    body.phase68-minimal button.nav strong { display: block; font-size: 15px; margin-bottom: 2px; }
+    body.phase68-minimal button.nav span:not(.nav-state) { display: block; font-size: 12px; color: #8792a2; font-weight: 500; }
+    body.phase68-minimal .nav-state { position: absolute; right: 42px; top: 21px; margin: 0; background: transparent; }
+    body.phase68-minimal .view { margin-top: 14px; background: #191f28; border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 14px; }
+    body.phase68-minimal .view.hidden { display: none !important; }
+    body.phase68-minimal .panel { background: #141b24; border-color: rgba(255,255,255,.08); box-shadow: none; }
+    body.phase68-minimal .toolbar { gap: 8px; }
+    body.phase68-minimal button.action { border-radius: 12px; }
+    body.phase68-minimal .section-note { color: #97a1af; }
+    body.phase68-minimal .feedback-panel { background: #191f28; border-color: rgba(255,255,255,.08); }
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
   </style>
 </head>
-<body>
+<body class="phase68-minimal">
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -384,8 +437,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
     <section id="app" class="card hidden">
       <div class="top">
         <div>
-          <h1>Equalizador</h1>
-          <p class="muted">Painel de moderação em modo controlado.</p>
+          <h1>tigraoRADIO</h1>
+          <p class="muted">@tigraoRADIObot</p>
         </div>
         <span id="perfil" class="pill">Operador</span>
       </div>
@@ -400,13 +453,11 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <div id="bot_metricas" class="small"><span class="badge">Usuários conhecidos: —</span></div>
           </div>
         </div>
-        <h2>Início do painel</h2>
-        <p class="section-note">A interface exibe nome público e @username quando disponível. Referências técnicas continuam internas. As ações aparecem conforme sua permissão e o direito real do bot no grupo.</p>
-        <div id="bot_revisoes" class="quicklist small">
-          <div><strong>Comandos privados úteis:</strong> <code>/painel_ajuda</code>, <code>/painel_msg &lt;link&gt;</code>, <code>/painel_alvo radio &lt;id&gt;</code>, <code>/painel_convite radio teste</code>.</div>
-          <div><strong>Atalhos:</strong> use link de mensagem ou @username já conhecido pelo bot. O app converte para referência segura.</div>
-          <div><strong>Revisar antes de operar:</strong> confira permissões do bot, grupos ativos, operadores, canais e ações críticas.</div>
+        <div class="global-search-wrap">
+          <input id="global_search" autocomplete="off" placeholder="Pesquisar por @username, ID, grupo, janela ou ação" />
+          <div id="global_search_results" class="search-results hidden"></div>
         </div>
+        <p class="section-note">Escolha um grupo e abra uma janela. As ações aparecem conforme permissão do operador e direito real do bot.</p>
       </section>
       <section id="palco_header" class="group-picker header-select">
         <label class="small muted">Escolha o grupo</label>
@@ -453,7 +504,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <button id="seguranca_nav" class="nav secondary hidden" data-view="seguranca_view"><strong>Segurança</strong><span>modo, auditoria e exports</span></button>
           <button id="config_nav" class="nav secondary hidden" data-view="config_view"><strong>Configuração</strong><span>operadores e canais</span></button>
         </div>
-        <section id="mesa_view" class="view">
+        <section id="mesa_view" class="view hidden">
           <h3 class="window-title">Resumo operacional</h3>
           <p class="section-note">A navegação acima já substitui os cartões repetidos. Esta tela mostra apenas estado, pessoas e delegação quando aplicável.</p>
           <div class="panel-split">
@@ -1157,7 +1208,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       let afinacaoLoaded = false;
       let modoMaestroPermitido = false;
       let carregandoPalco = false;
-      let currentViewId = "mesa_view";
+      let currentViewId = "";
       let lastRefreshStartedAt = 0;
       let feedbackEntries = [];
       let confirmTimer = null;
@@ -1718,11 +1769,12 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           toast("Janela bloqueada preventivamente: " + viewDiagnostic.motivos.join(" · "), "warn");
           id = "mesa_view";
         }
-        for (const el of document.querySelectorAll(".view")) el.classList.add("hidden");
+        closeAllViews();
         const view = document.getElementById(id);
         if (view) view.classList.remove("hidden");
         currentViewId = id;
         document.querySelectorAll("button.nav").forEach((button) => button.classList.toggle("active", button.dataset.view === id));
+        if (view) { try { view.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) {} }
       };
       const aplicarPerfil = (me) => {
         const canais = new Set(me.canais || []);
@@ -1773,7 +1825,79 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (!target || !target.matches || !target.matches("input, textarea, select")) return;
         setTimeout(() => { try { target.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_) {} }, 120);
       });
-      document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => { button.classList.add("pressed"); setTimeout(() => button.classList.remove("pressed"), 180); haptic("selection"); openView(button.dataset.view); }));
+      const closeAllViews = () => {
+        for (const el of document.querySelectorAll(".view")) el.classList.add("hidden");
+        document.querySelectorAll("button.nav").forEach((button) => button.classList.remove("active"));
+        currentViewId = "";
+      };
+      const normalizeSearch = (value) => String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const searchTokens = (value) => normalizeSearch(value).split(/\\s+/).filter(Boolean);
+      function searchMatches(text, query) {
+        const hay = normalizeSearch(text);
+        return searchTokens(query).every((token) => hay.includes(token));
+      }
+      function buildGlobalSearchResults(query) {
+        const q = String(query || "").trim();
+        if (q.length < 2) return [];
+        const results = [];
+        document.querySelectorAll("button.nav[data-view]").forEach((button) => {
+          if (button.classList.contains("hidden")) return;
+          const title = (button.querySelector("strong") || {}).textContent || "Janela";
+          const sub = (button.querySelector("span:not(.nav-state)") || {}).textContent || "";
+          if (searchMatches(`${title} ${sub}`, q)) results.push({ kind: "Janela", title, sub, view: button.dataset.view });
+        });
+        Object.entries(actionLabels).forEach(([code, label]) => {
+          if (searchMatches(`${label} ${code}`, q)) results.push({ kind: "Ação", title: label, sub: canalNome(code), view: viewForAction(code) });
+        });
+        (palcosDisponiveis || []).forEach((palco) => {
+          if (searchMatches(`${palco.titulo || ""} ${palco.alias || ""} ${palco.grp_ref || ""} ${palco.estado || ""}`, q)) results.push({ kind: "Grupo", title: palco.titulo || "Grupo", sub: palco.estado || "grupo disponível", palco });
+        });
+        (currentAlvosRows || []).forEach((row) => {
+          const text = `${row.nome || ""} ${row.username || ""} ${row.alvo_ref || ""} ${row.user_ref || ""} ${row.ref || ""}`;
+          if (searchMatches(text, q)) results.push({ kind: "Alvo", title: pessoaLabel(row, "Usuário"), sub: "pessoa conhecida pelo painel", view: "pessoas_view" });
+        });
+        return results.slice(0, 12);
+      }
+      function viewForAction(code) {
+        if (String(code).startsWith("grupo.")) return "perfil_view";
+        if (String(code).startsWith("mensagens.") || String(code).startsWith("fixados.")) return "mensagens_view";
+        if (String(code).startsWith("membros.") || String(code).startsWith("admins.")) return "pessoas_view";
+        if (String(code).startsWith("convites.") || String(code).startsWith("entradas.")) return "convites_view";
+        if (String(code).startsWith("topicos.")) return "topicos_view";
+        if (String(code).startsWith("reacoes.")) return "reacoes_view";
+        if (String(code).startsWith("silencio.") || String(code).startsWith("transmissao.")) return "maestro_view";
+        if (String(code).startsWith("ddx.") || String(code).startsWith("novos.")) return "ddx_view";
+        return "mesa_view";
+      }
+      function renderGlobalSearch() {
+        const input = document.getElementById("global_search");
+        const box = document.getElementById("global_search_results");
+        if (!input || !box) return;
+        const rows = buildGlobalSearchResults(input.value);
+        box.classList.toggle("hidden", !rows.length);
+        box.replaceChildren(...rows.map((row) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "search-result";
+          button.innerHTML = `<span><strong>${escapeHtml(row.title)}</strong><span>${escapeHtml(row.kind + " · " + (row.sub || "abrir"))}</span></span>`;
+          button.addEventListener("click", () => {
+            if (row.palco) selectPalco(row.palco, null);
+            else if (row.view) openView(row.view);
+            box.classList.add("hidden");
+            haptic("selection");
+          });
+          return button;
+        }));
+      }
+      document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => {
+        button.classList.add("pressed");
+        setTimeout(() => button.classList.remove("pressed"), 180);
+        haptic("selection");
+        if (currentViewId === button.dataset.view && !document.getElementById(button.dataset.view).classList.contains("hidden")) closeAllViews();
+        else openView(button.dataset.view);
+      }));
+      const globalSearchInput = document.getElementById("global_search");
+      if (globalSearchInput) globalSearchInput.addEventListener("input", renderGlobalSearch);
       const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
       if (perfilAtualizar) perfilAtualizar.addEventListener("click", () => currentPalco ? loadPalcoData() : toast("Escolha um grupo antes de atualizar.", "warn"));
       const mesaRefreshButton = document.getElementById("mesa_refresh");
@@ -1805,6 +1929,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           if (palco) selectPalco(palco, null);
         };
         if (hint) hint.textContent = "Selecione o grupo no cabeçalho para abrir o painel e o resumo de moderação.";
+        renderGlobalSearch();
       }
       function renderCanais(rows) {
         canaisPorPalco = new Map();
@@ -1985,8 +2110,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (refreshButton) refreshButton.disabled = false;
         statusMesa("Carregando permissões, mensagens, membros e histórico…", "muted");
         setRefreshState("Abrindo painel do grupo selecionado…", "loading");
-        openView("mesa_view");
+        closeAllViews();
         await loadPalcoData();
+        renderGlobalSearch();
       }
       const fillList = (id, rows, render, emptyText) => {
         const el = document.getElementById(id);
