@@ -73,6 +73,7 @@ def aliases_ativos_publicos(*, alias_secret: str) -> list[dict[str, object]]:
             {
                 "alias": str(label),
                 "grp_ref": make_ui_ref("grp", int(chat_id), alias_secret),
+                "chat_id": int(chat_id),
                 "ativo": is_active,
                 "estado": "ativo" if is_active else "fora da variável TR4_EQUALIZADOR_PALCO_IDS",
             }
@@ -314,6 +315,11 @@ def configuracao_maestro_publica(*, alias_secret: str, db_engine: Engine = defau
     allowed_palcos = settings.equalizador_allowed_palco_ids()
     mark_unconfigured_palcos_inactive(allowed_palco_ids=allowed_palcos, db_engine=db_engine)
     ativos = list_equalizador_palcos(palco_ids=allowed_palcos, alias_secret=alias_secret, db_engine=db_engine)
+    chat_by_ref = {make_ui_ref("grp", int(chat_id), alias_secret): int(chat_id) for chat_id in allowed_palcos}
+    for row in ativos:
+        ref = str(row.get("grp_ref") or "")
+        if ref in chat_by_ref:
+            row["chat_id"] = chat_by_ref[ref]
     return {
         "palcos_ativos": ativos,
         "aliases": aliases_ativos_publicos(alias_secret=alias_secret),

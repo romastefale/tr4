@@ -270,7 +270,24 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .feedback-copy-one:active { filter: brightness(.82); transform: scale(.96); }
     .small { font-size: 12px; }
     .section-note { margin: 8px 0 12px; color: #d1d5db; font-size: 13px; }
-    .statusbar { margin: 14px 0; border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #111827; }
+    .statusbar { margin: 14px 0; border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 10px 12px; background: #111827; font-size: 13px; line-height: 1.35; }
+    .statusbar.ok { border-color: rgba(80,216,144,.44); background: rgba(22,138,85,.12); color: #d1fae5; }
+    .statusbar.warn { border-color: rgba(255,209,102,.44); background: rgba(199,120,0,.13); color: #fde68a; }
+    .statusbar.bad { border-color: rgba(255,138,128,.44); background: rgba(180,35,24,.13); color: #fecaca; }
+    .status-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; margin: 14px 0; }
+    .status-row .statusbar { margin: 0; }
+    .refresh-action { min-width: 122px; min-height: 42px; }
+    .refresh-action.working::before, button.action.working::before, button.nav.loading::before { content: ""; display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border: 2px solid rgba(255,255,255,.36); border-top-color: rgba(255,255,255,.92); border-radius: 50%; animation: spin .78s linear infinite; }
+    .refresh-state { margin: -4px 0 12px; min-height: 20px; font-size: 12px; color: var(--tg-theme-hint-color, #cbd5e1); display: flex; align-items: center; gap: 6px; }
+    .refresh-state::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.22); }
+    .refresh-state.loading::before { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.24); border-top-color: #ffd166; background: transparent; animation: spin .8s linear infinite; }
+    .refresh-state.ok::before { background: #50d890; }
+    .refresh-state.warn::before { background: #ffd166; }
+    .refresh-state.bad::before { background: #ff8a80; }
+    .is-refreshing .view:not(.hidden), .is-refreshing #grupo_resumo_card { border-color: rgba(255,209,102,.30); }
+    .skeleton-line { display: block; height: 14px; border-radius: 999px; margin: 8px 0; background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.16), rgba(255,255,255,.06)); background-size: 220% 100%; animation: shimmer 1.1s ease-in-out infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes shimmer { 0% { background-position: 160% 0; } 100% { background-position: -60% 0; } }
     .badge { display: inline-flex; align-items: center; margin: 3px 4px 3px 0; border-radius: 999px; padding: 5px 9px; border: 1px solid rgba(255,255,255,.20); font-size: 12px; color: #e5e7eb; background: rgba(255,255,255,.06); }
     .wide { grid-column: 1 / -1; }
     .person-card { display: grid; gap: 8px; }
@@ -302,6 +319,24 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .photo-preview { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; margin-top: 12px; }
     .photo-actions input[type="file"] { padding: 10px; background: #020617; }
     .header-select { margin: 14px 0; }
+    .group-picker { margin: 14px 0 18px; }
+    .group-picker > label { display: block; margin: 0 0 8px; }
+    .group-picker select { margin-bottom: 12px; }
+    .group-card { margin: 0; }
+    #grupo_descricao { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .group-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .group-meta .item { margin: 0; }
+    .search-box { margin: 8px 0 10px; }
+    .member-preview.compact { max-height: 176px; }
+    .config-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .config-actions button { width: 100%; }
+    .nav-state { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 999px; font-size: 11px; background: rgba(255,255,255,.08); color: var(--tg-theme-hint-color, #a1a1aa); vertical-align: middle; }
+    .nav-state.loading { color: #ffd166; animation: pulse 1s infinite alternate; }
+    .nav-state.ok { color: #50d890; background: rgba(80,216,144,.12); }
+    .nav-state.bad { color: #ff8a80; background: rgba(255,138,128,.12); }
+    .chip-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .chip-grid .badge { margin: 0; }
+    .owner-only { border-color: rgba(255,209,102,.28); }
     .quicklist { display: grid; gap: 8px; }
     .quicklist code { background: #020617; padding: 2px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); }
     .person-link { color: var(--tg-theme-link-color, #8ab4ff); text-decoration: none; }
@@ -333,7 +368,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .governance-role.active { border-color: rgba(80,216,144,.52); background: rgba(22,138,85,.14); }
     .governance-role.locked { opacity: .72; }
     .governance-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-    @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .feedback-head { display: grid; } }
+    @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
   </style>
 </head>
 <body>
@@ -366,33 +401,41 @@ _EQUALIZADOR_HTML = """<!doctype html>
           </div>
         </div>
         <h2>Início do painel</h2>
-        <p class="section-note">A interface exibe nome público e @username quando disponível. IDs continuam internos. As ações aparecem conforme seu canal e o direito real do bot no grupo.</p>
+        <p class="section-note">A interface exibe nome público e @username quando disponível. Referências técnicas continuam internas. As ações aparecem conforme sua permissão e o direito real do bot no grupo.</p>
         <div id="bot_revisoes" class="quicklist small">
           <div><strong>Comandos privados úteis:</strong> <code>/painel_ajuda</code>, <code>/painel_msg &lt;link&gt;</code>, <code>/painel_alvo radio &lt;id&gt;</code>, <code>/painel_convite radio teste</code>.</div>
           <div><strong>Atalhos:</strong> use link de mensagem ou @username já conhecido pelo bot. O app converte para referência segura.</div>
           <div><strong>Revisar antes de operar:</strong> confira permissões do bot, grupos ativos, operadores, canais e ações críticas.</div>
         </div>
       </section>
-      <section id="palco_header" class="panel header-select">
-        <label class="small muted">Grupo ativo</label>
+      <section id="palco_header" class="group-picker header-select">
+        <label class="small muted">Escolha o grupo</label>
         <select id="palco_header_select"></select>
-        <div id="grupo_resumo" class="headline" style="margin-top:12px;">
-          <div id="grupo_avatar" class="avatar">♪</div>
-          <div>
-            <strong id="grupo_nome">Selecione um grupo</strong>
-            <p id="grupo_descricao" class="muted small" style="margin:4px 0 0;">O resumo do grupo aparece aqui.</p>
+        <div id="grupo_resumo_card" class="panel group-card">
+          <div id="grupo_resumo" class="headline">
+            <div id="grupo_avatar" class="avatar">♪</div>
+            <div>
+              <strong id="grupo_nome">Selecione um grupo</strong>
+              <p id="grupo_descricao" class="muted small" style="margin:4px 0 0;">O resumo do grupo aparece aqui.</p>
+            </div>
+          </div>
+          <div class="group-meta">
+            <div class="item small"><strong>Tipo</strong><br><span id="grupo_tipo" class="muted">—</span></div>
+            <div class="item small"><strong>Membros</strong><br><span id="grupo_membros" class="muted">—</span></div>
+            <div class="item small"><strong>Estado</strong><br><span id="grupo_estado" class="muted">—</span></div>
+            <div class="item small"><strong>Recursos</strong><br><span id="grupo_recursos" class="muted">—</span></div>
           </div>
         </div>
-        <table class="mini-table" style="margin-top:10px;">
-          <tr><td>Tipo</td><td id="grupo_tipo" class="muted">—</td></tr>
-          <tr><td>Membros</td><td id="grupo_membros" class="muted">—</td></tr>
-        </table>
       </section>
       <h2 class="hidden">Grupos</h2>
       <p id="palcos_hint" class="section-note">Selecione o grupo no cabeçalho.</p>
       <div id="palcos" class="grid hidden"></div>
       <div id="mesa" class="hidden">
-        <div id="mesa_status" class="statusbar muted">Painel aguardando seleção.</div>
+        <div class="status-row">
+          <div id="mesa_status" class="statusbar muted">Painel aguardando seleção.</div>
+          <button id="mesa_refresh" class="action secondary refresh-action" type="button" disabled>Atualizar</button>
+        </div>
+        <div id="refresh_state" class="refresh-state">Aguardando seleção de grupo.</div>
         <h2 id="mesa_titulo">Painel do grupo</h2>
         <div class="toolbar app-tabs">
           <button class="nav secondary" data-view="mesa_view"><strong>Início</strong><span>status e resumo</span></button>
@@ -401,7 +444,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <button class="nav secondary" data-view="radio_view"><strong>Rádio</strong><span>rascunho e mídia</span></button>
           <button class="nav secondary" data-view="ddx_view"><strong>Filtros</strong><span>DDX e 10 min</span></button>
           <button class="nav secondary" data-view="reacoes_view"><strong>Reações</strong><span>auditoria e reactors</span></button>
-          <button class="nav secondary" data-view="pessoas_view"><strong>Pessoas</strong><span>membros, admins e bots</span></button>
+          <button class="nav secondary" data-view="pessoas_view"><strong>Pessoas</strong><span>membros, administradores e bots</span></button>
           <button class="nav secondary" data-view="convites_view"><strong>Convites</strong><span>criar, copiar e revogar</span></button>
           <button class="nav secondary" data-view="topicos_view"><strong>Tópicos</strong><span>fórum e tópico geral</span></button>
           <button id="maestro_nav" class="nav secondary hidden" data-view="maestro_view"><strong>Transmissão</strong><span>avisos e silêncio</span></button>
@@ -411,15 +454,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <button id="config_nav" class="nav secondary hidden" data-view="config_view"><strong>Configuração</strong><span>operadores e canais</span></button>
         </div>
         <section id="mesa_view" class="view">
-          <h3 class="window-title">Resumo do grupo</h3>
-          <p class="section-note">Use a navegação compacta acima. A tela inicial não repete mais a lista de janelas para reduzir peso visual no iPhone.</p>
-          <div class="home-hint-grid">
-            <div class="home-hint"><strong>Perfil</strong><span>nome, descrição e foto do grupo.</span></div>
-            <div class="home-hint"><strong>Mensagens</strong><span>envio, fixação, desfixação e exclusão.</span></div>
-            <div class="home-hint"><strong>Pessoas</strong><span>membros, administradores humanos e bots.</span></div>
-            <div class="home-hint"><strong>Diagnóstico</strong><span>motivo real de bloqueios antes da ação.</span></div>
-          </div>
-          <div class="section-divider"><strong>Pessoas do painel</strong><span>Membros vistos, administradores humanos e bots carregados do grupo selecionado.</span></div>
+          <h3 class="window-title">Resumo operacional</h3>
+          <p class="section-note">A navegação acima já substitui os cartões repetidos. Esta tela mostra apenas estado, pessoas e delegação quando aplicável.</p>
           <div class="panel-split">
             <div class="panel">
               <strong>Resumo de membros</strong>
@@ -427,12 +463,15 @@ _EQUALIZADOR_HTML = """<!doctype html>
             </div>
             <div class="panel">
               <strong>Membros vistos recentemente</strong>
-              <div id="mesa_membros_preview" class="member-preview muted small">Nenhum membro carregado ainda.</div>
+              <input id="mesa_membros_busca" class="search-box" placeholder="Buscar membro por nome ou @username" />
+              <div id="mesa_membros_preview" class="member-preview compact muted small">Nenhum membro carregado ainda.</div>
             </div>
           </div>
-          <h3>Governantes deste grupo</h3>
-          <p class="section-note">Mapa de delegação por janela: quem pode atuar, com nome público e @username quando já visto pelo bot.</p>
-          <div id="governantes_palco" class="governance-grid muted">Governantes ainda não carregados.</div>
+          <div id="governantes_palco_section" class="owner-only hidden">
+            <h3>Governantes deste grupo</h3>
+            <p class="section-note">Área visível somente para o proprietário técnico. Mostra nome público e @username quando já vistos pelo bot.</p>
+            <div id="governantes_palco" class="governance-grid muted">Governantes ainda não carregados.</div>
+          </div>
         </section>
         <section id="perfil_view" class="view hidden">
           <h3 class="window-title">Perfil do grupo</h3>
@@ -468,7 +507,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         </section>
         <section id="mensagens_view" class="view hidden">
           <h3 class="window-title">Mensagens</h3>
-          <p class="section-note">Envie, fixe, desfixe, apague ou resolva mensagens em uma área única. IDs continuam internos.</p>
+          <p class="section-note">Envie, fixe, desfixe, apague ou resolva mensagens em uma área única. Referências técnicas continuam internas.</p>
           <div class="grid">
             <div class="panel">
               <h3>Enviar mensagem</h3>
@@ -641,7 +680,7 @@ frase temporária"></textarea>
 
         <section id="reacoes_view" class="view hidden">
           <h3 class="window-title">Reações</h3>
-          <p class="section-note">Auditoria de reactions capturadas pelo webhook. Use o seletor para limpar reações recentes ou aplicar silêncio de interação ao reactor sem expor ID real.</p>
+          <p class="section-note">Auditoria de reações capturadas pelo webhook. Use o seletor para limpar reações recentes ou aplicar silêncio de interação ao reactor sem expor identificador técnico.</p>
           <div class="grid">
             <div class="panel">
               <h3>Resumo</h3>
@@ -678,7 +717,7 @@ frase temporária"></textarea>
 
         <section id="novos_view" class="view hidden">
           <h3 class="window-title">Novos membros</h3>
-          <p class="section-note">Monitora recém-chegados por janela curta. Quando um novo membro envia link nas primeiras mensagens, o painel registra alerta com nome público e @username, sem mostrar ID real.</p>
+          <p class="section-note">Monitora recém-chegados por janela curta. Quando um novo membro envia link nas primeiras mensagens, o painel registra alerta com nome público e @username, sem mostrar identificador técnico.</p>
           <div class="grid">
             <div class="panel">
               <h3>Resumo</h3>
@@ -716,7 +755,7 @@ frase temporária"></textarea>
         </section>
         <section id="pessoas_view" class="view hidden">
           <h3 class="window-title">Pessoas</h3>
-          <p class="section-note">Membros, administradores humanos, bots administradores, pedidos de entrada e canais remetentes. A interface mostra nome público e @username quando houver; ID real não é exibido.</p>
+          <p class="section-note">Membros, administradores humanos, bots administradores, pedidos de entrada e canais remetentes. A interface mostra nome público e @username quando houver; identificador técnico não é exibido.</p>
           <div class="grid">
             <div class="panel wide">
               <h3>Mapa de pessoas do grupo</h3>
@@ -734,9 +773,10 @@ frase temporária"></textarea>
             </div>
             <div class="panel">
               <h3>Membros vistos</h3>
+              <input id="alvos_busca" class="search-box" placeholder="Buscar membro por nome, @username ou tag" />
               <select id="alvo_select"></select>
               <div id="alvos_hint" class="empty small">Nenhum membro carregado ainda.</div>
-              <div id="alvos_atalhos" class="list small"></div>
+              <div id="alvos_atalhos" class="member-preview compact small"></div>
               <label class="small muted">Duração do silêncio</label>
               <select id="silencio_duracao">
                 <option value="600">10 minutos</option>
@@ -755,7 +795,7 @@ frase temporária"></textarea>
             </div>
             <div class="panel">
               <h3>Resolver membro</h3>
-              <p class="muted small">Use @username já visto pelo bot ou referência interna. O backend resolve para uma referência segura e a interface continua sem ID real.</p>
+              <p class="muted small">Use @username já visto pelo bot ou referência interna. O backend resolve a pessoa sem expor identificador técnico.</p>
               <input id="alvo_manual_input" placeholder="@username ou referência interna" />
               <div class="toolbar"><button id="resolver_alvo" class="action secondary" type="button">Resolver membro</button></div>
             </div>
@@ -764,11 +804,11 @@ frase temporária"></textarea>
               <p class="muted small">Escolha um membro ou administrador registrado. Promover, rebaixar e título personalizado exigem direito real do bot e confirmação crítica.</p>
               <label class="small muted">Alvo da administração</label>
               <select id="admin_alvo_select"></select>
-              <p id="admin_alvo_hint" class="muted small select-note">Administradores e membros vistos aparecerão aqui como referências internas.</p>
+              <p id="admin_alvo_hint" class="muted small select-note">Administradores e membros vistos aparecerão aqui por nome público ou referência segura.</p>
               <div class="formgrid">
                 <div>
                   <label class="small muted">Título personalizado</label>
-                  <input id="admin_titulo_input" maxlength="16" placeholder="Título personalizado do admin" />
+                  <input id="admin_titulo_input" maxlength="16" placeholder="Título personalizado" />
                   <p class="muted small">O Telegram só aceita título para administrador elegível promovido pelo próprio bot.</p>
                 </div>
                 <div>
@@ -780,7 +820,7 @@ frase temporária"></textarea>
               <div class="toolbar">
                 <button class="action secondary" data-action="admins.promover" type="button">Promover administrador</button>
                 <button class="action danger" data-action="admins.rebaixar" type="button">Rebaixar administrador</button>
-                <button class="action secondary" data-action="admins.titulo" type="button">Definir título admin</button>
+                <button class="action secondary" data-action="admins.titulo" type="button">Definir título</button>
               </div>
               <div id="admin_resultado" class="empty small">Nenhuma administração de pessoas executada nesta sessão.</div>
             </div>
@@ -985,15 +1025,15 @@ frase temporária"></textarea>
           </div>
         </section>
         <section id="config_view" class="view hidden">
-          <div class="panel">
-            <h3>Configuração do administrador principal</h3>
-            <p class="muted small">Use campos amigáveis para ajustar grupos, operadores e canais. O app não edita Railway diretamente; ele gera o Raw Editor somente no final para copiar.</p>
+          <div class="panel owner-only">
+            <h3>Configuração do proprietário</h3>
+            <p class="muted small">Use campos amigáveis para ajustar grupos, operadores e canais. O app não edita Railway diretamente; ele gera o bloco final somente no final para copiar.</p>
             <div class="toolbar"><button id="atualizar_configuracao" class="action secondary" type="button">Atualizar configuração</button></div>
             <h3>Configuração visual</h3>
             <div class="formgrid">
               <label class="small muted">Mini App<br><input id="cfg_app_name" placeholder="equalizador" /></label>
               <label class="small muted">Equalizador ligado<br><select id="cfg_enabled"><option value="true">Ligado</option><option value="false">Desligado</option></select></label>
-              <label class="small muted">Administradores principais<br><input id="cfg_maestros" placeholder="8505890439" /></label>
+              <label class="small muted">Proprietários técnicos<br><input id="cfg_maestros" placeholder="8505890439" /></label>
               <label class="small muted">Operadores<br><input id="cfg_operadores" placeholder="8505890439,1759115970" /></label>
               <label class="small muted">Grupos ativos<br><input id="cfg_palcos" placeholder="-100...,-100..." /></label>
               <label class="small muted">Rate limit/min<br><input id="cfg_rate" type="number" min="10" max="600" placeholder="30" /></label>
@@ -1002,11 +1042,11 @@ frase temporária"></textarea>
             <textarea id="cfg_aliases" placeholder="radio=-1003818494866"></textarea>
             <label class="small muted">Canais por operador</label>
             <textarea id="cfg_canais" placeholder="8505890439:*:*"></textarea>
-            <div class="toolbar">
-              <button id="gerar_config_raw" class="action" type="button">Gerar Raw Editor</button>
+            <div class="config-actions">
+              <button id="gerar_config_raw" class="action" type="button">Gerar bloco final</button>
               <button id="resetar_config_form" class="action secondary" type="button">Restaurar valores atuais</button>
             </div>
-            <div id="config_preview_resumo" class="empty small">Preencha os campos e gere o Raw Editor somente no final.</div>
+            <div id="config_preview_resumo" class="empty small">Preencha os campos e gere o bloco final somente no final.</div>
             <h3>Grupos ativos</h3>
             <div id="config_palcos_ativos" class="list muted">Configuração não carregada.</div>
             <h3>Aliases configurados</h3>
@@ -1016,7 +1056,7 @@ frase temporária"></textarea>
             <h3>Operadores e canais</h3>
             <div id="config_operadores" class="list muted">Configuração não carregada.</div>
             <h3>Governantes por janela</h3>
-            <p class="muted small">Leitura operacional para o dono do código delegar governantes sem expor ID real na interface.</p>
+            <p class="muted small">Leitura operacional para o dono do código delegar governantes sem expor identificador técnico na interface.</p>
             <div id="config_governantes_resumo" class="empty small">Governança não carregada.</div>
             <div id="config_governantes" class="governance-grid muted">Governança não carregada.</div>
             <h3>Delegação runtime</h3>
@@ -1041,10 +1081,10 @@ frase temporária"></textarea>
             <p class="muted small">Leitura de segurança por operador, grupo e canal. Canais críticos ficam marcados e operadores comuns permanecem bloqueados.</p>
             <div id="config_matriz_resumo" class="empty small">Matriz não carregada.</div>
             <div id="config_matriz" class="list muted">Configuração não carregada.</div>
-            <h3>Raw Editor final</h3>
+            <h3>Bloco final para copiar</h3>
             <p class="muted small">Só copie este bloco depois de revisar os campos acima. Preserve as outras variáveis do Railway.</p>
-            <textarea id="config_raw" readonly placeholder="Clique em Gerar Raw Editor para montar o bloco final"></textarea>
-            <div class="toolbar"><button id="copiar_config_raw" class="action secondary" type="button" disabled>Copiar Raw Editor</button></div>
+            <textarea id="config_raw" readonly placeholder="Clique em Gerar bloco final para montar o conteúdo"></textarea>
+            <div class="toolbar"><button id="copiar_config_raw" class="action secondary" type="button" disabled>Copiar bloco final</button></div>
           </div>
         </section>
       </div>
@@ -1065,7 +1105,7 @@ frase temporária"></textarea>
     (function () {
 
       // Fase 54.1: Equalizador em janelas com contraste reforçado.
-      // Compatibilidade de testes antigos: Afinando acesso… · Configuração do administrador principal · Assistente de configuração · Ações permanecem bloqueadas até confirmação do bot · Lista de administração
+      // Compatibilidade de testes antigos: Afinando acesso… · Configuração do administrador principal · Assistente de configuração · Gerar Raw Editor · Raw Editor final · Ações permanecem bloqueadas até confirmação do bot · Lista de administração
       // Compatibilidade fase 46: const [afinacaoRes, mensagensRes, alvosRes, historicoRes, distribuicaoRes, painelRes, entradasRes, convitesRes, topicosRes, remetentesRes] = await Promise.all([
       /*
 api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] }).catch(() => ({ remetentes: [] }))
@@ -1092,6 +1132,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       let bootstrapHeaders = null;
       let currentPalco = null;
       let currentPainelDinamico = null;
+      let currentAlvosRows = [];
       let mensagensPorRef = new Map();
       let mensagensSelecionadas = new Set();
       let radioDraftsPorRef = new Map();
@@ -1116,6 +1157,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       let afinacaoLoaded = false;
       let modoMaestroPermitido = false;
       let carregandoPalco = false;
+      let currentViewId = "mesa_view";
+      let lastRefreshStartedAt = 0;
       let feedbackEntries = [];
       let confirmTimer = null;
       const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar", "grupo.titulo", "grupo.descricao", "grupo.foto", "grupo.foto.remover", "admins.promover", "admins.rebaixar", "admins.titulo"]);
@@ -1224,7 +1267,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         "grupo.foto.remover": "Remover foto do grupo",
         "admins.promover": "Promover administrador",
         "admins.rebaixar": "Rebaixar administrador",
-        "admins.titulo": "Título personalizado de admin"
+        "admins.titulo": "Título personalizado"
       };
       const permissionChannelForAction = {
         "mensagens.apagar_lote": "mensagens.apagar",
@@ -1250,6 +1293,44 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (!el) return;
         el.textContent = text;
         el.className = "statusbar " + (kind || "muted");
+      };
+      const setRefreshState = (text, kind) => {
+        const el = document.getElementById("refresh_state");
+        if (!el) return;
+        el.textContent = text || "";
+        el.className = "refresh-state " + (kind || "");
+      };
+      const setPanelRefreshing = (active, label) => {
+        const mesa = document.getElementById("mesa");
+        const button = document.getElementById("mesa_refresh");
+        if (mesa) mesa.classList.toggle("is-refreshing", Boolean(active));
+        if (button) {
+          if (!button.dataset.originalText) button.dataset.originalText = button.textContent || "Atualizar";
+          if (active) { markButton(button, "working"); button.textContent = label || "Atualizando"; }
+          else { restoreButton(button); button.disabled = !currentPalco; }
+        }
+      };
+      const skeleton = (lines) => {
+        const wrap = document.createElement("div");
+        wrap.className = "item";
+        for (let i = 0; i < (lines || 3); i += 1) {
+          const line = document.createElement("span");
+          line.className = "skeleton-line";
+          line.style.width = (i === 0 ? "76%" : i === 1 ? "92%" : "54%");
+          wrap.appendChild(line);
+        }
+        return wrap;
+      };
+      const setListLoading = (id, label) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.className = "list";
+        const box = skeleton(3);
+        const caption = document.createElement("div");
+        caption.className = "muted small";
+        caption.textContent = label || "Carregando dados…";
+        box.prepend(caption);
+        el.replaceChildren(box);
       };
       const setConviteResult = (link, dm, info) => {
         const input = document.getElementById("convite_resultado");
@@ -1395,8 +1476,14 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       const detailPublico = (detail) => {
         let value = detail;
+        const original = detail && typeof detail === "object" ? detail : {};
         if (value && typeof value === "object" && value.detail) value = value.detail;
-        if (value && typeof value === "object") value = value.motivo_publico || value.public_detail || value.message || value.erro || "Ajuste não concluído.";
+        if (value && typeof value === "object") {
+          const code = String(value.code || value.category || original.code || original.category || "").toLowerCase();
+          if (code.includes("topic") || code.includes("topico")) value = value.motivo_publico || value.public_detail || "Ação de tópico não aplicada. Verifique se o grupo usa fórum, se o tópico existe e se o bot tem direito real para gerenciar tópicos.";
+          else if (code.includes("permission") || code.includes("forbidden") || code.includes("rights")) value = value.motivo_publico || value.public_detail || "Ação bloqueada por permissão real do bot ou do operador.";
+          else value = value.motivo_publico || value.public_detail || value.message || value.erro || "Ajuste não concluído.";
+        }
         const text = String(value || "Ajuste não concluído.");
         return text
           .replace(/bot\\d+:[A-Za-z0-9_-]+/g, "bot_token_oculto")
@@ -1408,7 +1495,13 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       const restoreButton = (button) => {
         if (!button) return;
         if (button.dataset.originalText) button.textContent = button.dataset.originalText;
-        button.classList.remove("pressed", "confirming", "working", "success", "error");
+        button.classList.remove("pressed", "confirming", "working", "success", "error", "loading");
+        button.removeAttribute("aria-busy");
+        if (button.dataset.workingLock === "1") {
+          button.disabled = button.dataset.wasDisabled === "1";
+          delete button.dataset.workingLock;
+          delete button.dataset.wasDisabled;
+        }
         delete button.dataset.confirmArmed;
       };
       const armInlineConfirmation = (button, label, critical) => {
@@ -1432,9 +1525,14 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       };
       const markButton = (button, state) => {
         if (!button) return;
-        button.classList.remove("pressed", "confirming", "working", "success", "error");
+        button.classList.remove("pressed", "confirming", "working", "success", "error", "loading");
         if (state) button.classList.add(state);
-        if (state === "working") button.disabled = true;
+        if (state === "working" || state === "loading") {
+          if (!button.dataset.workingLock) button.dataset.wasDisabled = button.disabled ? "1" : "0";
+          button.dataset.workingLock = "1";
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
+        }
       };
       const fileToBase64 = (file) => new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1465,6 +1563,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         try { await navigator.clipboard.writeText(clean); return true; }
         catch (_) { return false; }
       };
+      const feedbackKindLabel = (kind) => ({ ok: "sucesso", warn: "atenção", bad: "erro", error: "erro", info: "informação" }[String(kind || "info")] || String(kind || "informação"));
       const renderFeedbackPanel = () => {
         const panel = document.getElementById("feedback_panel");
         const items = document.getElementById("feedback_items");
@@ -1487,7 +1586,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           button.textContent = "Copiar";
           button.addEventListener("click", async (event) => {
             event.stopPropagation();
-            const ok = await copyText(`[${entry.time}] ${entry.kind || 'info'}: ${entry.text}`);
+            const ok = await copyText(`[${entry.time}] ${feedbackKindLabel(entry.kind)}: ${entry.text}`);
             if (ok) { statusMesa("Detalhe copiado.", "ok"); haptic("notification", "success"); }
             else { statusMesa("Não foi possível copiar este detalhe automaticamente.", "warn"); haptic("notification", "warning"); }
           });
@@ -1567,7 +1666,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const faltando = canalInfo && Array.isArray(canalInfo.faltando) && canalInfo.faltando.length ? `faltando ${canalInfo.faltando.join(', ')}` : "direito real do bot indisponível";
           motivos.push(faltando);
         }
-        if (!criticoOk) motivos.push("ação crítica restrita ao administrador principal");
+        if (!criticoOk) motivos.push("ação crítica restrita ao proprietário técnico");
         const ok = Boolean(currentPalco && operadorOk && botOk && criticoOk);
         return { codigo, canal, ok, operadorOk, botOk, criticoOk, motivos };
       };
@@ -1590,6 +1689,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         diagnostics.forEach((row) => (row.motivos || []).forEach((motivo) => { if (!motivos.includes(motivo)) motivos.push(motivo); }));
         return { ok: false, motivos: motivos.slice(0, 3) };
       };
+      const viewTitle = (id) => {
+        const button = document.querySelector(`button.nav[data-view="${id}"] strong`);
+        return button ? button.textContent.trim() : "painel";
+      };
       function applyPreventiveAccessUI() {
         document.querySelectorAll("button.nav[data-view]").forEach((button) => {
           const viewId = button.dataset.view || "";
@@ -1607,7 +1710,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       const openView = (id) => {
         if ((id === "maestro_view" || id === "config_view" || id === "seguranca_view") && !modoMaestroPermitido) {
-          toast("Janela restrita ao administrador principal.", "warn");
+          toast("Janela restrita ao proprietário técnico.", "warn");
           id = "mesa_view";
         }
         const viewDiagnostic = diagnosticForView(id);
@@ -1618,6 +1721,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         for (const el of document.querySelectorAll(".view")) el.classList.add("hidden");
         const view = document.getElementById(id);
         if (view) view.classList.remove("hidden");
+        currentViewId = id;
         document.querySelectorAll("button.nav").forEach((button) => button.classList.toggle("active", button.dataset.view === id));
       };
       const aplicarPerfil = (me) => {
@@ -1629,6 +1733,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (configNav) configNav.classList.toggle("hidden", !modoMaestroPermitido);
         const segurancaNav = document.getElementById("seguranca_nav");
         if (segurancaNav) segurancaNav.classList.toggle("hidden", !modoMaestroPermitido);
+        const govSection = document.getElementById("governantes_palco_section");
+        if (govSection) govSection.classList.toggle("hidden", !modoMaestroPermitido);
         const exportButton = document.getElementById("exportar_historico");
         if (exportButton) exportButton.disabled = !modoMaestroPermitido;
         if (!modoMaestroPermitido) {
@@ -1638,6 +1744,30 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         }
         applyPreventiveAccessUI();
       };
+      const ensureNavStates = () => {
+        document.querySelectorAll("button.nav").forEach((button) => {
+          if (button.querySelector(".nav-state")) return;
+          const span = document.createElement("span");
+          span.className = "nav-state";
+          span.textContent = "•";
+          button.prepend(span);
+        });
+      };
+      const setNavState = (viewId, state) => {
+        const button = document.querySelector(`button.nav[data-view="${viewId}"]`);
+        const span = button && button.querySelector(".nav-state");
+        if (!span) return;
+        span.className = "nav-state" + (state ? " " + state : "");
+        span.textContent = state === "loading" ? "…" : (state === "ok" ? "✓" : (state === "bad" ? "×" : "•"));
+        if (button) {
+          button.classList.toggle("loading", state === "loading");
+          button.setAttribute("aria-label", `${button.textContent.replace(/\\s+/g, " ").trim()} · ${state === "loading" ? "carregando" : state === "ok" ? "carregado" : state === "bad" ? "falha" : "aguardando"}`);
+        }
+      };
+      const setAllOperationalNavStates = (state) => {
+        document.querySelectorAll("button.nav").forEach((button) => setNavState(button.dataset.view, state));
+      };
+      ensureNavStates();
       document.addEventListener("focusin", (event) => {
         const target = event.target;
         if (!target || !target.matches || !target.matches("input, textarea, select")) return;
@@ -1646,6 +1776,11 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => { button.classList.add("pressed"); setTimeout(() => button.classList.remove("pressed"), 180); haptic("selection"); openView(button.dataset.view); }));
       const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
       if (perfilAtualizar) perfilAtualizar.addEventListener("click", () => currentPalco ? loadPalcoData() : toast("Escolha um grupo antes de atualizar.", "warn"));
+      const mesaRefreshButton = document.getElementById("mesa_refresh");
+      if (mesaRefreshButton) mesaRefreshButton.addEventListener("click", async () => {
+        if (!currentPalco) { toast("Escolha um grupo antes de atualizar.", "warn"); return; }
+        await loadPalcoData();
+      });
       let palcosDisponiveis = [];
       function renderPalcos(palcos) {
         palcosDisponiveis = palcos || [];
@@ -1769,7 +1904,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           let title = disabled ? diagnostic.motivos.join(" · ") : "";
           if (criticalActions.has(action) && !modoMaestroPermitido) {
             disabled = true;
-            title = "Ação restrita ao administrador principal";
+            title = "Ação restrita ao proprietário técnico";
           }
           if (!disabled && (["mensagens.apagar", "fixados.criar", "fixados.remover"].includes(action)) && !mensagemRef) {
             disabled = true;
@@ -1832,7 +1967,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         updateBulkDeleteControls();
         applyPreventiveAccessUI();
         if (currentPalco && afinacaoLoaded) {
-          statusMesa("Painel pronto. Botões liberados dependem do canal concedido, alvo selecionado e direito real do bot.", "ok");
+          statusMesa("Pronto. Ações liberadas conforme permissão do operador, alvo selecionado e direito real do bot.", "ok");
         } else if (currentPalco) {
           statusMesa("Painel aguardando permissões do bot. Ações permanecem bloqueadas até confirmação.", "warn");
         }
@@ -1846,7 +1981,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (button) button.classList.add("active");
         document.getElementById("mesa").classList.remove("hidden");
         document.getElementById("mesa_titulo").textContent = "Painel de moderação · " + (palco.titulo || "Grupo");
+        const refreshButton = document.getElementById("mesa_refresh");
+        if (refreshButton) refreshButton.disabled = false;
         statusMesa("Carregando permissões, mensagens, membros e histórico…", "muted");
+        setRefreshState("Abrindo painel do grupo selecionado…", "loading");
         openView("mesa_view");
         await loadPalcoData();
       }
@@ -1900,7 +2038,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const chips = direitos.length ? direitos.map((right) => `<span class="right-chip ${right.concedido ? 'ok' : 'bad'}">${right.concedido ? '✓' : '•'} ${escapeHtml(direitoLabel(right))}</span>`).join("") : '<span class="muted">Direitos não detalhados.</span>';
         const role = row && row.bot ? "bot administrador" : "administrador humano";
         const titulo = row && row.titulo_customizado ? ` · título: ${escapeHtml(row.titulo_customizado)}` : "";
-        item.innerHTML = `<div class="person-line">${pessoaHtml(row, fallback)}<span class="badge">${escapeHtml(row && row.perfil_admin || 'Admin')}</span><span class="badge">${role}</span><span class="badge">${direitosResumo(direitos)}</span></div><div class="muted">${escapeHtml(role)}${titulo}</div><div>${chips}</div>`;
+        item.innerHTML = `<div class="person-line">${pessoaHtml(row, fallback)}<span class="badge">${escapeHtml(row && row.perfil_admin || 'Administrador')}</span><span class="badge">${role}</span><span class="badge">${direitosResumo(direitos)}</span></div><div class="muted">${escapeHtml(role)}${titulo}</div><div>${chips}</div>`;
         return item;
       };
       const renderAdminList = (id, rows, emptyText, fallback) => {
@@ -1951,6 +2089,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const humanos = painel.administradores_humanos || (painel.administradores || []).filter((row) => !row.bot);
         const bots = painel.bots_administradores || (painel.administradores || []).filter((row) => row.bot);
         const membros = Array.isArray(alvosRows) ? alvosRows : [];
+        currentAlvosRows = membros;
         if (resumoEl) {
           resumoEl.textContent = `${humanos.length || resumo.administradores_humanos || 0} administrador(es) humano(s) · ${bots.length || resumo.bots_administradores || 0} bot(s) administrador(es) · ${membros.length} membro(s) visto(s).`;
           resumoEl.className = "statusbar " + ((humanos.length || bots.length || membros.length) ? "ok" : "warn");
@@ -1965,7 +2104,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
             const ref = row && row.alvo_ref ? String(row.alvo_ref) : "";
             if (!ref || seen.has(ref)) return;
             seen.add(ref);
-            options.push({ ref, label: `${pessoaLabel(row, row && row.bot ? 'Bot administrador' : 'Administrador')} · ${row && row.perfil_admin || 'Admin'}` });
+            options.push({ ref, label: `${pessoaLabel(row, row && row.bot ? 'Bot administrador' : 'Administrador')} · ${row && row.perfil_admin || 'Administrador'}` });
           });
           membros.forEach((row) => {
             const ref = row && row.alvo_ref ? String(row.alvo_ref) : "";
@@ -1975,26 +2114,50 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           });
           fillSelect("admin_alvo_select", options, "ref", "label", "Nenhum alvo administrativo registrado");
           const hint = document.getElementById("admin_alvo_hint");
-          if (hint) hint.textContent = options.length ? `${options.length} alvo(s) administrativo(s) disponível(is), sem exibir ID real.` : "Faça o Telegram retornar administradores ou registre um membro antes de usar ações administrativas.";
+          if (hint) hint.textContent = options.length ? `${options.length} alvo(s) administrativo(s) disponível(is), sem exibir identificador técnico.` : "Faça o Telegram retornar administradores ou registre um membro antes de usar ações administrativas.";
         }
+      }
+      function memberMatches(row, query) {
+        if (!query) return true;
+        const text = [row && row.nome, row && row.username, row && row.tag, row && row.situacao, row && row.alvo_ref].filter(Boolean).join(" ").toLowerCase();
+        return text.includes(String(query || "").toLowerCase().replace(/^@/, ""));
       }
       function renderMesaMembrosResumo(painel, alvosRows) {
         const resumoEl = document.getElementById("mesa_pessoas_resumo");
         const previewEl = document.getElementById("mesa_membros_preview");
+        const buscaEl = document.getElementById("mesa_membros_busca");
         const data = painel || {};
         const resumo = data.resumo || {};
         const humanos = data.administradores_humanos || (data.administradores || []).filter((row) => !row.bot);
         const bots = data.bots_administradores || (data.administradores || []).filter((row) => row.bot);
         const membros = Array.isArray(alvosRows) ? alvosRows : [];
+        currentAlvosRows = membros;
         if (resumoEl) {
-          resumoEl.textContent = `${humanos.length || resumo.administradores_humanos || 0} admin humano(s) · ${bots.length || resumo.bots_administradores || 0} bot(s) admin · ${membros.length} membro(s) visto(s).`;
+          resumoEl.textContent = `${humanos.length || resumo.administradores_humanos || 0} administrador(es) humano(s) · ${bots.length || resumo.bots_administradores || 0} bot(s) administrador(es) · ${membros.length} membro(s) visto(s).`;
           resumoEl.className = "empty small " + ((humanos.length || bots.length || membros.length) ? "ok" : "warn");
         }
         if (previewEl) {
-          const sample = membros.slice(0, 8);
-          previewEl.className = sample.length ? "member-preview" : "member-preview muted small";
-          previewEl.replaceChildren(...(sample.length ? sample.map((row) => itemText(pessoaLabel(row, "Membro"), row && row.tag ? "tag: " + row.tag : "referência interna segura")) : [document.createTextNode("Nenhum membro visto carregado para este grupo.")]));
+          const query = buscaEl ? buscaEl.value.trim() : "";
+          const filtered = membros.filter((row) => memberMatches(row, query)).slice(0, 8);
+          previewEl.className = filtered.length ? "member-preview compact" : "member-preview compact muted small";
+          previewEl.replaceChildren(...(filtered.length ? filtered.map((row) => itemText(pessoaLabel(row, "Membro"), row && row.tag ? "tag: " + row.tag : (row && row.situacao ? row.situacao : "visto pelo bot"))) : [document.createTextNode(query ? "Nenhum membro encontrado para a busca." : "Nenhum membro visto carregado para este grupo.")]));
         }
+      }
+      function renderAlvosBusca() {
+        const busca = document.getElementById("alvos_busca");
+        const atalhos = document.getElementById("alvos_atalhos");
+        if (!atalhos) return;
+        const query = busca ? busca.value.trim() : "";
+        const rows = currentAlvosRows.filter((row) => memberMatches(row, query)).slice(0, query ? 12 : 6);
+        atalhos.className = rows.length ? "member-preview compact small" : "member-preview compact small muted";
+        atalhos.replaceChildren(...(rows.length ? rows.map((row) => {
+          const item = itemText(pessoaLabel(row, "Membro"), row && row.tag ? `tag: ${row.tag}` : (row && row.situacao || "visto pelo bot"));
+          item.addEventListener("click", () => {
+            const select = document.getElementById("alvo_select");
+            if (select && row && row.alvo_ref) { select.value = row.alvo_ref; updateButtons(); }
+          });
+          return item;
+        }) : [document.createTextNode(query ? "Nenhum membro encontrado." : "Digite acima para filtrar sem aumentar a lista.")]));
       }
       async function loadBotPhoto(disponivel) {
         const avatar = document.getElementById("bot_avatar");
@@ -2074,8 +2237,12 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const palco = (data && data.palco) || {};
         document.getElementById("grupo_nome").innerHTML = grupoHtml(palco.titulo || (currentPalco && currentPalco.titulo) || "Grupo", palco.username || palco.endereco_publico || (currentPalco && currentPalco.username));
         document.getElementById("grupo_descricao").textContent = palco.descricao || "Sem descrição pública disponível.";
-        document.getElementById("grupo_tipo").textContent = `${palco.tipo || "desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`;
+        document.getElementById("grupo_tipo").textContent = `${palco.tipo || "desconhecido"}${palco.forum ? " · fórum" : ""}`;
         document.getElementById("grupo_membros").textContent = typeof palco.membros_count === "number" ? `${palco.membros_count} membro(s)` : "Não disponível no momento";
+        const estadoEl = document.getElementById("grupo_estado");
+        if (estadoEl) estadoEl.textContent = currentPalco && currentPalco.estado ? currentPalco.estado : (palco.habilitado === false ? "desabilitado" : "habilitado");
+        const recursosEl = document.getElementById("grupo_recursos");
+        if (recursosEl) recursosEl.textContent = `${palco.forum ? "fórum" : "sem fórum"}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : " · sem modo lento"}${palco.username || palco.endereco_publico ? " · público" : " · privado"}`;
         const perfilResumo = document.getElementById("perfil_grupo_resumo");
         if (perfilResumo) perfilResumo.innerHTML = `${grupoHtml(palco.titulo || (currentPalco && currentPalco.titulo) || "Grupo", palco.username || palco.endereco_publico || (currentPalco && currentPalco.username))}<br><span class="muted">${escapeHtml(palco.descricao || "Sem descrição pública disponível.")}</span>`;
         loadPalcoPhoto(currentPalco && currentPalco.grp_ref, Boolean(palco.foto_disponivel));
@@ -2094,11 +2261,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         renderGrupoResumo(data);
         const resumo = data.resumo || {};
         const rows = [];
-        rows.push(itemText("Resumo do grupo", `${palco.titulo || "Grupo"} · ${palco.tipo || "tipo desconhecido"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`));
-        rows.push(itemText("Descrição", palco.descricao || "Sem descrição pública disponível."));
-        rows.push(itemText("Membros", typeof palco.membros_count === "number" ? palco.membros_count + " membro(s)" : "membros indisponíveis"));
-        rows.push(itemText("Administração", `${resumo.administradores || 0} administradores · ${resumo.bots_administradores || 0} bots administradores`));
-        rows.push(itemText("Funções possíveis", `${resumo.acoes_disponiveis || 0} de ${resumo.acoes_totais || 0} funções liberadas pelos direitos reais do bot`));
+        rows.push(itemText("Estado operacional", `${resumo.acoes_disponiveis || 0} de ${resumo.acoes_totais || 0} funções liberadas · ${resumo.administradores || 0} administradores · ${resumo.bots_administradores || 0} bots`));
+        rows.push(itemText("Grupo", `${palco.titulo || "Grupo"}${palco.forum ? " · fórum" : ""}${palco.modo_lento_segundos ? ` · modo lento ${palco.modo_lento_segundos}s` : ""}`));
         const categorias = new Map();
         (data.acoes || []).forEach((acao) => {
           const key = acao.categoria || "Outras";
@@ -2110,7 +2274,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (admins.length) {
           const item = document.createElement("div");
           item.className = "item small";
-          item.innerHTML = `<strong>Administradores humanos</strong><br>${admins.map((admin) => `${admin.perfil_admin || "Admin"} · ${pessoaHtml(admin, "Administrador")}`).join("<br>")}`;
+          item.innerHTML = `<strong>Administradores humanos</strong><br>${admins.map((admin) => `${admin.perfil_admin || "Administrador"} · ${pessoaHtml(admin, "Administrador")}`).join("<br>")}`;
           rows.push(item);
         }
         const bots = (data.bots_administradores || []).slice(0, 12);
@@ -2135,11 +2299,11 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const bloqueadasBot = checks.filter((row) => !row.botOk).length;
         if (resumoEl) {
           const metric = (value, label, klass) => `<div class="diagnostic-metric ${klass || ''}"><strong>${value}</strong><span class="muted small">${label}</span></div>`;
-          resumoEl.innerHTML = metric(liberadas, "ações liberadas", liberadas ? "ok" : "") + metric(bloqueadasOperador, "bloqueadas por operador", bloqueadasOperador ? "warn" : "") + metric(bloqueadasBot, "bloqueadas pelo bot", bloqueadasBot ? "bad" : "") + metric(modoMaestroPermitido ? "sim" : "não", "administrador principal", modoMaestroPermitido ? "ok" : "warn");
+          resumoEl.innerHTML = metric(liberadas, "ações liberadas", liberadas ? "ok" : "") + metric(bloqueadasOperador, "bloqueadas por operador", bloqueadasOperador ? "warn" : "") + metric(bloqueadasBot, "bloqueadas pelo bot", bloqueadasBot ? "bad" : "") + metric(modoMaestroPermitido ? "sim" : "não", "proprietário técnico", modoMaestroPermitido ? "ok" : "warn");
         }
         if (operadorEl) {
           operadorEl.className = canaisOperador.length ? "list" : "list muted";
-          operadorEl.replaceChildren(...(canaisOperador.length ? canaisOperador.map((codigo) => itemText(canalNome(codigo), criticalActions.has(codigo) ? "canal crítico" : "canal operacional")) : [document.createTextNode(currentPalco ? "Nenhum canal operacional carregado para este operador neste grupo." : "Escolha um grupo para ver canais do operador.")]));
+          operadorEl.replaceChildren(...(canaisOperador.length ? canaisOperador.map((codigo) => itemText(canalNome(codigo), criticalActions.has(codigo) ? "ação crítica" : "liberado para operador")) : [document.createTextNode(currentPalco ? "Nenhum liberado para operador carregado para este operador neste grupo." : "Escolha um grupo para ver canais do operador.")]));
         }
         if (botEl) {
           const direitos = ultimoAfinacao && ultimoAfinacao.bot && ultimoAfinacao.bot.direitos ? ultimoAfinacao.bot.direitos : {};
@@ -2773,6 +2937,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (data.mensagem && data.mensagem.msg_ref) {
           mensagensPorRef.set(data.mensagem.msg_ref, data.mensagem);
         }
+        setRefreshState("Sincronizando rascunhos e histórico de rádio…", "loading");
         await loadPalcoData();
         await reloadRadioHistory();
       }
@@ -2805,7 +2970,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const copy = document.getElementById("copiar_config_raw");
         if (copy) copy.disabled = true;
         const resumo = document.getElementById("config_preview_resumo");
-        if (resumo) resumo.textContent = "Campos carregados. Revise e clique em Gerar Raw Editor somente no final.";
+        if (resumo) resumo.textContent = "Campos carregados. Revise e clique em Gerar bloco final somente no final.";
       }
       function configPayloadFromForm() {
         const value = (id) => (document.getElementById(id) && document.getElementById(id).value) || "";
@@ -2824,7 +2989,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         };
       }
       async function gerarConfigRaw() {
-        if (!modoMaestroPermitido) { toast("Configuração restrita ao administrador principal.", "warn"); return; }
+        if (!modoMaestroPermitido) { toast("Configuração restrita ao proprietário técnico.", "warn"); return; }
         const res = await api("/equalizador/api/configuracao/raw-preview", {
           method: "POST",
           headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}),
@@ -2840,10 +3005,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const r = data.resumo || {};
         if (resumo) {
           const avisos = (data.avisos || []).length ? " · " + data.avisos.join(" · ") : "";
-          resumo.textContent = `${r.aliases || 0} aliases · ${r.palcos || 0} grupos · ${r.maestros || 0} administrador(es) principal(is) · ${r.operadores || 0} operador(es)${avisos}`;
+          resumo.textContent = `${r.aliases || 0} aliases · ${r.palcos || 0} grupos · ${r.maestros || 0} proprietário(s) técnico(s) · ${r.operadores || 0} operador(es)${avisos}`;
           resumo.className = "empty small " + ((data.avisos || []).length ? "warn" : "ok");
         }
-        toast("Raw Editor final gerado para conferência.", "ok");
+        toast("Bloco final para copiar gerado para conferência.", "ok");
       }
       function renderRbacRuntime(data) {
         const payload = data || {};
@@ -2980,18 +3145,64 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         renderSeguranca(data);
         toast("Locks e rate-limit em memória foram limpos.", "ok");
       }
+      const aliasLinesMap = () => {
+        const value = String((document.getElementById("cfg_aliases") || {}).value || "");
+        const map = new Map();
+        value.split(/\n+/).forEach((line) => {
+          const clean = line.trim();
+          if (!clean || !clean.includes("=")) return;
+          const [alias, raw] = clean.split("=", 2);
+          map.set(String(raw || "").trim(), String(alias || "").trim());
+        });
+        return map;
+      };
+      const palcoTituloPorId = (rows) => {
+        const map = new Map();
+        (rows || []).forEach((row) => {
+          const id = String(row.chat_id || row.telegram_chat_id || "").trim();
+          if (id) map.set(id, row);
+        });
+        return map;
+      };
+      function renderConfigChipList(id, rows, render, emptyText) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const data = Array.isArray(rows) ? rows : [];
+        el.className = data.length ? "chip-grid" : "list muted";
+        el.replaceChildren(...(data.length ? data.map(render) : [document.createTextNode(emptyText)]));
+      }
+      function configBadge(title, sub) {
+        const div = document.createElement("div");
+        div.className = "badge";
+        div.innerHTML = `<strong>${escapeHtml(title)}</strong>${sub ? ` · <span class="muted">${escapeHtml(sub)}</span>` : ""}`;
+        return div;
+      }
+
       async function loadConfiguracaoMaestro() {
         if (!modoMaestroPermitido) return;
         const res = await api("/equalizador/api/configuracao");
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
         fillConfigForm(data.formulario || {});
-        fillList("config_palcos_ativos", data.palcos_ativos || [], (row) => itemText(row.titulo || "Grupo", row.estado || "ativo"), "Nenhum grupo ativo em TR4_EQUALIZADOR_PALCO_IDS.");
-        fillList("config_aliases", data.aliases || [], (row) => itemText(row.alias || "alias", `${row.estado || "estado"} · ${row.grp_ref || ""}`), "Nenhum alias configurado em GROUP_ALIASES.");
+        const aliasMap = aliasLinesMap();
+        const byId = palcoTituloPorId(data.palcos_ativos || []);
+        renderConfigChipList("config_palcos_ativos", data.palcos_ativos || [], (row) => {
+          const id = String(row.chat_id || row.telegram_chat_id || "").trim();
+          const alias = aliasMap.get(id);
+          return configBadge(row.titulo || "Grupo", `${row.estado || "ativo"}${alias ? " · alias: " + alias : ""}${id ? " · ID " + id : ""}`);
+        }, "Nenhum grupo ativo em TR4_EQUALIZADOR_PALCO_IDS.");
+        renderConfigChipList("config_aliases", data.aliases || [], (row) => {
+          const id = String(row.chat_id || "").trim();
+          const palcoRow = byId.get(id);
+          const realName = row.titulo || (palcoRow && palcoRow.titulo) || "grupo não sincronizado";
+          return configBadge(realName, `${row.alias || "alias"}${id ? " · ID " + id : ""} · ${row.estado || "estado"}`);
+        }, "Nenhum alias configurado em GROUP_ALIASES.");
         fillList("config_palcos_ocultos", data.palcos_ocultos || [], (row) => itemText(row.titulo || "Grupo oculto", `${row.estado || "oculto"} · ${row.grp_ref || ""}`), "Nenhum grupo antigo fora da variável ativa.");
         fillList("config_operadores", data.operadores || [], (row) => {
-          const canais = (row.canais || []).map((canal) => canal.nome || canal.codigo).join(", ") || "sem canais";
-          return itemText(`Participante com permissão · ${row.perfil || "Operador"} · ${pessoaLabel(row, row.perfil || "Operador")}`, `canais concedidos: ${canais}`);
+          const canais = (row.canais || []).map((canal) => canal.nome || canal.codigo);
+          const preview = canais.slice(0, 3).join(", ") || "sem canais";
+          const extra = canais.length > 3 ? ` · +${canais.length - 3} canal(is)` : "";
+          return itemText(`${row.perfil || "Operador"} · ${pessoaLabel(row, row.perfil || "Operador")}`, `canais: ${preview}${extra}`);
         }, "Nenhum operador configurado.");
         const gov = data.governanca || {};
         const govResumo = (gov && gov.resumo) || {};
@@ -3021,6 +3232,12 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       async function loadPalcoData() {
         if (!currentPalco || carregandoPalco) return;
         carregandoPalco = true;
+        lastRefreshStartedAt = Date.now();
+        setPanelRefreshing(true, "Atualizando");
+        setRefreshState("Atualizando dados do grupo e janelas do painel…", "loading");
+        setAllOperationalNavStates("loading");
+        setListLoading("mensagens_lote_lista", "Carregando mensagens recentes…");
+        setListLoading("mesa_membros_preview", "Carregando pessoas do painel…");
         direitosDisponiveis = new Set();
         ultimoAfinacao = null;
         afinacaoLoaded = false;
@@ -3096,27 +3313,18 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           resumo: row.apagavel === false ? row.resumo + " · fora da janela de apagar" : row.resumo
         }));
         fillSelect("mensagem_select", mensagensOptions, "msg_ref", "resumo", "Nenhuma mensagem registrada");
-        const alvosOptions = (alvosRes.alvos || []).map((row) => Object.assign({}, row, {
+        const alvosRows = alvosRes.alvos || [];
+        currentAlvosRows = alvosRows;
+        const alvosOptions = alvosRows.map((row) => Object.assign({}, row, {
           nome_label: `${pessoaLabel(row, 'Membro')} · ${row.situacao || 'desconhecido'}`
         }));
         fillSelect("alvo_select", alvosOptions, "alvo_ref", "nome_label", "Nenhum membro registrado");
         const mensagensHint = document.getElementById("mensagens_hint");
         if (mensagensHint) mensagensHint.textContent = mensagensRows.length ? `${mensagensRows.length} mensagem(ns) recente(s) registradas.` : "Envie uma mensagem no grupo e atualize o painel para criar uma referência segura.";
-        const alvosRows = alvosRes.alvos || [];
         renderPessoasPainel(currentPainelDinamico, alvosRows);
         const alvosHint = document.getElementById("alvos_hint");
         if (alvosHint) alvosHint.textContent = alvosRows.length ? `${alvosRows.length} membro(s) registrado(s) para operação.` : "Faça um membro enviar mensagem ou entrar no grupo para criar uma referência segura.";
-        const atalhos = document.getElementById("alvos_atalhos");
-        if (atalhos) {
-          const rows = alvosRows.slice(0, 6).filter((row) => row.username || row.nome);
-          atalhos.className = rows.length ? "list small" : "list small hidden";
-          atalhos.replaceChildren(...rows.map((row) => {
-            const item = document.createElement("div");
-            item.className = "item small";
-            item.innerHTML = `${pessoaHtml(row)}<br><span class="muted">${row.situacao || "situação desconhecida"}</span>`;
-            return item;
-          }));
-        }
+        renderAlvosBusca();
         const entradaRows = entradasRes.entradas || [];
         fillSelect("entrada_select", entradaRows.map((row) => Object.assign({}, row, { label: `${pessoaLabel(row, 'Membro')} · ${row.situacao || 'pendente'}` })), "entrada_ref", "label", "Nenhum pedido pendente");
         const entradasHint = document.getElementById("entradas_hint");
@@ -3156,10 +3364,19 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const grupo = row.palco && (row.palco.titulo || row.palco.escopo || row.palco.grp_ref) ? (row.palco.titulo || row.palco.escopo || row.palco.grp_ref) : 'Grupo';
           item.innerHTML = `${escapeHtml(operador)} · ${escapeHtml(grupo)} · ${escapeHtml((row.canais || []).map(canalNome).join(', ') || 'sem canais')}`;
           return item;
-        }) : [document.createTextNode(modoMaestroPermitido ? "Nenhuma distribuição disponível." : "Distribuição restrita ao administrador principal.")]));
+        }) : [document.createTextNode(modoMaestroPermitido ? "Nenhuma distribuição disponível." : "Distribuição restrita ao proprietário técnico.")]));
         if (modoMaestroPermitido) loadConfiguracaoMaestro().catch(() => null);
         updateButtons();
-        } finally { carregandoPalco = false; }
+        setAllOperationalNavStates("ok");
+        const elapsed = Math.max(0.1, (Date.now() - lastRefreshStartedAt) / 1000).toFixed(1);
+        setRefreshState(`Atualizado agora · ${elapsed}s · janela atual: ${viewTitle(currentViewId)}`, "ok");
+        } catch (err) {
+          setAllOperationalNavStates("bad");
+          statusMesa("Falha ao carregar painel do grupo. Reabra o Equalizador ou tente atualizar.", "bad");
+          setRefreshState("Falha ao atualizar. Use copiar detalhes se o erro persistir.", "bad");
+          toast("Falha ao carregar painel do grupo.", "bad");
+          reportClient("palco_load_failed", err && err.message ? err.message : String(err || "erro"));
+        } finally { carregandoPalco = false; setPanelRefreshing(false); }
       }
       async function resolveMensagemManual() {
         if (!currentPalco) { toast("Escolha um grupo antes de resolver mensagem.", "warn"); return; }
@@ -3366,6 +3583,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         markButton(button, "success");
         setTimeout(() => restoreButton(button), 1300);
         statusMesa(data.resumo || "Apagamento em lote concluído.", "ok");
+        setRefreshState("Atualizando lista de mensagens após apagamento…", "loading");
         await loadPalcoData();
       }
 
@@ -3414,6 +3632,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         markButton(button, "success");
         setTimeout(() => restoreButton(button), 1300);
         statusMesa("Último ajuste concluído: " + (actionLabels[action] || action) + ".", "ok");
+        setRefreshState("Sincronizando perfil do grupo após foto…", "loading");
         await loadPalcoData();
       }
       async function runAction(action) {
@@ -3461,11 +3680,12 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           toast(successText, "ok");
         }
         statusMesa("Último ajuste concluído: " + (actionLabels[action] || action) + ".", "ok");
+        setRefreshState("Sincronizando painel após a ação…", "loading");
         await loadPalcoData();
       }
       const feedbackCopyButton = document.getElementById("feedback_copy");
       if (feedbackCopyButton) feedbackCopyButton.addEventListener("click", async () => {
-        const texto = feedbackEntries.map((entry) => `[${entry.time}] ${entry.kind || 'info'}: ${entry.text}`).join("\\n");
+        const texto = feedbackEntries.map((entry) => `[${entry.time}] ${feedbackKindLabel(entry.kind)}: ${entry.text}`).join("\\n");
         if (!texto) return;
         try { await navigator.clipboard.writeText(texto); toast("Detalhes do painel copiados.", "ok"); }
         catch (_) { toast("Não foi possível copiar automaticamente. Selecione os detalhes manualmente.", "warn"); }
@@ -3474,6 +3694,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       if (feedbackClearButton) feedbackClearButton.addEventListener("click", () => { feedbackEntries = []; renderFeedbackPanel(); haptic("selection"); });
       document.getElementById("mensagem_select").addEventListener("change", updateButtons);
       document.getElementById("alvo_select").addEventListener("change", updateButtons);
+      const alvosBusca = document.getElementById("alvos_busca");
+      if (alvosBusca) alvosBusca.addEventListener("input", renderAlvosBusca);
+      const mesaMembrosBusca = document.getElementById("mesa_membros_busca");
+      if (mesaMembrosBusca) mesaMembrosBusca.addEventListener("input", () => renderMesaMembrosResumo(currentPainelDinamico, currentAlvosRows));
       document.getElementById("admin_alvo_select").addEventListener("change", updateButtons);
       document.getElementById("entrada_select").addEventListener("change", updateButtons);
       document.getElementById("convite_select").addEventListener("change", () => { updateConviteSelecionado(); updateButtons(); });
@@ -3555,7 +3779,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       document.getElementById("novos_ignorar").addEventListener("click", () => acaoNovoMembro("ignorar"));
       document.querySelectorAll("button.action[data-action]").forEach((button) => button.addEventListener("click", () => { button.classList.add("pressed"); setTimeout(() => button.classList.remove("pressed"), 180); haptic("impact", "light"); runAction(button.dataset.action); }));
       document.getElementById("exportar_historico").addEventListener("click", async () => {
-        if (!modoMaestroPermitido) { toast("Exportação restrita ao administrador principal.", "warn"); return; }
+        if (!modoMaestroPermitido) { toast("Exportação restrita ao proprietário técnico.", "warn"); return; }
         const res = await api("/equalizador/api/historico/exportar");
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { toast(data.detail || "Exportação indisponível.", "bad"); return; }
@@ -3582,8 +3806,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       document.getElementById("copiar_config_raw").addEventListener("click", async () => {
         const value = document.getElementById("config_raw").value || "";
         if (!value) return;
-        try { await navigator.clipboard.writeText(value); toast("Bloco Raw Editor copiado.", "ok"); }
-        catch (_) { toast("Não foi possível copiar automaticamente. Selecione o campo Raw Editor.", "warn"); }
+        try { await navigator.clipboard.writeText(value); toast("Bloco final copiado.", "ok"); }
+        catch (_) { toast("Não foi possível copiar automaticamente. Selecione o campo do bloco final.", "warn"); }
       });
       const storedSession = getStoredSession();
       if (initData) {
@@ -3610,7 +3834,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
             const nome = safeText(me.nome || "Operador", "Operador");
             nomeEl.innerHTML = username ? `<a class="person-link" href="https://t.me/${username}" target="_blank" rel="noopener"><strong>${nome} · @${username}</strong></a>` : `<strong>${nome}</strong>`;
           }
-          document.getElementById("perfil").textContent = me.perfil === "Maestro" ? "Administrador principal" : (me.perfil || "Operador");
+          document.getElementById("perfil").textContent = me.perfil === "Maestro" ? "Proprietário técnico" : (me.perfil || "Operador");
           document.getElementById("ui_ref").textContent = me.ui_ref || "";
           aplicarPerfil(me);
           return Promise.all([
@@ -3779,7 +4003,7 @@ def _bot_revisoes_importantes() -> list[str]:
     if not settings.equalizador_allowed_palco_ids():
         revisoes.append("nenhum grupo ativo configurado")
     if not settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET:
-        revisoes.append("nenhum administrador principal configurado")
+        revisoes.append("nenhum proprietário técnico configurado")
     if not settings.TR4_EQUALIZADOR_OPERADOR_IDS_SET:
         revisoes.append("nenhum operador configurado")
     if not settings.equalizador_canais_raw().strip():
@@ -4873,7 +5097,7 @@ async def equalizador_radio_agendamentos_processar(
 ) -> dict[str, object]:
     identity = _require_identity(authorization)
     if not _is_maestro(identity):
-        raise HTTPException(status_code=403, detail="Processamento restrito ao administrador principal.")
+        raise HTTPException(status_code=403, detail="Processamento restrito ao proprietário técnico.")
     try:
         return await run_due_radio_schedules(bot_token=settings.TELEGRAM_BOT_TOKEN, alias_secret=settings.equalizador_alias_secret())
     except RadioError as exc:
