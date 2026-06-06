@@ -368,27 +368,26 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .governance-role.active { border-color: rgba(80,216,144,.52); background: rgba(22,138,85,.14); }
     .governance-role.locked { opacity: .72; }
     .governance-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-    /* Fase 68: padrão minimalista inspirado em listas do BotFather, com tema cinza/preto real. */
-    body.phase68-minimal { background: #14191f; color: #f5f7fb; padding-top: max(14px, var(--tg-safe-area-inset-top, 0px)); }
+    /* Fase 70: UX minimalista consolidada em cinza/preto, inspirada em padrões nativos do Telegram. */
+    body.phase68-minimal { background: #17212b; color: #f5f7fb; padding-top: max(14px, var(--tg-safe-area-inset-top, 0px)); }
     body.phase68-minimal::before { background: none; }
-    body.phase68-minimal main { max-width: 840px; }
+    body.phase68-minimal main { max-width: 760px; }
     body.phase68-minimal .card { background: transparent; border: 0; box-shadow: none; padding: 0; }
-    body.phase68-minimal .top { justify-content: center; text-align: center; margin: 8px 0 18px; }
-    body.phase68-minimal .top > div { width: 100%; }
-    body.phase68-minimal .top h1 { font-size: 28px; margin-top: 10px; }
-    body.phase68-minimal .top p { margin: 4px 0 0; color: #8792a2; }
-    body.phase68-minimal #perfil { position: absolute; right: 0; top: 4px; background: #0c1016; border-color: rgba(255,255,255,.08); color: #a9b3c2; }
+    body.phase68-minimal .top { min-height: 28px; justify-content: flex-end; margin: 0 0 8px; }
+    body.phase68-minimal .top > div { display: none; }
+    body.phase68-minimal #perfil { position: static; justify-self: end; background: #0f141b; border-color: rgba(255,255,255,.08); color: #a9b3c2; }
     body.phase68-minimal .row { display: none; }
     body.phase68-minimal #inicio_view { background: transparent; border: 0; padding: 0; margin: 0 0 16px; }
-    body.phase68-minimal .bot-hero { grid-template-columns: 1fr; justify-items: center; text-align: center; border: 0; background: transparent; box-shadow: none; padding: 18px 8px 8px; margin: 0; }
+    body.phase68-minimal .bot-hero { grid-template-columns: 1fr; justify-items: center; text-align: center; border: 0; background: transparent; box-shadow: none; padding: 10px 8px 6px; margin: 0 0 8px; }
     body.phase68-minimal .bot-avatar { width: 78px; height: 78px; border-radius: 999px; font-size: 24px; box-shadow: 0 18px 40px rgba(0,0,0,.34); }
-    body.phase68-minimal .bot-hero h2 { font-size: 30px; letter-spacing: -.03em; }
-    body.phase68-minimal #bot_metricas { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-    body.phase68-minimal .global-search-wrap { margin: 16px 0 18px; position: relative; }
+    body.phase68-minimal .bot-hero h2 { font-size: 30px; letter-spacing: -.03em; margin-top: 10px; }
+    body.phase68-minimal #bot_metricas { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+    body.phase68-minimal #bot_revisoes { display: none; }
+    body.phase68-minimal .global-search-wrap { margin: 18px 0 14px; position: relative; }
     body.phase68-minimal .global-search-wrap::before { content: '⌕'; position: absolute; left: 18px; top: 14px; color: #7d8795; font-size: 22px; z-index: 1; }
-    body.phase68-minimal #global_search { width: 100%; min-height: 58px; border-radius: 12px; border: 0; background: #222c36; color: #f7f8fb; padding-left: 52px; font-size: 16px; }
+    body.phase68-minimal #global_search { width: 100%; min-height: 58px; border-radius: 12px; border: 0; background: #232e3a; color: #f7f8fb; padding-left: 52px; font-size: 16px; }
     body.phase68-minimal #global_search:focus { outline: 2px solid rgba(73,150,236,.42); }
-    body.phase68-minimal .search-results { margin-top: 8px; border-radius: 14px; overflow: hidden; background: #202832; border: 1px solid rgba(255,255,255,.06); }
+    body.phase68-minimal .search-results { margin-top: 8px; border-radius: 14px; overflow: hidden; background: #202b36; border: 1px solid rgba(255,255,255,.06); }
     body.phase68-minimal .search-result { width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,.06); background: transparent; color: inherit; text-align: left; padding: 13px 14px; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
     body.phase68-minimal .search-result:first-child { border-top: 0; }
     body.phase68-minimal .search-result strong { display:block; }
@@ -396,31 +395,34 @@ _EQUALIZADOR_HTML = """<!doctype html>
     body.phase68-minimal .search-result::after { content:'›'; color:#7d8795; font-size: 24px; }
     body.phase68-minimal .group-picker { margin: 18px 0; }
     body.phase68-minimal .group-picker > label { color: #7d8795; margin-left: 2px; }
-    body.phase68-minimal .group-picker select { border-radius: 13px; min-height: 58px; background: #10151c; border: 1px solid rgba(255,255,255,.09); }
-    body.phase68-minimal .group-card { background: #191f28; border-color: rgba(255,255,255,.08); border-radius: 18px; padding: 14px; box-shadow: none; }
+    body.phase68-minimal .group-picker select { border-radius: 13px; min-height: 58px; background: #17212b; border: 1px solid rgba(255,255,255,.09); }
+    body.phase68-minimal .group-card { background: #202b36; border-color: rgba(255,255,255,.06); border-radius: 14px; padding: 14px; box-shadow: none; }
     body.phase68-minimal .headline { grid-template-columns: 68px 1fr; }
     body.phase68-minimal .avatar { border-radius: 18px; }
-    body.phase68-minimal .group-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    body.phase68-minimal .group-meta .item { background: #10161f; border: 1px solid rgba(255,255,255,.06); border-radius: 12px; padding: 10px; }
+    body.phase68-minimal .group-meta { grid-template-columns: 1fr; gap: 0; margin-top: 14px; border-top: 1px solid rgba(255,255,255,.07); }
+    body.phase68-minimal .group-meta .item { background: transparent; border: 0; border-bottom: 1px solid rgba(255,255,255,.07); border-radius: 0; padding: 10px 0; display: grid; grid-template-columns: minmax(90px, .35fr) 1fr; gap: 10px; align-items: baseline; }
+    body.phase68-minimal .group-meta .item strong { font-size: 14px; }
     body.phase68-minimal .status-row { margin-top: 8px; }
-    body.phase68-minimal .statusbar, body.phase68-minimal .refresh-state { border-radius: 14px; background: #10161f; border-color: rgba(255,255,255,.08); }
+    body.phase68-minimal .statusbar, body.phase68-minimal .refresh-state { border-radius: 14px; background: #202b36; border-color: rgba(255,255,255,.07); }
     body.phase68-minimal #mesa_titulo { margin-top: 22px; font-size: 22px; }
-    body.phase68-minimal .app-tabs { display: grid; grid-template-columns: 1fr; gap: 0; background: #202832; border: 1px solid rgba(255,255,255,.07); border-radius: 16px; overflow: hidden; margin: 12px 0 16px; }
-    body.phase68-minimal button.nav { width: 100%; min-height: 64px; border-radius: 0; border: 0; border-top: 1px solid rgba(255,255,255,.06); background: transparent; padding: 13px 44px 13px 16px; text-align: left; position: relative; display: block; }
+    body.phase68-minimal .app-tabs { display: grid; grid-template-columns: 1fr; gap: 0; background: #202b36; border: 1px solid rgba(255,255,255,.06); border-radius: 14px; overflow: hidden; margin: 12px 0 16px; }
+    body.phase68-minimal button.nav { width: 100%; min-height: 58px; border-radius: 0; border: 0; border-top: 1px solid rgba(255,255,255,.06); background: transparent; padding: 12px 44px 12px 16px; text-align: left; position: relative; display: block; }
     body.phase68-minimal button.nav:first-child { border-top: 0; }
     body.phase68-minimal button.nav::after { content: '›'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: #748091; font-size: 28px; font-weight: 500; }
-    body.phase68-minimal button.nav.active { background: rgba(53, 145, 255, .14); color: #fff; }
+    body.phase68-minimal button.nav.active { background: rgba(255,255,255,.045); color: #fff; }
     body.phase68-minimal button.nav.active::after { content: '⌄'; font-size: 20px; }
     body.phase68-minimal button.nav strong { display: block; font-size: 15px; margin-bottom: 2px; }
     body.phase68-minimal button.nav span:not(.nav-state) { display: block; font-size: 12px; color: #8792a2; font-weight: 500; }
     body.phase68-minimal .nav-state { position: absolute; right: 42px; top: 21px; margin: 0; background: transparent; }
-    body.phase68-minimal .view { margin-top: 14px; background: #191f28; border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 14px; }
+    body.phase68-minimal .view { margin-top: 14px; background: #202b36; border: 1px solid rgba(255,255,255,.06); border-radius: 14px; padding: 14px; }
     body.phase68-minimal .view.hidden { display: none !important; }
-    body.phase68-minimal .panel { background: #141b24; border-color: rgba(255,255,255,.08); box-shadow: none; }
+    body.phase68-minimal .panel { background: #17212b; border-color: rgba(255,255,255,.06); box-shadow: none; }
     body.phase68-minimal .toolbar { gap: 8px; }
     body.phase68-minimal button.action { border-radius: 12px; }
     body.phase68-minimal .section-note { color: #97a1af; }
-    body.phase68-minimal .feedback-panel { background: #191f28; border-color: rgba(255,255,255,.08); }
+    body.phase68-minimal .feedback-panel { background: #202b36; border-color: rgba(255,255,255,.06); }
+    body.phase68-minimal .search-empty { min-height: 170px; display: grid; place-items: center; text-align: center; color: #8792a2; padding: 28px 18px; }
+    body.phase68-minimal .search-empty strong { display: block; color: #c6d0dd; margin-bottom: 4px; }
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
   </style>
 </head>
@@ -455,10 +457,10 @@ _EQUALIZADOR_HTML = """<!doctype html>
           </div>
         </div>
         <div class="global-search-wrap">
-          <input id="global_search" autocomplete="off" placeholder="Pesquisar por @username, ID, grupo, janela ou ação" />
+          <input id="global_search" autocomplete="off" placeholder="Buscar @, ID, grupo ou ação" />
           <div id="global_search_results" class="search-results hidden"></div>
         </div>
-        <p class="section-note">Escolha um grupo e abra uma janela. As ações aparecem conforme permissão do operador e direito real do bot.</p>
+        <p class="section-note">Escolha um grupo. Depois abra uma janela ou pesquise uma ação.</p>
       </section>
       <section id="palco_header" class="group-picker header-select">
         <label class="small muted">Escolha o grupo</label>
@@ -480,7 +482,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
         </div>
       </section>
       <h2 class="hidden">Grupos</h2>
-      <p id="palcos_hint" class="section-note">Selecione o grupo no cabeçalho.</p>
+      <p id="palcos_hint" class="section-note">Selecione um grupo para exibir janelas e ações.</p>
       <div id="palcos" class="grid hidden"></div>
       <div id="mesa" class="hidden">
         <div class="status-row">
@@ -1875,7 +1877,16 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const box = document.getElementById("global_search_results");
         if (!input || !box) return;
         const rows = buildGlobalSearchResults(input.value);
-        box.classList.toggle("hidden", !rows.length);
+        const query = String(input.value || "").trim();
+        box.classList.toggle("hidden", query.length < 2);
+        if (query.length < 2) { box.replaceChildren(); return; }
+        if (!rows.length) {
+          const empty = document.createElement("div");
+          empty.className = "search-empty";
+          empty.innerHTML = `<div><strong>Sem resultados</strong><span>Não houve resultado para “${escapeHtml(query)}”.</span></div>`;
+          box.replaceChildren(empty);
+          return;
+        }
         box.replaceChildren(...rows.map((row) => {
           const button = document.createElement("button");
           button.type = "button";
@@ -1929,7 +1940,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const palco = palcosDisponiveis.find((item) => item.grp_ref === headerSelect.value);
           if (palco) selectPalco(palco, null);
         };
-        if (hint) hint.textContent = "Selecione o grupo no cabeçalho para abrir o painel e o resumo de moderação.";
+        if (hint) hint.textContent = "Selecione um grupo para exibir janelas e ações.";
         renderGlobalSearch();
       }
       function renderCanais(rows) {
@@ -2093,7 +2104,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         updateBulkDeleteControls();
         applyPreventiveAccessUI();
         if (currentPalco && afinacaoLoaded) {
-          statusMesa("Pronto. Ações liberadas conforme permissão do operador, alvo selecionado e direito real do bot.", "ok");
+          statusMesa("Pronto. Ações disponíveis conforme permissões.", "ok");
         } else if (currentPalco) {
           statusMesa("Painel aguardando permissões do bot. Ações permanecem bloqueadas até confirmação.", "warn");
         }
@@ -2106,11 +2117,11 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         document.querySelectorAll(".palco").forEach((el) => el.classList.remove("active"));
         if (button) button.classList.add("active");
         document.getElementById("mesa").classList.remove("hidden");
-        document.getElementById("mesa_titulo").textContent = "Painel de moderação · " + (palco.titulo || "Grupo");
+        document.getElementById("mesa_titulo").textContent = (palco.titulo || "Grupo");
         const refreshButton = document.getElementById("mesa_refresh");
         if (refreshButton) refreshButton.disabled = false;
-        statusMesa("Carregando permissões, mensagens, membros e histórico…", "muted");
-        setRefreshState("Abrindo painel do grupo selecionado…", "loading");
+        statusMesa("Carregando painel…", "muted");
+        setRefreshState("Abrindo grupo…", "loading");
         closeAllViews();
         await loadPalcoData();
         renderGlobalSearch();
@@ -2330,7 +2341,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           revisoes.replaceChildren();
           if (importantes.length) {
             const box = document.createElement("div");
-            box.innerHTML = `<strong>Revisões importantes:</strong> ${importantes.map((item) => safeText(item, "revisar")).join(" · ")}`;
+            box.innerHTML = `${importantes.map((item) => safeText(item, "revisar")).join(" · ")}`;
             revisoes.appendChild(box);
           }
         }

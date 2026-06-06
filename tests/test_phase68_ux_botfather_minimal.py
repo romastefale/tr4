@@ -17,7 +17,7 @@ def test_phase68_has_minimal_dark_shell_and_global_search():
     html = _html()
     assert 'body class="phase68-minimal"' in html
     assert 'id="global_search"' in html
-    assert 'Pesquisar por @username, ID, grupo, janela ou ação' in html
+    assert 'Buscar @, ID, grupo ou ação' in html
     assert 'search-result' in html
 
 

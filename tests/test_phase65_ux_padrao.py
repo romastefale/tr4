@@ -29,7 +29,7 @@ def test_phase65_standardizes_status_and_feedback_language():
 def test_phase65_keeps_group_card_compact_and_action_copy_clear():
     assert '#grupo_descricao' in ROUTER
     assert '-webkit-line-clamp: 2' in ROUTER
-    assert 'Pronto. Ações liberadas conforme permissão do operador, alvo selecionado e direito real do bot.' in ROUTER
+    assert 'Pronto. Ações disponíveis conforme permissões.' in ROUTER
     assert 'Ação de tópico não aplicada.' in ROUTER
     assert 'Ação bloqueada por permissão real do bot ou do operador.' in ROUTER
 
