@@ -225,7 +225,9 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .bulk-item.selected { border-color: rgba(80,216,144,.72); background: rgba(22,138,85,.18); box-shadow: inset 4px 0 0 rgba(80,216,144,.85); }
     .bulk-item input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--tg-theme-button-color, #5b8cff); }
     .bulk-item.locked { opacity: .62; }
-    .bulk-actions { position: sticky; bottom: 0; margin-top: 10px; padding: 10px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: #1a202b; box-shadow: 0 10px 28px rgba(0,0,0,.28); }
+    .bulk-actions { position: static; margin-top: 10px; padding: 10px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: #1a202b; box-shadow: 0 10px 28px rgba(0,0,0,.18); }
+    .bulk-actions.idle .toolbar { display: none; }
+    .bulk-actions.active { border-color: rgba(80,216,144,.42); background: rgba(20,83,45,.14); }
     .nav.access-blocked { opacity: .42; }
     button, select, textarea, input { font: inherit; }
     button.action, button.nav { border: 0; border-radius: 14px; padding: 12px 14px; background: var(--tg-theme-button-color, #5b8cff); color: var(--tg-theme-button-text-color, white); font-weight: 650; transition: transform .12s ease, filter .12s ease, box-shadow .16s ease, background-color .16s ease, opacity .16s ease; touch-action: manipulation; }
@@ -251,13 +253,21 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .toolbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; align-items: stretch; }
     .toolbar.compact { grid-template-columns: repeat(auto-fit, minmax(120px, max-content)); justify-content: start; }
     .toolbar > button { width: 100%; min-height: 44px; }
-    select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.22); border-radius: 14px; padding: 12px; background: #0f172a; color: #f8fafc; }
+    select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.22); border-radius: 14px; padding: 12px; background: #0f172a; color: #f8fafc; scroll-margin-bottom: 320px; }
     textarea { min-height: 92px; resize: vertical; }
+    input[type="checkbox"], input[type="radio"] { width: auto; min-width: 18px; height: 18px; margin: 0 8px 0 0; padding: 0; border-radius: 4px; accent-color: var(--tg-theme-button-color, #5b8cff); vertical-align: middle; }
+    label.small { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; }
+    .formgrid label.small { align-items: center; justify-content: flex-start; }
+    input[type="file"] { padding: 10px; }
+    input[type="file"]::file-selector-button { margin-right: 10px; border: 0; border-radius: 10px; padding: 9px 12px; background: #263142; color: #f8fafc; font-weight: 650; }
     .list { display: grid; gap: 8px; }
     .item { border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 12px; background: #111827; }
     .ok { color: #50d890; }
     .bad { color: #ff8a80; }
     .warn { color: #ffd166; }
+    .feedback-item { position: relative; padding-right: 96px; white-space: pre-wrap; word-break: break-word; }
+    .feedback-copy-one { position: absolute; right: 8px; top: 8px; border: 1px solid rgba(255,255,255,.18); border-radius: 9px; padding: 5px 8px; background: #263142; color: #f8fafc; font-size: 11px; font-weight: 650; }
+    .feedback-copy-one:active { filter: brightness(.82); transform: scale(.96); }
     .small { font-size: 12px; }
     .section-note { margin: 8px 0 12px; color: #d1d5db; font-size: 13px; }
     .statusbar { margin: 14px 0; border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #111827; }
@@ -279,7 +289,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .feedback-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .feedback-actions button { width: auto; min-height: 34px; padding: 8px 10px; }
     .feedback-items { display: grid; gap: 8px; max-height: 240px; overflow: auto; }
-    .feedback-item { border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 9px; background: rgba(255,255,255,.04); white-space: pre-wrap; }
+    .feedback-item { position: relative; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 9px 96px 9px 9px; background: rgba(255,255,255,.04); white-space: pre-wrap; word-break: break-word; }
     .feedback-item.ok { border-color: rgba(80,216,144,.50); }
     .feedback-item.warn { border-color: rgba(255,209,102,.52); }
     .feedback-item.bad { border-color: rgba(255,138,128,.48); }
@@ -388,7 +398,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <button class="nav secondary" data-view="mesa_view"><strong>Início</strong><span>status e resumo</span></button>
           <button class="nav secondary" data-view="perfil_view"><strong>Perfil</strong><span>nome, descrição e foto</span></button>
           <button class="nav secondary" data-view="mensagens_view"><strong>Mensagens</strong><span>enviar, fixar e apagar</span></button>
-          <button class="nav secondary" data-view="radio_view"><strong>Radio</strong><span>rascunho e mídia</span></button>
+          <button class="nav secondary" data-view="radio_view"><strong>Rádio</strong><span>rascunho e mídia</span></button>
           <button class="nav secondary" data-view="ddx_view"><strong>Filtros</strong><span>DDX e 10 min</span></button>
           <button class="nav secondary" data-view="reacoes_view"><strong>Reações</strong><span>auditoria e reactors</span></button>
           <button class="nav secondary" data-view="pessoas_view"><strong>Pessoas</strong><span>membros, admins e bots</span></button>
@@ -1449,6 +1459,12 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           else if (type === "notification" && feedback.notificationOccurred) feedback.notificationOccurred(style || "success");
         } catch (_) {}
       };
+      const copyText = async (text) => {
+        const clean = String(text || "");
+        if (!clean.trim()) return false;
+        try { await navigator.clipboard.writeText(clean); return true; }
+        catch (_) { return false; }
+      };
       const renderFeedbackPanel = () => {
         const panel = document.getElementById("feedback_panel");
         const items = document.getElementById("feedback_items");
@@ -1463,14 +1479,36 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         items.replaceChildren(...feedbackEntries.slice(0, 10).map((entry) => {
           const div = document.createElement("div");
           div.className = "feedback-item " + (entry.kind || "");
-          div.innerHTML = `<span class="feedback-meta">${escapeHtml(entry.time)} · ${escapeHtml(entry.kind || 'info')}</span>${escapeHtml(entry.text)}`;
+          const body = document.createElement("div");
+          body.innerHTML = `<span class="feedback-meta">${escapeHtml(entry.time)} · ${escapeHtml(entry.kind || 'info')}</span>${escapeHtml(entry.text)}`;
+          const button = document.createElement("button");
+          button.className = "feedback-copy-one";
+          button.type = "button";
+          button.textContent = "Copiar";
+          button.addEventListener("click", async (event) => {
+            event.stopPropagation();
+            const ok = await copyText(`[${entry.time}] ${entry.kind || 'info'}: ${entry.text}`);
+            if (ok) { statusMesa("Detalhe copiado.", "ok"); haptic("notification", "success"); }
+            else { statusMesa("Não foi possível copiar este detalhe automaticamente.", "warn"); haptic("notification", "warning"); }
+          });
+          div.appendChild(body);
+          div.appendChild(button);
           return div;
         }));
       };
       const addFeedback = (text, kind) => {
+        const clean = String(text || "").trim();
+        if (!clean) return;
+        const level = kind || "info";
+        if (level === "ok") feedbackEntries = feedbackEntries.filter((entry) => !/^Ação (crítica )?preparada\\./.test(String(entry.text || "")));
+        const previous = feedbackEntries[0];
+        if (previous && previous.kind === level && previous.text === clean) {
+          renderFeedbackPanel();
+          return;
+        }
         const now = new Date();
         const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        feedbackEntries.unshift({ time, text: String(text || ""), kind: kind || "info" });
+        feedbackEntries.unshift({ time, text: clean, kind: level });
         feedbackEntries = feedbackEntries.slice(0, 12);
         renderFeedbackPanel();
       };
@@ -1600,6 +1638,11 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         }
         applyPreventiveAccessUI();
       };
+      document.addEventListener("focusin", (event) => {
+        const target = event.target;
+        if (!target || !target.matches || !target.matches("input, textarea, select")) return;
+        setTimeout(() => { try { target.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_) {} }, 120);
+      });
       document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => { button.classList.add("pressed"); setTimeout(() => button.classList.remove("pressed"), 180); haptic("selection"); openView(button.dataset.view); }));
       const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
       if (perfilAtualizar) perfilAtualizar.addEventListener("click", () => currentPalco ? loadPalcoData() : toast("Escolha um grupo antes de atualizar.", "warn"));
@@ -1677,6 +1720,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const status = document.getElementById("mensagens_lote_status");
         const apagar = document.getElementById("mensagens_lote_apagar");
         const limpar = document.getElementById("mensagens_lote_limpar");
+        const bulkBox = status ? status.closest(".bulk-actions") : null;
         const selected = Array.from(mensagensSelecionadas).filter((ref) => {
           const row = mensagensPorRef.get(ref);
           return row && row.apagavel !== false;
@@ -1688,6 +1732,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           else if (!diagnostic.ok) status.textContent = `${selected.length} selecionada(s). Bloqueado: ${diagnostic.motivos.join(" · ")}`;
           else status.textContent = `${selected.length} mensagem(ns) selecionada(s). O servidor executará uma única chamada ao Telegram.`;
           status.className = "empty small " + (canDelete ? "ok" : selected.length ? "warn" : "");
+        }
+        if (bulkBox) {
+          bulkBox.classList.toggle("active", selected.length > 0);
+          bulkBox.classList.toggle("idle", selected.length === 0);
         }
         if (apagar) { apagar.disabled = !canDelete; apagar.title = canDelete ? "" : (selected.length ? diagnostic.motivos.join(" · ") : "Selecione mensagens apagáveis"); }
         if (limpar) limpar.disabled = !selected.length;
@@ -3396,20 +3444,21 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           try { await navigator.clipboard.writeText(data.convite); toast("Convite criado, exibido e copiado.", "ok"); }
           catch (_) { toast("Convite criado e exibido no painel.", "ok"); }
         } else {
+          let successText = data.resumo || "Ajuste concluído.";
           if (data.mensagem) setMensagemResult(data.mensagem, data.resumo || "Ajuste de mensagem concluído.");
-          if (data.entrada) toast(`Pedido de entrada: ${data.entrada.situacao || 'tratado'}.`, "ok");
-          if (data.convite && typeof data.convite === "object") toast(data.resumo || "Convite ajustado.", "ok");
+          if (data.entrada) successText = data.resumo || `Pedido de entrada: ${data.entrada.situacao || 'tratado'}.`;
+          if (data.convite && typeof data.convite === "object") successText = data.resumo || "Convite ajustado.";
           if (data.membro) setMembroResult(data.membro, data.resumo || "Ajuste de membro concluído.");
           if (data.resultado) {
-            toast(`${data.resultado.estado || 'ajuste'}: ${data.resultado.nome || 'referência'}`, "ok");
+            successText = data.resumo || `${data.resultado.estado || 'ajuste'}: ${data.resultado.nome || 'referência'}`;
             const adminBox = document.getElementById("admin_resultado");
             if (adminBox && (action.startsWith("admins.") || action.startsWith("grupo."))) {
               const box = document.getElementById("admin_resultado");
-              if (box) { box.textContent = data.resumo || `${data.resultado.estado || 'ajuste'}: ${data.resultado.nome || 'referência'}`; box.className = "empty small ok"; }
+              if (box) { box.textContent = successText; box.className = "empty small ok"; }
             }
           }
           if (data.fixacao && data.fixacao.ok === false) toast("Transmissão enviada, mas não fixada: " + (data.fixacao.motivo || "permissão do bot insuficiente"), "warn");
-          toast(data.resumo || "Ajuste concluído.", "ok");
+          toast(successText, "ok");
         }
         statusMesa("Último ajuste concluído: " + (actionLabels[action] || action) + ".", "ok");
         await loadPalcoData();
