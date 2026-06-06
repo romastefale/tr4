@@ -2129,7 +2129,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           else if (code.includes("permission") || code.includes("forbidden") || code.includes("rights")) value = value.motivo_publico || value.public_detail || "Ação bloqueada por permissão real do bot ou do operador.";
           else value = value.motivo_publico || value.public_detail || value.message || value.erro || "Ajuste não concluído.";
         }
-        const text = String(value || "Ajuste não concluído.");
+        let text = String(value || "Ajuste não concluído.");
+        if (/afina[cç][aã]o_insuficiente/i.test(text)) text = "Permissão real do bot insuficiente. Abra Diagnóstico para conferir a afinação deste grupo.";
+        if (/rascunho.*(publicado|cancelado)/i.test(text)) text = "Rascunho já foi publicado ou cancelado. Atualize a lista de rascunhos.";
         return text
           .replace(/bot\\d+:[A-Za-z0-9_-]+/g, "bot_token_oculto")
           .replace(/-100\\d{5,}/g, "grupo oculto")
@@ -3749,13 +3751,25 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       async function publicarRadioRascunho() {
         if (!currentPalco) return;
+        const button = document.getElementById("radio_publicar");
+        if (button && button.getAttribute("aria-busy") === "true") return;
         const ref = (document.getElementById("radio_draft_select") || {}).value || "";
         const row = ref ? radioDraftsPorRef.get(ref) : null;
         if (!ref || !row) { toast("Escolha um rascunho.", "warn"); return; }
-        if (row.status !== "draft") { toast("Somente rascunhos abertos podem ser publicados.", "warn"); return; }
+        if (row.status !== "draft") { toast("Rascunho já foi publicado ou cancelado. Atualize a lista.", "warn"); return; }
+        markButton(button, "working");
         const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/rascunhos/" + encodeURIComponent(ref) + "/publicar", { method: "POST", headers: apiHeaders });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        if (!res.ok) {
+          const detail = detailPublico(data.detail || data);
+          toast(detail, res.status === 409 ? "warn" : "bad");
+          markButton(button, "error");
+          setTimeout(() => restoreButton(button), 1600);
+          await reloadRadioDrafts();
+          return;
+        }
+        markButton(button, "success");
+        setTimeout(() => restoreButton(button), 1300);
         if (data.fixacao && data.fixacao.ok === false) toast("Publicado, mas não fixado: " + (data.fixacao.motivo || "permissão insuficiente"), "warn");
         else toast("Rascunho publicado.", "ok");
         if (data.mensagem && data.mensagem.msg_ref) {

@@ -12,9 +12,9 @@ def make_ui_ref(kind: str, raw_identifier: int | str, secret: str, *, size: int 
     for people, ``grp_A91F2C00`` for groups, ``ent_A91F2C00`` for join
     requests and ``inv_A91F2C00`` for invite links.
     """
-    allowed_kinds = {"usr", "grp", "ent", "inv"}
+    allowed_kinds = {"usr", "grp", "ent", "inv", "sec", "exp"}
     if kind not in allowed_kinds:
-        raise ValueError("kind must be one of: ent, grp, inv, usr")
+        raise ValueError("kind must be one of: ent, exp, grp, inv, sec, usr")
     if not secret:
         raise ValueError("secret is required to generate ui_ref")
     digest = hmac.new(

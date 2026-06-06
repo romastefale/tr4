@@ -67,6 +67,8 @@ def mesa_error_public_detail(exc: BaseException) -> str:
         "telegram_resposta_invalida": "Telegram retornou resposta inválida.",
         "ajuste_indisponivel": "Ajuste indisponível.",
         "ajuste_falhou": "Ajuste não concluído.",
+        "afinação_insuficiente": "Permissão real do bot insuficiente.",
+        "afinacao_insuficiente": "Permissão real do bot insuficiente.",
     }
     return known.get(reason, "Ajuste não concluído.")
 
