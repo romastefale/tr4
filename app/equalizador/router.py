@@ -481,11 +481,111 @@ _EQUALIZADOR_HTML = """<!doctype html>
     body.phase68-minimal .view .toolbar:not(.app-tabs),
     body.phase68-minimal .panel .toolbar:not(.app-tabs),
     body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    /* Fase 73: navegação interna por telas, no padrão lista -> detalhe -> voltar. */
+    body.phase68-minimal.detail-mode #inicio_view,
+    body.phase68-minimal.detail-mode #palco_header,
+    body.phase68-minimal.detail-mode #palcos_hint,
+    body.phase68-minimal.detail-mode #palcos,
+    body.phase68-minimal.detail-mode #mesa_titulo,
+    body.phase68-minimal.detail-mode .app-tabs,
+    body.phase68-minimal.detail-mode .status-row,
+    body.phase68-minimal.detail-mode .refresh-state { display: none !important; }
+    body.phase68-minimal.detail-mode .view { display: block; margin-top: 10px; }
+    body.phase68-minimal.detail-mode .view.hidden { display: none !important; }
+    .detail-nav { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; margin: 10px 0 14px; }
+    .detail-back { border: 0; border-radius: 999px; padding: 8px 12px; min-height: 38px; background: #1f2a34; color: #f7f8fb; font-weight: 650; }
+    .detail-title { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+    .detail-subtitle { display: none; color: #8e99a8; font-size: 13px; margin-top: 2px; }
+    body.phase68-minimal.detail-mode .view > .window-title,
+    body.phase68-minimal.detail-mode .view > .section-note:first-of-type { display: none !important; }
+
+
+    /* Fase 74: telas internas minimalistas em cinza/preto, sem subtítulos redundantes e sem camadas azuis. */
+    body.phase74-botfather-pages { background: #161b20; color: #f4f6f8; }
+    body.phase74-botfather-pages main { max-width: 720px; }
+    body.phase74-botfather-pages .bot-hero { padding-top: 6px; }
+    body.phase74-botfather-pages .bot-avatar { width: 58px; height: 58px; }
+    body.phase74-botfather-pages .bot-hero h2 { font-size: 22px; }
+    body.phase74-botfather-pages #global_search { background: #222a32; border: 1px solid rgba(255,255,255,.07); }
+    body.phase74-botfather-pages .group-card,
+    body.phase74-botfather-pages .app-tabs,
+    body.phase74-botfather-pages .view,
+    body.phase74-botfather-pages .panel,
+    body.phase74-botfather-pages .feedback-panel { background: #1b222a; border-color: rgba(255,255,255,.075); box-shadow: none; }
+    body.phase74-botfather-pages .view { padding: 0; overflow: hidden; }
+    body.phase74-botfather-pages.detail-mode .view { padding: 18px; }
+    body.phase74-botfather-pages .view > .grid,
+    body.phase74-botfather-pages .view > .panel-split { gap: 10px; }
+    body.phase74-botfather-pages .view .panel { background: #171d23; border-color: rgba(255,255,255,.055); }
+    body.phase74-botfather-pages .app-tabs { border-radius: 18px; margin-top: 14px; }
+    body.phase74-botfather-pages button.nav { min-height: 50px; padding: 14px 48px 14px 16px; background: transparent; }
+    body.phase74-botfather-pages button.nav span:not(.nav-state) { display: none !important; }
+    body.phase74-botfather-pages .nav-state { display: none !important; }
+    body.phase74-botfather-pages button.nav::after { right: 18px; color: #7d8794; }
+    body.phase74-botfather-pages button.nav.active::after { content: '›'; font-size: 28px; }
+    body.phase74-botfather-pages button.nav strong { font-size: 15px; margin: 0; }
+    body.phase74-botfather-pages .detail-nav { margin: 8px 0 12px; }
+    body.phase74-botfather-pages .detail-back { background: #20272f; border: 1px solid rgba(255,255,255,.07); }
+    body.phase74-botfather-pages .detail-title { font-size: 22px; }
+    body.phase74-botfather-pages .section-note { display: none; }
+    body.phase74-botfather-pages .view p.section-note { display: none !important; }
+    body.phase74-botfather-pages h3.window-title { display: none !important; }
+    body.phase74-botfather-pages button.action { background: #242c36; border: 1px solid rgba(255,255,255,.09); color: #f4f6f8; min-height: 44px; box-shadow: none; }
+    body.phase74-botfather-pages button.action:hover { box-shadow: none; filter: brightness(1.08); }
+    body.phase74-botfather-pages button.action.secondary { background: #242c36; color: #f4f6f8; }
+    body.phase74-botfather-pages button.action[data-action="fixados.criar"],
+    body.phase74-botfather-pages button.action[data-action="fixados.remover"],
+    body.phase74-botfather-pages button.action[data-action="topicos.criar"],
+    body.phase74-botfather-pages button.action[data-action="topicos.editar"],
+    body.phase74-botfather-pages button.action[data-action="topicos.reabrir"],
+    body.phase74-botfather-pages button.action[data-action="topicos.desfixar"],
+    body.phase74-botfather-pages button.action[data-action="topicos.geral.reabrir"],
+    body.phase74-botfather-pages button.action[data-action="topicos.geral.exibir"],
+    body.phase74-botfather-pages button.action[data-action="topicos.geral.desfixar"],
+    body.phase74-botfather-pages button.action[data-action="grupo.descricao"],
+    body.phase74-botfather-pages button.action[data-action="admins.titulo"],
+    body.phase74-botfather-pages button#resolver_mensagem,
+    body.phase74-botfather-pages button#resolver_alvo { background: #2b75d6; color: #fff; border-color: rgba(255,255,255,.10); }
+    body.phase74-botfather-pages button.action[data-action="convites.criar"],
+    body.phase74-botfather-pages button.action[data-action="entradas.aprovar"],
+    body.phase74-botfather-pages button.action[data-action="membros.liberar"],
+    body.phase74-botfather-pages button.action[data-action="membros.reintegrar"],
+    body.phase74-botfather-pages button.action[data-action="canais_remetentes.liberar"],
+    body.phase74-botfather-pages button.action[data-action="admins.promover"],
+    body.phase74-botfather-pages button.action[data-action="silencio.desativar"],
+    body.phase74-botfather-pages button.action[data-action="grupo.foto"] { background: #167548; color: #fff; }
+    body.phase74-botfather-pages button.action[data-action="mensagens.apagar"],
+    body.phase74-botfather-pages button#seguranca_modo_restrito,
+    body.phase74-botfather-pages button#radio_schedule_cancelar,
+    body.phase74-botfather-pages button#ddx_cancelar_agendado,
+    body.phase74-botfather-pages button#novos_apagar,
+    body.phase74-botfather-pages button#novos_banir,
+    body.phase74-botfather-pages button.action[data-action="membros.remover"],
+    body.phase74-botfather-pages button.action[data-action="entradas.recusar"],
+    body.phase74-botfather-pages button.action[data-action="convites.revogar"],
+    body.phase74-botfather-pages button.action[data-action="topicos.apagar"],
+    body.phase74-botfather-pages button.action[data-action="canais_remetentes.banir"],
+    body.phase74-botfather-pages button.action[data-action="admins.rebaixar"],
+    body.phase74-botfather-pages button.action[data-action="grupo.foto.remover"] { background: #9f261f; color: #fff; }
+    body.phase74-botfather-pages .toolbar { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+    body.phase74-botfather-pages .toolbar > button:only-child { grid-column: 1 / -1; }
+    body.phase74-botfather-pages select,
+    body.phase74-botfather-pages textarea,
+    body.phase74-botfather-pages input { background: #131924; border-color: rgba(255,255,255,.12); }
+    body.phase74-botfather-pages .empty { background: #131924; border-color: rgba(255,255,255,.08); }
+    @media (max-width: 560px) {
+      body.phase74-botfather-pages .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      body.phase74-botfather-pages .toolbar > button:only-child { grid-column: 1 / -1; }
+      body.phase74-botfather-pages.detail-mode .view { padding: 14px; }
+    }
+
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
+  <script>document.body.classList.add("phase74-botfather-pages");</script>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -545,6 +645,13 @@ _EQUALIZADOR_HTML = """<!doctype html>
           <button id="mesa_refresh" class="action secondary refresh-action" type="button" disabled>Atualizar</button>
         </div>
         <div id="refresh_state" class="refresh-state">Aguardando seleção de grupo.</div>
+        <div id="detail_nav" class="detail-nav hidden">
+          <button id="detail_back" class="detail-back" type="button">← Voltar</button>
+          <div>
+            <h2 id="detail_title" class="detail-title">Janela</h2>
+            <div id="detail_subtitle" class="detail-subtitle"></div>
+          </div>
+        </div>
         <h2 id="mesa_titulo">Painel do grupo</h2>
         <div class="toolbar app-tabs">
           <button class="nav secondary" data-view="mesa_view"><strong>Início</strong><span>status e resumo</span></button>
@@ -1815,6 +1922,21 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const button = document.querySelector(`button.nav[data-view="${id}"] strong`);
         return button ? button.textContent.trim() : "painel";
       };
+      const viewSubtitle = (id) => {
+        const button = document.querySelector(`button.nav[data-view="${id}"]`);
+        const span = button ? button.querySelector("span:not(.nav-state)") : null;
+        return span ? span.textContent.trim() : "";
+      };
+      const setDetailMode = (id) => {
+        const active = Boolean(id);
+        document.body.classList.toggle("detail-mode", active);
+        const nav = document.getElementById("detail_nav");
+        const title = document.getElementById("detail_title");
+        const subtitle = document.getElementById("detail_subtitle");
+        if (nav) nav.classList.toggle("hidden", !active);
+        if (title) title.textContent = active ? viewTitle(id) : "Janela";
+        if (subtitle) subtitle.textContent = active ? viewSubtitle(id) : "";
+      };
       function applyPreventiveAccessUI() {
         document.querySelectorAll("button.nav[data-view]").forEach((button) => {
           const viewId = button.dataset.view || "";
@@ -1844,8 +1966,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const view = document.getElementById(id);
         if (view) view.classList.remove("hidden");
         currentViewId = id;
+        setDetailMode(id);
         document.querySelectorAll("button.nav").forEach((button) => button.classList.toggle("active", button.dataset.view === id));
-        if (view) { try { view.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) {} }
+        const detailNav = document.getElementById("detail_nav");
+        if (detailNav) { try { detailNav.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) {} }
       };
       const aplicarPerfil = (me) => {
         const canais = new Set(me.canais || []);
@@ -1900,6 +2024,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         for (const el of document.querySelectorAll(".view")) el.classList.add("hidden");
         document.querySelectorAll("button.nav").forEach((button) => button.classList.remove("active"));
         currentViewId = "";
+        setDetailMode("");
       };
       const normalizeSearch = (value) => String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
       const searchTokens = (value) => normalizeSearch(value).split(/\\s+/).filter(Boolean);
@@ -1973,9 +2098,15 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         button.classList.add("pressed");
         setTimeout(() => button.classList.remove("pressed"), 180);
         haptic("selection");
-        if (currentViewId === button.dataset.view && !document.getElementById(button.dataset.view).classList.contains("hidden")) closeAllViews();
-        else openView(button.dataset.view);
+        openView(button.dataset.view);
       }));
+      const detailBackButton = document.getElementById("detail_back");
+      if (detailBackButton) detailBackButton.addEventListener("click", () => {
+        haptic("selection");
+        closeAllViews();
+        const navList = document.querySelector(".app-tabs");
+        if (navList) { try { navList.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) {} }
+      });
       const globalSearchInput = document.getElementById("global_search");
       if (globalSearchInput) globalSearchInput.addEventListener("input", renderGlobalSearch);
       const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
