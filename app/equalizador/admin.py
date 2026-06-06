@@ -126,6 +126,31 @@ async def ensure_admin_right(
         raise MesaRightError("afinação_insuficiente")
 
 
+async def ensure_admin_title_target_eligible(
+    *,
+    bot_token: str,
+    chat_id: int,
+    user_id: int,
+    telegram_api_call_fn: TelegramApiCallable = telegram_api_call,
+) -> dict[str, Any]:
+    """Preflight for setChatAdministratorCustomTitle.
+
+    Bot API only accepts custom titles for administrators in a supergroup
+    promoted by the bot. The "promoted by this bot" condition is not exposed
+    by getChatMember, so Telegram remains the final authority; this preflight
+    blocks the cases we can prove locally and returns clearer UI messages.
+    """
+    member = await telegram_api_call_fn(bot_token, "getChatMember", {"chat_id": int(chat_id), "user_id": int(user_id)})
+    if not isinstance(member, dict):
+        raise MesaTargetError("Alvo indisponível no grupo.")
+    status = str(member.get("status") or "").strip().lower()
+    if status == "creator":
+        raise MesaTargetError("O dono do grupo não pode receber título administrativo pelo bot.")
+    if status != "administrator":
+        raise MesaTargetError("O alvo precisa ser administrador ativo para receber título personalizado.")
+    return member
+
+
 def _safe_title(payload: dict[str, Any]) -> str:
     title = _safe_text(payload.get("titulo"), fallback="")[:128]
     if not title:
@@ -326,6 +351,13 @@ async def executar_admin_critico(
     try:
         await ensure_admin_right(bot_token=bot_token, chat_id=palco_id, required_right=spec.direito, telegram_api_call_fn=telegram_api_call_fn)
         api_payload, alvo_ref, label = build_admin_payload(ajuste=ajuste, palco_id=palco_id, payload=payload, db_engine=db_engine)
+        if ajuste == "admins.titulo":
+            await ensure_admin_title_target_eligible(
+                bot_token=bot_token,
+                chat_id=palco_id,
+                user_id=int(api_payload["user_id"]),
+                telegram_api_call_fn=telegram_api_call_fn,
+            )
         await telegram_api_call_fn(bot_token, spec.telegram_method, api_payload)
         historico = record_historico(
             ator_ref=ator_ref,

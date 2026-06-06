@@ -716,6 +716,7 @@ frase temporária"></textarea>
                 <div>
                   <label class="small muted">Título personalizado</label>
                   <input id="admin_titulo_input" maxlength="16" placeholder="Título personalizado do admin" />
+                  <p class="muted small">O Telegram só aceita título para administrador elegível promovido pelo próprio bot.</p>
                 </div>
                 <div>
                   <label class="small muted">Perfil de promoção</label>
