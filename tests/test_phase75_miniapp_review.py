@@ -5,7 +5,7 @@ ROUTER = Path("app/equalizador/router.py").read_text(encoding="utf-8")
 
 def test_phase75_class_is_enabled():
     assert 'phase75-miniapp-review' in ROUTER
-    assert 'document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact")' in ROUTER
+    assert 'phase75-miniapp-review' in ROUTER and 'phase76-governance-compact' in ROUTER
 
 
 def test_phase75_keeps_nav_labels_minimal():

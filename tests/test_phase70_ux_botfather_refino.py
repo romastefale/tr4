@@ -16,7 +16,7 @@ def _html() -> str:
 def test_phase70_uses_darker_telegram_like_palette_and_short_search():
     html = _html()
     assert "background: #17212b" in html
-    assert "Buscar @, ID, grupo ou ação" in html
+    assert "Buscar grupo, @, ID ou ação" in html
     assert "Pesquisar por @username, ID, grupo, janela ou ação" not in html
     assert "search-empty" in html
     assert "Sem resultados" in html

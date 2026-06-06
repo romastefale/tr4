@@ -772,14 +772,177 @@ _EQUALIZADOR_HTML = """<!doctype html>
     body.phase76-governance-compact .governance-role .muted { display: none; }
     body.phase76-governance-compact .governance-chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
     body.phase76-governance-compact .badge { background: rgba(255,255,255,.055); border-color: rgba(255,255,255,.08); }
+    /* Fase 79: governantes reais, cargo explícito e accordion exclusivo. */
+    body.phase79-governantes-reais .governance-grid { grid-template-columns: 1fr; gap: 8px; }
+    body.phase79-governantes-reais .governance-card { background: #13181e; border-color: rgba(255,255,255,.08); }
+    body.phase79-governantes-reais .governance-card > summary { min-height: 50px; padding: 12px 14px; }
+    body.phase79-governantes-reais .governance-person-main { font-size: 14px; }
+    body.phase79-governantes-reais .governance-person-sub { font-size: 12px; }
+    body.phase79-governantes-reais .governance-cargo { color: #b9c4d1; font-weight: 650; }
+    body.phase79-governantes-reais .governance-warn { color: #ffd166; }
+    body.phase79-governantes-reais .governance-detail { background: #10151b; }
+    body.phase79-governantes-reais .governance-role { background: #151b22; }
+    body.phase79-governantes-reais .governance-summary-line { display: block; }
+    /* Fase 80: sistema visual único. Cinza/preto como base; azul/verde/vermelho só por semântica. */
+    body.phase80-visual-system {
+      --eq-bg: #0f1419;
+      --eq-surface: #151b21;
+      --eq-surface-2: #1a2129;
+      --eq-surface-3: #202832;
+      --eq-border: rgba(255,255,255,.075);
+      --eq-text: #f2f5f8;
+      --eq-muted: #8e99a7;
+      --eq-primary: #2b75d6;
+      --eq-success: #168a55;
+      --eq-danger: #a52a24;
+      --eq-warning: #d99a2b;
+      background: var(--eq-bg);
+      color: var(--eq-text);
+    }
+    body.phase80-visual-system .bot-hero,
+    body.phase80-visual-system .group-card,
+    body.phase80-visual-system .app-tabs,
+    body.phase80-visual-system .view,
+    body.phase80-visual-system .panel,
+    body.phase80-visual-system .feedback-panel,
+    body.phase80-visual-system .governance-card,
+    body.phase80-visual-system .governance-role,
+    body.phase80-visual-system .item,
+    body.phase80-visual-system .empty {
+      background: var(--eq-surface);
+      border-color: var(--eq-border);
+      box-shadow: none;
+    }
+    body.phase80-visual-system .view .panel,
+    body.phase80-visual-system .governance-detail,
+    body.phase80-visual-system .search-results { background: var(--eq-surface-2); border-color: var(--eq-border); }
+    body.phase80-visual-system input,
+    body.phase80-visual-system textarea,
+    body.phase80-visual-system select { background: #10161d; border-color: var(--eq-border); color: var(--eq-text); }
+    body.phase80-visual-system .muted,
+    body.phase80-visual-system .section-note,
+    body.phase80-visual-system .small.muted,
+    body.phase80-visual-system .governance-person-sub,
+    body.phase80-visual-system .group-meta-line { color: var(--eq-muted); }
+    body.phase80-visual-system button.nav,
+    body.phase80-visual-system button.action,
+    body.phase80-visual-system .detail-back,
+    body.phase80-visual-system .mini-status-button {
+      background: var(--eq-surface-3);
+      border-color: var(--eq-border);
+      color: var(--eq-text);
+      box-shadow: none;
+    }
+    body.phase80-visual-system button.nav.active { background: rgba(255,255,255,.045); }
+    body.phase80-visual-system button.action.primary,
+    body.phase80-visual-system button.action[data-action="grupo.descricao"],
+    body.phase80-visual-system button.action[data-action="fixados.criar"],
+    body.phase80-visual-system button.action[data-action="topicos.criar"],
+    body.phase80-visual-system button#resolver_mensagem,
+    body.phase80-visual-system button#resolver_alvo { background: var(--eq-primary); color: #fff; }
+    body.phase80-visual-system button.action[data-action="convites.criar"],
+    body.phase80-visual-system button.action[data-action="entradas.aprovar"],
+    body.phase80-visual-system button.action[data-action="membros.liberar"],
+    body.phase80-visual-system button.action[data-action="membros.reintegrar"],
+    body.phase80-visual-system button.action[data-action="grupo.foto"],
+    body.phase80-visual-system .mini-status-button.ok,
+    body.phase80-visual-system .statusbar.ok { background: var(--eq-success); color: #fff; border-color: rgba(255,255,255,.12); }
+    body.phase80-visual-system button.action[data-action="mensagens.apagar"],
+    body.phase80-visual-system button.action[data-action="membros.remover"],
+    body.phase80-visual-system button.action[data-action="entradas.recusar"],
+    body.phase80-visual-system button.action[data-action="convites.revogar"],
+    body.phase80-visual-system button.action[data-action="topicos.apagar"],
+    body.phase80-visual-system button.action[data-action="grupo.foto.remover"],
+    body.phase80-visual-system button#radio_schedule_cancelar,
+    body.phase80-visual-system button#ddx_cancelar_agendado,
+    body.phase80-visual-system button#novos_apagar,
+    body.phase80-visual-system button#novos_banir { background: var(--eq-danger); color: #fff; border-color: rgba(255,255,255,.12); }
+    body.phase80-visual-system .statusbar.warn,
+    body.phase80-visual-system .governance-warn { color: #ffd166; background: transparent; }
+    body.phase80-visual-system .badge,
+    body.phase80-visual-system .right-chip { background: rgba(255,255,255,.055); border-color: var(--eq-border); color: var(--eq-text); }
+    body.phase80-visual-system .right-chip.ok { color: #95e8bb; }
+    body.phase80-visual-system .right-chip.bad { color: #ffaaa5; }
 
+
+
+    /* Fase 77: Home despoluida, foto central e busca como entrada principal. */
+    body.phase77-search-home { background: #101419; }
+    body.phase77-search-home #app > .top,
+    body.phase77-search-home #app > .row { display: none !important; }
+    body.phase77-search-home #inicio_view { margin-top: 0; }
+    body.phase77-search-home .bot-hero {
+      display: grid;
+      grid-template-columns: 1fr;
+      justify-items: center;
+      text-align: center;
+      background: transparent;
+      border: 0;
+      padding: 12px 6px 8px;
+      margin: 0 0 10px;
+    }
+    body.phase77-search-home .bot-avatar {
+      width: 92px;
+      height: 92px;
+      border-radius: 50%;
+      object-fit: cover;
+      box-shadow: 0 12px 34px rgba(0,0,0,.42);
+      border: 1px solid rgba(255,255,255,.09);
+    }
+    body.phase77-search-home .bot-hero h2 { font-size: 24px; margin: 10px 0 2px; }
+    body.phase77-search-home #bot_usuario { margin: 0 0 4px !important; font-size: 12px; }
+    body.phase77-search-home #bot_metricas { font-size: 12px; color: #8d98a6; margin-top: 4px; }
+    body.phase77-search-home .global-search-wrap { margin: 12px 0 12px; }
+    body.phase77-search-home #global_search { min-height: 50px; background: #1b222a; border-color: rgba(255,255,255,.08); font-size: 14px; }
+    body.phase77-search-home #palco_header > label,
+    body.phase77-search-home #palco_header_select,
+    body.phase77-search-home #palcos_hint,
+    body.phase77-search-home #palcos { display: none !important; }
+    body.phase77-search-home #palco_header { margin: 0; }
+    body.phase77-search-home #grupo_resumo_card { display: none; }
+    body.phase77-search-home.group-selected #grupo_resumo_card { display: block; margin-top: 8px; }
+    body.phase77-search-home:not(.group-selected) #mesa { display: none !important; }
+    body.phase77-search-home .search-results { border-radius: 14px; background: #171d23; border-color: rgba(255,255,255,.075); }
+    body.phase77-search-home .search-result { min-height: 50px; }
+
+
+    /* Fase 78: páginas internas cautelosas, com BackButton nativo quando disponível. */
+    body.phase78-internal-pages.detail-mode { background: #101419; }
+    body.phase78-internal-pages.detail-mode #inicio_view,
+    body.phase78-internal-pages.detail-mode #palco_header,
+    body.phase78-internal-pages.detail-mode .app-tabs { display: none !important; }
+    body.phase78-internal-pages .detail-nav {
+      position: sticky;
+      top: max(8px, var(--tg-safe-area-inset-top, 0px));
+      z-index: 8;
+      background: rgba(16,20,25,.96);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.075);
+      border-radius: 16px;
+      padding: 8px;
+      margin: 8px 0 10px;
+    }
+    body.phase78-internal-pages .detail-back { background: #1b222a; min-height: 38px; }
+    body.phase78-internal-pages .detail-title { font-size: 19px; }
+    body.phase78-internal-pages.detail-mode .view {
+      background: #161b20;
+      border-color: rgba(255,255,255,.075);
+      border-radius: 18px;
+      padding: 14px;
+    }
+    body.phase78-internal-pages .view > .window-title,
+    body.phase78-internal-pages .view > .section-note:first-of-type { display: none !important; }
+    body.phase78-internal-pages button.nav span:not(.nav-state),
+    body.phase78-internal-pages .nav-state { display: none !important; }
+    body.phase78-internal-pages button.nav { min-height: 49px; }
+    body.phase78-internal-pages button.nav strong { font-size: 14px; }
 
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
-  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact");</script>
+  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system");</script>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -810,7 +973,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
           </div>
         </div>
         <div class="global-search-wrap">
-          <input id="global_search" autocomplete="off" placeholder="Buscar @, ID, grupo ou ação" aria-label="Buscar por usuário, identificador, grupo ou ação" />
+          <input id="global_search" autocomplete="off" placeholder="Buscar grupo, @, ID ou ação" aria-label="Buscar grupo, usuário, identificador ou ação" />
           <div id="global_search_results" class="search-results hidden"></div>
         </div>
         
@@ -1980,6 +2143,14 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           else if (type === "notification" && feedback.notificationOccurred) feedback.notificationOccurred(style || "success");
         } catch (_) {}
       };
+      const tgBackButton = tg && tg.BackButton ? tg.BackButton : null;
+      const setTelegramBackButton = (active) => {
+        try {
+          if (!tgBackButton) return;
+          if (active) tgBackButton.show();
+          else tgBackButton.hide();
+        } catch (_) {}
+      };
       const copyText = async (text) => {
         const clean = String(text || "");
         if (!clean.trim()) return false;
@@ -2130,6 +2301,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (nav) nav.classList.toggle("hidden", !active);
         if (title) title.textContent = active ? viewTitle(id) : "Janela";
         if (subtitle) subtitle.textContent = active ? viewSubtitle(id) : "";
+        setTelegramBackButton(active);
       };
       function applyPreventiveAccessUI() {
         document.querySelectorAll("button.nav[data-view]").forEach((button) => {
@@ -2240,7 +2412,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           if (searchMatches(`${label} ${code}`, q)) results.push({ kind: "Ação", title: label, sub: canalNome(code), view: viewForAction(code) });
         });
         (palcosDisponiveis || []).forEach((palco) => {
-          if (searchMatches(`${palco.titulo || ""} ${palco.alias || ""} ${palco.grp_ref || ""} ${palco.estado || ""}`, q)) results.push({ kind: "Grupo", title: palco.titulo || "Grupo", sub: palco.estado || "grupo disponível", palco });
+          if (searchMatches(`${palco.titulo || ""} ${palco.alias || ""} ${palco.grp_ref || ""} ${palco.estado || ""}`, q)) results.push({ kind: "Grupo", title: palco.titulo || "Grupo", sub: "abrir grupo", palco });
         });
         (currentAlvosRows || []).forEach((row) => {
           const text = `${row.nome || ""} ${row.username || ""} ${row.alvo_ref || ""} ${row.user_ref || ""} ${row.ref || ""}`;
@@ -2295,12 +2467,14 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         openView(button.dataset.view);
       }));
       const detailBackButton = document.getElementById("detail_back");
-      if (detailBackButton) detailBackButton.addEventListener("click", () => {
+      const goBackToHomeList = () => {
         haptic("selection");
         closeAllViews();
         const navList = document.querySelector(".app-tabs");
         if (navList) { try { navList.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) {} }
-      });
+      };
+      if (detailBackButton) detailBackButton.addEventListener("click", goBackToHomeList);
+      try { if (tgBackButton && tgBackButton.onClick) tgBackButton.onClick(goBackToHomeList); } catch (_) {}
       const globalSearchInput = document.getElementById("global_search");
       if (globalSearchInput) globalSearchInput.addEventListener("input", renderGlobalSearch);
       const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
@@ -2349,6 +2523,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         };
         if (hint) hint.textContent = "";
         syncPalcoHeaderSelect(currentPalco && currentPalco.grp_ref);
+        document.body.classList.toggle("group-selected", Boolean(currentPalco));
         renderGlobalSearch();
       }
       function renderCanais(rows) {
@@ -2520,6 +2695,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       async function selectPalco(palco, button) {
         currentPalco = palco;
+        document.body.classList.add("group-selected");
         const headerSelect = document.getElementById("palco_header_select");
         if (headerSelect && headerSelect.value !== palco.grp_ref) headerSelect.value = palco.grp_ref;
         syncPalcoHeaderSelect(palco.grp_ref);
@@ -2595,6 +2771,18 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         el.className = data.length ? "list" : "list muted";
         el.replaceChildren(...(data.length ? data.slice(0, 24).map((row) => adminCard(row, fallback)) : [document.createTextNode(emptyText)]));
       };
+      const governancaCargoLabel = (row) => {
+        if (row && row.modo_maestro) return "Governante principal";
+        const perfil = String(row && row.perfil || "").trim();
+        if (perfil && perfil !== "Governante" && perfil !== "Operador") return perfil;
+        return "Governante designado";
+      };
+      const governancaNomePublico = (row) => {
+        const username = safeUsername(row && row.username);
+        const nomeRaw = String(row && row.nome || "").trim();
+        if (nomeRaw && nomeRaw !== "Governante" && nomeRaw !== "Operador" && nomeRaw !== `@${username}`) return nomeRaw;
+        return username ? `@${username}` : "Nome público ainda não visto";
+      };
       function governancaCard(row, palcoFilter) {
         const item = document.createElement("details");
         item.className = "governance-card small";
@@ -2603,14 +2791,13 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const perfis = Array.isArray(palco && palco.perfis) ? palco.perfis : [];
         const ativos = perfis.filter((perfil) => perfil && perfil.ativo);
         const username = safeUsername(row && row.username);
-        const nomeRaw = String(row && row.nome || "").trim();
-        const nomePublico = nomeRaw && nomeRaw !== "Governante" && nomeRaw !== "Operador" ? nomeRaw : (username ? `@${username}` : "Nome público ainda não visto");
-        const perfilBase = escapeHtml(row && row.perfil || "Governante");
+        const nomePublico = governancaNomePublico(row);
+        const cargo = governancaCargoLabel(row);
         const grupoTitulo = palco && palco.titulo ? String(palco.titulo) : "Grupo";
         const canaisTotal = ativos.reduce((total, perfil) => total + (Array.isArray(perfil.concedidos) ? perfil.concedidos.length : 0), 0);
         const summary = document.createElement("summary");
-        const title = username ? `<a class="person-link" href="https://t.me/${username}" target="_blank" rel="noopener"><span class="governance-person-main">${escapeHtml(nomePublico)} · @${username}</span></a>` : `<span class="governance-person-main">${escapeHtml(nomePublico)}</span>`;
-        summary.innerHTML = `<span>${title}<span class="governance-person-sub">${perfilBase}${row && row.modo_maestro ? ' · dono' : ''} · ${escapeHtml(grupoTitulo)} · ${ativos.length} janela(s) · ${canaisTotal} canal(is)</span></span>`;
+        const nomeHtml = username ? `<a class="person-link" href="https://t.me/${username}" target="_blank" rel="noopener"><span class="governance-person-main">${escapeHtml(nomePublico)}${nomePublico !== `@${username}` ? ` · @${username}` : ""}</span></a>` : `<span class="governance-person-main governance-warn">${escapeHtml(nomePublico)}</span>`;
+        summary.innerHTML = `<span class="governance-summary-line">${nomeHtml}<span class="governance-person-sub"><span class="governance-cargo">${escapeHtml(cargo)}</span> · ${escapeHtml(grupoTitulo)} · ${ativos.length} janela(s) · ${canaisTotal} canal(is)</span></span>`;
         const detail = document.createElement("div");
         detail.className = "governance-detail";
         detail.innerHTML = ativos.length ? ativos.map((perfil) => {
@@ -2621,6 +2808,12 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         }).join("") : '<div class="governance-role locked"><strong>Sem janela ativa neste grupo</strong></div>';
         item.appendChild(summary);
         item.appendChild(detail);
+        item.addEventListener("toggle", () => {
+          if (!item.open) return;
+          const group = item.closest(".governance-grid");
+          if (!group) return;
+          group.querySelectorAll("details.governance-card[open]").forEach((other) => { if (other !== item) other.open = false; });
+        });
         return item;
       }
       function renderGovernanca(containerId, data, opts) {
