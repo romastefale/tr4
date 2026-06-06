@@ -115,3 +115,34 @@ def test_phase7_files_wire_hardening_into_router_and_readyz() -> None:
     assert "log_equalizador_event" in router
     assert "equalizador_hardening_status" in main
     assert "def sanitize_ref" in hardening
+
+
+def test_phase7_rate_limit_buckets_do_not_block_actions() -> None:
+    reset_equalizador_rate_limits()
+    for idx in range(5):
+        check_equalizador_rate_limit(
+            operator_ref="usr_AAAAAAAA",
+            limit_per_minute=5,
+            now=2000.0 + idx,
+            bucket="read",
+        )
+
+    # Leituras iniciais do painel não consomem o balde das ações.
+    result = check_equalizador_rate_limit(
+        operator_ref="usr_AAAAAAAA",
+        limit_per_minute=1,
+        now=2006.0,
+        bucket="action",
+    )
+    assert result["allowed"] is True
+
+
+def test_phase7_session_is_sliding_when_renewal_is_enabled() -> None:
+    reset_equalizador_sessions()
+    identity = TelegramWebAppIdentity(user_id=8505890439, user={"id": 8505890439, "first_name": "Piero"}, auth_date=3000)
+    session = create_equalizador_session(identity=identity, ttl_seconds=60, now=3000)
+    token = str(session["token"])
+
+    assert validate_equalizador_session(token, now=3055, renew_ttl_seconds=60).user_id == 8505890439
+    # Sem renovação, a sessão antiga teria expirado em 3060.
+    assert validate_equalizador_session(token, now=3100).user_id == 8505890439

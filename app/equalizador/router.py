@@ -40,6 +40,7 @@ from app.equalizador.mesa import (
     MesaTargetError,
     mesa_error_public_detail,
     executar_ajuste,
+    executar_mensagens_apagar_lote,
     list_historico_publico,
     register_mensagem_from_link,
     resolve_alvo_manual,
@@ -104,6 +105,7 @@ from app.equalizador.hardening import (
     EqualizadorMesaBusyError,
     EqualizadorRateLimitError,
     EqualizadorSessionError,
+    EqualizadorStorageError,
     check_equalizador_rate_limit,
     create_equalizador_session,
     log_equalizador_event,
@@ -113,6 +115,7 @@ from app.equalizador.hardening import (
     validate_equalizador_session,
 )
 from app.equalizador.security import InitDataError, TelegramWebAppIdentity, extract_tma_authorization, validate_init_data
+from app.equalizador.erros_telegram import telegram_error_payload
 from app.equalizador.seguranca_avancada import (
     assert_security_action_allowed,
     cleanup_security_audit,
@@ -210,6 +213,12 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .palco { width: 100%; text-align: left; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.06); color: inherit; font: inherit; }
     .palco.active { outline: 2px solid var(--tg-theme-button-color, #5b8cff); }
     .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,.08); padding-top: 10px; margin-top: 10px; }
+    .bulk-list { display: grid; gap: 8px; max-height: 260px; overflow: auto; margin-top: 10px; padding-right: 2px; }
+    .bulk-item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: start; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.04); }
+    .bulk-item input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--tg-theme-button-color, #5b8cff); }
+    .bulk-item.locked { opacity: .62; }
+    .bulk-actions { position: sticky; bottom: 0; margin-top: 10px; padding: 10px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: #1a202b; box-shadow: 0 10px 28px rgba(0,0,0,.28); }
+    .nav.access-blocked { opacity: .42; }
     button, select, textarea, input { font: inherit; }
     button.action, button.nav { border: 0; border-radius: 14px; padding: 12px 14px; background: var(--tg-theme-button-color, #5b8cff); color: var(--tg-theme-button-text-color, white); font-weight: 650; }
     .app-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
@@ -426,6 +435,14 @@ _EQUALIZADOR_HTML = """<!doctype html>
               <h3>Mensagens registradas</h3>
               <select id="mensagem_select"></select>
               <div id="mensagens_hint" class="empty small">Nenhuma mensagem carregada ainda.</div>
+              <div id="mensagens_lote_lista" class="bulk-list muted">Seleção em lote aguardando mensagens registradas.</div>
+              <div class="bulk-actions">
+                <div id="mensagens_lote_status" class="empty small">Nenhuma mensagem selecionada para apagamento em lote.</div>
+                <div class="toolbar">
+                  <button id="mensagens_lote_apagar" class="action danger" type="button" disabled>Apagar selecionadas</button>
+                  <button id="mensagens_lote_limpar" class="action secondary" type="button" disabled>Limpar seleção</button>
+                </div>
+              </div>
               <div class="toolbar">
                 <button class="action danger" data-action="mensagens.apagar" type="button">Apagar mensagem</button>
                 <button class="action secondary" data-action="fixados.criar" type="button">Fixar mensagem</button>
@@ -1012,6 +1029,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       let currentPalco = null;
       let currentPainelDinamico = null;
       let mensagensPorRef = new Map();
+      let mensagensSelecionadas = new Set();
       let radioDraftsPorRef = new Map();
       let radioTemplatesPorRef = new Map();
       let radioHistoryRows = [];
@@ -1039,6 +1057,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       const endpoints = {
         "mensagens.enviar": "mensagens/enviar",
         "mensagens.apagar": "mensagens/apagar",
+        "mensagens.apagar_lote": "mensagens/apagar-lote",
         "membros.silenciar": "membros/silenciar",
         "membros.liberar": "membros/liberar",
         "membros.remover": "membros/remover",
@@ -1085,6 +1104,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         "palco.afinar": "Permissões do bot no grupo",
         "mensagens.enviar": "Enviar mensagem",
         "mensagens.apagar": "Apagar mensagem",
+        "mensagens.apagar_lote": "Apagar mensagens em lote",
         "reacoes.limpar": "Limpar reações",
         "reacoes.auditoria": "Auditar reações",
         "reacoes.reactor.silenciar": "Silenciar reactor",
@@ -1141,6 +1161,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         "admins.titulo": "Título personalizado de admin"
       };
       const permissionChannelForAction = {
+        "mensagens.apagar_lote": "mensagens.apagar",
         "convites.exportar_primario": "convites.criar",
         "reacoes.mensagem.limpar": "reacoes.limpar",
         "reacoes.reactor.silenciar": "reacoes.reactor.silenciar"
@@ -1149,7 +1170,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       const canalNome = (codigo) => actionLabels[codigo] || String(codigo || "canal").replace(/[._]/g, " ");
       const diagnosticActionGroups = [
         ["Perfil do grupo", ["grupo.titulo", "grupo.descricao", "grupo.foto", "grupo.foto.remover"]],
-        ["Mensagens", ["mensagens.enviar", "mensagens.apagar", "fixados.criar", "fixados.remover", "reacoes.mensagem.limpar"]],
+        ["Mensagens", ["mensagens.enviar", "mensagens.apagar", "mensagens.apagar_lote", "fixados.criar", "fixados.remover", "reacoes.mensagem.limpar"]],
         ["Reações", ["reacoes.auditoria", "reacoes.recentes.limpar", "reacoes.reactor.silenciar"]],
         ["Pessoas", ["membros.silenciar", "membros.liberar", "membros.remover", "membros.reintegrar", "membros.tag.definir", "admins.promover", "admins.rebaixar", "admins.titulo"]],
         ["Convites e entrada", ["convites.criar", "convites.editar", "convites.revogar", "convites.exportar_primario", "entradas.aprovar", "entradas.recusar"]],
@@ -1386,9 +1407,46 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       };
       // Compatibilidade lógica da Fase 28: const canRun = (codigo) => hasCanal(codigo) && afinacaoLoaded && direitosDisponiveis.has(codigo);
       const canRun = (codigo) => diagnosticForAction(codigo).ok;
+      const viewRequirementActions = {
+        mensagens_view: ["mensagens.enviar", "mensagens.apagar", "fixados.criar", "fixados.remover"],
+        reacoes_view: ["reacoes.auditoria", "reacoes.recentes.limpar", "reacoes.reactor.silenciar"],
+        convites_view: ["convites.criar", "convites.editar", "convites.revogar", "entradas.aprovar", "entradas.recusar"],
+        topicos_view: ["topicos.criar", "topicos.editar", "topicos.fechar", "topicos.reabrir", "topicos.apagar"],
+        pessoas_view: ["membros.silenciar", "membros.liberar", "membros.remover", "membros.reintegrar", "admins.promover", "admins.rebaixar"],
+        perfil_view: ["grupo.titulo", "grupo.descricao", "grupo.foto"]
+      };
+      const diagnosticForView = (id) => {
+        const actions = viewRequirementActions[id] || [];
+        if (!actions.length || !currentPalco || !afinacaoLoaded) return { ok: true, motivos: [] };
+        const diagnostics = actions.map((action) => diagnosticForAction(action));
+        if (diagnostics.some((row) => row.ok)) return { ok: true, motivos: [] };
+        const motivos = [];
+        diagnostics.forEach((row) => (row.motivos || []).forEach((motivo) => { if (!motivos.includes(motivo)) motivos.push(motivo); }));
+        return { ok: false, motivos: motivos.slice(0, 3) };
+      };
+      function applyPreventiveAccessUI() {
+        document.querySelectorAll("button.nav[data-view]").forEach((button) => {
+          const viewId = button.dataset.view || "";
+          const diagnostic = diagnosticForView(viewId);
+          const blocked = Boolean(currentPalco && afinacaoLoaded && !diagnostic.ok);
+          button.classList.toggle("access-blocked", blocked);
+          if (blocked) {
+            button.disabled = true;
+            button.title = "Janela bloqueada preventivamente: " + diagnostic.motivos.join(" · ");
+          } else if (!((viewId === "maestro_view" || viewId === "config_view" || viewId === "seguranca_view") && !modoMaestroPermitido)) {
+            button.disabled = false;
+            button.title = "";
+          }
+        });
+      }
       const openView = (id) => {
         if ((id === "maestro_view" || id === "config_view" || id === "seguranca_view") && !modoMaestroPermitido) {
           toast("Janela restrita ao administrador principal.", "warn");
+          id = "mesa_view";
+        }
+        const viewDiagnostic = diagnosticForView(id);
+        if (currentPalco && afinacaoLoaded && !viewDiagnostic.ok) {
+          toast("Janela bloqueada preventivamente: " + viewDiagnostic.motivos.join(" · "), "warn");
           id = "mesa_view";
         }
         for (const el of document.querySelectorAll(".view")) el.classList.add("hidden");
@@ -1412,6 +1470,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           document.getElementById("config_view").classList.add("hidden");
           const segView = document.getElementById("seguranca_view"); if (segView) segView.classList.add("hidden");
         }
+        applyPreventiveAccessUI();
       };
       document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
       const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
@@ -1456,6 +1515,64 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           return;
         }
         for (const row of rows) select.appendChild(option(row[valueKey], row[labelKey] || row[valueKey]));
+      }
+      function renderMensagensLote(rows) {
+        const lista = document.getElementById("mensagens_lote_lista");
+        if (!lista) return;
+        const data = Array.isArray(rows) ? rows : [];
+        const refsAtuais = new Set(data.map((row) => String(row.msg_ref || "")).filter(Boolean));
+        mensagensSelecionadas = new Set(Array.from(mensagensSelecionadas).filter((ref) => refsAtuais.has(ref)));
+        if (!data.length) {
+          lista.className = "bulk-list muted";
+          lista.textContent = "Nenhuma mensagem registrada para seleção em lote.";
+          updateBulkDeleteControls();
+          return;
+        }
+        lista.className = "bulk-list";
+        lista.replaceChildren(...data.slice(0, 80).map((row) => {
+          const ref = String(row.msg_ref || "");
+          const apagavel = row.apagavel !== false;
+          const item = document.createElement("label");
+          item.className = "bulk-item" + (apagavel ? "" : " locked");
+          const checked = mensagensSelecionadas.has(ref) ? "checked" : "";
+          const disabled = apagavel ? "" : "disabled";
+          const idade = typeof row.idade_segundos === "number" ? ` · ${Math.floor(row.idade_segundos / 60)} min` : "";
+          item.innerHTML = `<input type="checkbox" data-msg-ref="${escapeHtml(ref)}" ${checked} ${disabled} />` +
+            `<span><strong>${escapeHtml(row.resumo || ref || "Mensagem")}</strong><br><span class="muted">referência interna${idade}${apagavel ? "" : " · fora da janela de apagamento"}</span></span>`;
+          const input = item.querySelector("input");
+          if (input) input.addEventListener("change", () => toggleMensagemSelecionada(ref, input.checked));
+          return item;
+        }));
+        updateBulkDeleteControls();
+      }
+      function updateBulkDeleteControls() {
+        const status = document.getElementById("mensagens_lote_status");
+        const apagar = document.getElementById("mensagens_lote_apagar");
+        const limpar = document.getElementById("mensagens_lote_limpar");
+        const selected = Array.from(mensagensSelecionadas).filter((ref) => {
+          const row = mensagensPorRef.get(ref);
+          return row && row.apagavel !== false;
+        });
+        const diagnostic = diagnosticForAction("mensagens.apagar_lote");
+        const canDelete = selected.length > 0 && selected.length <= 100 && diagnostic.ok;
+        if (status) {
+          if (!selected.length) status.textContent = "Nenhuma mensagem selecionada para apagamento em lote.";
+          else if (!diagnostic.ok) status.textContent = `${selected.length} selecionada(s). Bloqueado: ${diagnostic.motivos.join(" · ")}`;
+          else status.textContent = `${selected.length} mensagem(ns) selecionada(s). O servidor executará uma única chamada ao Telegram.`;
+          status.className = "empty small " + (canDelete ? "ok" : selected.length ? "warn" : "");
+        }
+        if (apagar) { apagar.disabled = !canDelete; apagar.title = canDelete ? "" : (selected.length ? diagnostic.motivos.join(" · ") : "Selecione mensagens apagáveis"); }
+        if (limpar) limpar.disabled = !selected.length;
+      }
+      function toggleMensagemSelecionada(ref, checked) {
+        if (!ref) return;
+        if (checked) mensagensSelecionadas.add(ref);
+        else mensagensSelecionadas.delete(ref);
+        updateBulkDeleteControls();
+      }
+      function limparMensagensSelecionadas() {
+        mensagensSelecionadas = new Set();
+        renderMensagensLote(Array.from(mensagensPorRef.values()));
       }
       function updateButtons() {
         const mensagemRef = document.getElementById("mensagem_select").value;
@@ -1532,6 +1649,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           button.disabled = disabled;
           button.title = title;
         });
+        updateBulkDeleteControls();
+        applyPreventiveAccessUI();
         if (currentPalco && afinacaoLoaded) {
           statusMesa("Painel pronto. Botões liberados dependem do canal concedido, alvo selecionado e direito real do bot.", "ok");
         } else if (currentPalco) {
@@ -2497,7 +2616,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           rate_limit_per_minute: value("cfg_rate"),
           hide_technical_ids: true,
           initdata_max_age_seconds: 600,
-          session_ttl_seconds: 900
+          session_ttl_seconds: 28800
         };
       }
       async function gerarConfigRaw() {
@@ -2767,6 +2886,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         }
         const mensagensRows = mensagensRes.mensagens || [];
         mensagensPorRef = new Map(mensagensRows.map((row) => [row.msg_ref, row]));
+        renderMensagensLote(mensagensRows);
         const mensagensOptions = mensagensRows.map((row) => Object.assign({}, row, {
           resumo: row.apagavel === false ? row.resumo + " · fora da janela de apagar" : row.resumo
         }));
@@ -2851,6 +2971,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const row = data.mensagem;
         if (row && row.msg_ref) {
           mensagensPorRef.set(row.msg_ref, row);
+          renderMensagensLote(Array.from(mensagensPorRef.values()));
           const select = document.getElementById("mensagem_select");
           select.prepend(option(row.msg_ref, row.resumo || row.msg_ref));
           select.value = row.msg_ref;
@@ -3008,6 +3129,37 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         return {};
       }
 
+      async function apagarMensagensLote() {
+        if (!currentPalco) { toast("Escolha um grupo antes de apagar em lote.", "warn"); return; }
+        const refs = Array.from(mensagensSelecionadas).filter((ref) => {
+          const row = mensagensPorRef.get(ref);
+          return row && row.apagavel !== false;
+        });
+        if (!refs.length) { toast("Selecione mensagens apagáveis.", "warn"); return; }
+        if (refs.length > 100) { toast("Selecione no máximo 100 mensagens por lote.", "warn"); return; }
+        const diagnostic = diagnosticForAction("mensagens.apagar_lote");
+        if (!diagnostic.ok) { toast("Apagamento em lote bloqueado: " + diagnostic.motivos.join(" · "), "warn"); return; }
+        if (!confirm("Confirmar apagamento em lote de " + refs.length + " mensagem(ns)?")) return;
+        const button = document.getElementById("mensagens_lote_apagar");
+        if (button) button.disabled = true;
+        statusMesa("Apagando " + refs.length + " mensagem(ns) em lote…", "muted");
+        const url = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/" + endpoints["mensagens.apagar_lote"];
+        const res = await api(url, { method: "POST", headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }), body: JSON.stringify({ msg_refs: refs }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail = detailPublico(data.detail || data);
+          statusMesa("Apagamento em lote não concluído: " + detail, "bad");
+          toast(detail, "bad");
+          updateButtons();
+          return;
+        }
+        mensagensSelecionadas = new Set();
+        const ignoradas = Array.isArray(data.ignoradas) && data.ignoradas.length ? ` · ${data.ignoradas.length} ignorada(s)` : "";
+        toast((data.apagadas || refs.length) + " mensagem(ns) apagada(s)" + ignoradas + ".", "ok");
+        statusMesa(data.resumo || "Apagamento em lote concluído.", "ok");
+        await loadPalcoData();
+      }
+
       async function runPhotoAction(action) {
         if (!currentPalco) return;
         if (!confirm("Confirmar ajuste: " + (actionLabels[action] || action) + "?")) return;
@@ -3105,6 +3257,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       document.getElementById("reactor_select").addEventListener("change", updateButtons);
       document.getElementById("resolver_mensagem").addEventListener("click", resolveMensagemManual);
       document.getElementById("resolver_alvo").addEventListener("click", resolveAlvoManual);
+      document.getElementById("mensagens_lote_apagar").addEventListener("click", apagarMensagensLote);
+      document.getElementById("mensagens_lote_limpar").addEventListener("click", limparMensagensSelecionadas);
       document.getElementById("copiar_convite").addEventListener("click", async () => {
         const value = document.getElementById("convite_resultado").value.trim();
         if (!value) return;
@@ -3275,13 +3429,22 @@ def _identity_from_authorization(authorization: str | None) -> TelegramWebAppIde
     try:
         header = (authorization or "").strip()
         if header.lower().startswith("eqs "):
-            return validate_equalizador_session(header[4:].strip())
+            return validate_equalizador_session(
+                header[4:].strip(),
+                renew_ttl_seconds=settings.TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
+            )
         init_data = extract_tma_authorization(header)
         return validate_init_data(
             init_data,
             bot_token=settings.TELEGRAM_BOT_TOKEN,
             max_age_seconds=settings.TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
         )
+    except EqualizadorStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Sessão temporariamente indisponível. Tente novamente em alguns segundos.",
+            headers={"Retry-After": "3"},
+        ) from exc
     except (InitDataError, EqualizadorSessionError) as exc:
         raise HTTPException(status_code=401, detail="Acesso indisponível.") from exc
 
@@ -3301,9 +3464,11 @@ def _require_identity(authorization: str | None, *, rate_kind: str = "action") -
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
     operador_ref = _operator_ref(identity)
     try:
+        limit_per_minute = 0 if (rate_kind == "action" and _is_maestro(identity)) else _rate_limit_for(rate_kind)
         check_equalizador_rate_limit(
             operator_ref=operador_ref,
-            limit_per_minute=_rate_limit_for(rate_kind),
+            limit_per_minute=limit_per_minute,
+            bucket=rate_kind,
         )
     except EqualizadorRateLimitError as exc:
         raise HTTPException(status_code=429, detail="Painel temporariamente indisponível.") from exc
@@ -3510,6 +3675,36 @@ async def _read_json_payload(request: Request) -> dict[str, object]:
     return payload
 
 
+def _mesa_http_detail(exc: BaseException, *, fallback: str = "Ajuste não concluído.") -> dict[str, object]:
+    detail = mesa_error_public_detail(exc) or fallback
+    payload: dict[str, object] = {"motivo_publico": detail, "categoria": "mesa"}
+    info = getattr(exc, "info", None)
+    if info is not None:
+        try:
+            payload.update(telegram_error_payload(info))
+        except Exception:
+            pass
+    return payload
+
+
+def _mesa_http_status(exc: BaseException, *, default: int = 409) -> int:
+    if isinstance(exc, MesaRightError):
+        return 403
+    info = getattr(exc, "info", None)
+    category = str(getattr(info, "category", "") or "")
+    if category == "rate_limit":
+        return 429
+    if category in {"forbidden", "bot_lacks_admin", "bot_lacks_permissions"}:
+        return 403
+    if category == "bad_request":
+        return 400
+    if category in {"target_not_admin", "target_already_admin", "target_is_creator", "conflict"}:
+        return 409
+    if category == "telegram_unavailable":
+        return 503
+    return default
+
+
 async def _execute_action_endpoint(
     *,
     grp_ref: str,
@@ -3561,10 +3756,10 @@ async def _execute_action_endpoint(
         raise HTTPException(status_code=404, detail="Referência indisponível.") from exc
     except MesaRightError as exc:
         log_equalizador_event("EQUALIZADOR_AJUSTE_REFUSED", ator_ref=ator_ref, palco_ref=palco_ref, ajuste=ajuste)
-        raise HTTPException(status_code=409, detail="Permissão real do bot insuficiente.") from exc
+        raise HTTPException(status_code=_mesa_http_status(exc), detail={"motivo_publico": "Permissão real do bot insuficiente.", "categoria": "bot_lacks_permissions"}) from exc
     except MesaError as exc:
         log_equalizador_event("EQUALIZADOR_AJUSTE_FAIL", ator_ref=ator_ref, palco_ref=palco_ref, ajuste=ajuste)
-        raise HTTPException(status_code=409, detail=mesa_error_public_detail(exc)) from exc
+        raise HTTPException(status_code=_mesa_http_status(exc), detail=_mesa_http_detail(exc)) from exc
 
 
 async def _execute_maestro_endpoint(
@@ -4722,6 +4917,45 @@ async def equalizador_mensagens_apagar(
         request=request,
         authorization=authorization,
     )
+
+
+@router.post("/api/palcos/{grp_ref}/mensagens/apagar-lote")
+async def equalizador_mensagens_apagar_lote(
+    grp_ref: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.apagar")
+    payload = await _read_json_payload(request)
+    ator_ref = _operator_ref(identity)
+    palco_ref = str(palco["ui_ref"])
+    try:
+        async with mesa_operation_lock(f"{palco_ref}:mensagens.apagar_lote"):
+            result = await executar_mensagens_apagar_lote(
+                palco=palco,
+                ator_ref=ator_ref,
+                payload=payload,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+            )
+        log_equalizador_event("EQUALIZADOR_AJUSTE_OK", ator_ref=ator_ref, palco_ref=palco_ref, ajuste="mensagens.apagar_lote")
+        return result
+    except EqualizadorMesaBusyError as exc:
+        log_equalizador_event("EQUALIZADOR_AJUSTE_BUSY", ator_ref=ator_ref, palco_ref=palco_ref, ajuste="mensagens.apagar_lote")
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except MesaNotFoundError as exc:
+        log_equalizador_event("EQUALIZADOR_AJUSTE_REFUSED", ator_ref=ator_ref, palco_ref=palco_ref, ajuste="mensagens.apagar_lote")
+        raise HTTPException(status_code=404, detail="Referência indisponível.") from exc
+    except MesaRightError as exc:
+        log_equalizador_event("EQUALIZADOR_AJUSTE_REFUSED", ator_ref=ator_ref, palco_ref=palco_ref, ajuste="mensagens.apagar_lote")
+        raise HTTPException(status_code=_mesa_http_status(exc), detail={"motivo_publico": "Permissão real do bot insuficiente.", "categoria": "bot_lacks_permissions"}) from exc
+    except MesaError as exc:
+        log_equalizador_event("EQUALIZADOR_AJUSTE_FAIL", ator_ref=ator_ref, palco_ref=palco_ref, ajuste="mensagens.apagar_lote")
+        raise HTTPException(status_code=_mesa_http_status(exc), detail=_mesa_http_detail(exc)) from exc
 
 
 @router.post("/api/palcos/{grp_ref}/membros/silenciar")

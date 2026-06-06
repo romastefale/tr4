@@ -41,7 +41,7 @@ from app.config.settings import (
 from app.db.database import engine, init_db, run_migrations
 from app.security.rate_limit import rate_limit_status
 from app.equalizador.hardening import equalizador_hardening_status
-from app.equalizador.ddx import equalizador_ddx_preprocess_update
+from app.equalizador.ddx import equalizador_ddx_preprocess_update, process_due_ddx_soft_deletions
 from app.equalizador.reacoes import record_reaction_update_payload
 from app.equalizador.novos_membros import equalizador_novos_membros_preprocess_update
 
@@ -59,6 +59,7 @@ _telegram_ready = False
 _telegram_startup_task: asyncio.Task | None = None
 _telegram_startup_error: str | None = None
 _radio_scheduler_task: asyncio.Task | None = None
+_ddx_scheduler_task: asyncio.Task | None = None
 
 
 def _message_from_update(update: Update):
@@ -146,9 +147,29 @@ async def _radio_scheduler_loop() -> None:
         await asyncio.sleep(60)
 
 
+async def _ddx_scheduler_loop() -> None:
+    """Durable Equalizador DDX soft-delete scheduler.
+
+    In-memory tasks handle the normal 10-minute delay while the process stays
+    alive. This loop processes overdue rows from eq_ddx_soft_pending after a
+    deploy/restart so scheduled DDX deletions are not lost.
+    """
+    if not TR4_EQUALIZADOR_ENABLED or not TELEGRAM_BOT_TOKEN:
+        return
+    while True:
+        try:
+            if bot is not None:
+                await process_due_ddx_soft_deletions(bot, limit=20)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("EQUALIZADOR_DDX_SCHEDULER_TICK_FAILED", exc_info=True)
+        await asyncio.sleep(10)
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
-    global bot, _telegram_startup_task, _telegram_ready, _telegram_startup_error, _radio_scheduler_task
+    global bot, _telegram_startup_task, _telegram_ready, _telegram_startup_error, _radio_scheduler_task, _ddx_scheduler_task
     missing_env = validate_required_env()
     if missing_env:
         logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
@@ -166,6 +187,9 @@ async def on_startup() -> None:
 
     try:
         bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        if TR4_EQUALIZADOR_ENABLED and _ddx_scheduler_task is None:
+            _ddx_scheduler_task = asyncio.create_task(_ddx_scheduler_loop())
+            logger.info("EQUALIZADOR_DDX_SCHEDULER_SCHEDULED")
         _configure_dispatcher_once()
         _telegram_startup_task = asyncio.create_task(_finish_telegram_startup())
         logger.info("TELEGRAM_STARTUP_SCHEDULED")
@@ -179,7 +203,7 @@ async def on_startup() -> None:
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    global bot, _telegram_startup_task, _radio_scheduler_task
+    global bot, _telegram_startup_task, _radio_scheduler_task, _ddx_scheduler_task
     if _telegram_startup_task and not _telegram_startup_task.done():
         _telegram_startup_task.cancel()
         try:
@@ -193,6 +217,13 @@ async def on_shutdown() -> None:
         except asyncio.CancelledError:
             pass
     _radio_scheduler_task = None
+    if _ddx_scheduler_task and not _ddx_scheduler_task.done():
+        _ddx_scheduler_task.cancel()
+        try:
+            await _ddx_scheduler_task
+        except asyncio.CancelledError:
+            pass
+    _ddx_scheduler_task = None
     await shutdown_telegram_bot()
     if bot:
         await bot.session.close()

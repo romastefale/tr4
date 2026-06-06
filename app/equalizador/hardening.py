@@ -26,6 +26,10 @@ class EqualizadorSessionError(RuntimeError):
     """Raised when an Equalizador short session is missing or expired."""
 
 
+class EqualizadorStorageError(RuntimeError):
+    """Raised when the persisted Equalizador session store is temporarily unavailable."""
+
+
 class EqualizadorMesaBusyError(RuntimeError):
     """Raised when a palco/action lock is already held."""
 
@@ -78,11 +82,21 @@ def log_equalizador_event(event: str, *, ator_ref: object, palco_ref: object | N
     logger.info("%s | ator=%s | palco=%s | ajuste=%s", safe_event, safe_actor, safe_palco, safe_ajuste)
 
 
-def check_equalizador_rate_limit(*, operator_ref: str, limit_per_minute: int, now: float | None = None) -> dict[str, object]:
-    """Apply an in-memory fixed-window rate limit per sanitized operator ref."""
+def check_equalizador_rate_limit(
+    *,
+    operator_ref: str,
+    limit_per_minute: int,
+    now: float | None = None,
+    bucket: str = "action",
+) -> dict[str, object]:
+    """Apply an in-memory fixed-window rate limit per operator and bucket.
+
+    Read/bootstrap calls are intentionally isolated from write actions so that
+    the heavy initial dashboard refresh cannot consume the action quota.
+    """
     if limit_per_minute <= 0:
         return {"allowed": True, "remaining": None, "reset_at": None}
-    key = sanitize_ref(operator_ref)
+    key = f"{sanitize_ref(operator_ref)}:{sanitize_action(bucket, fallback='action')}"
     current = _now_ts(now)
     window_start = current - 60.0
     hits = [stamp for stamp in _rate_windows.get(key, []) if stamp > window_start]
@@ -118,8 +132,9 @@ def create_equalizador_session(
         from app.equalizador.session_store import save_session
 
         save_session(token=token, identity=identity, issued_at=issued_at, expires_at=expires_at)
-    except Exception:
-        logger.debug("equalizador_session_store_save_failed", exc_info=True)
+    except Exception as exc:
+        logger.warning("equalizador_session_store_save_failed", exc_info=True)
+        raise EqualizadorStorageError("session_store_save_failed") from exc
     return {
         "token": token,
         "expira_em": _iso_from_ts(expires_at),
@@ -127,7 +142,12 @@ def create_equalizador_session(
     }
 
 
-def validate_equalizador_session(token: str, *, now: float | None = None) -> TelegramWebAppIdentity:
+def validate_equalizador_session(
+    token: str,
+    *,
+    now: float | None = None,
+    renew_ttl_seconds: int | None = None,
+) -> TelegramWebAppIdentity:
     value = str(token or "").strip()
     if not value:
         raise EqualizadorSessionError("session_missing")
@@ -138,8 +158,9 @@ def validate_equalizador_session(token: str, *, now: float | None = None) -> Tel
             from app.equalizador.session_store import load_session
 
             loaded = load_session(value)
-        except Exception:
-            loaded = None
+        except Exception as exc:
+            logger.warning("equalizador_session_store_load_failed", exc_info=True)
+            raise EqualizadorStorageError("session_store_load_failed") from exc
         if not loaded:
             raise EqualizadorSessionError("session_not_found")
         identity, issued_at, expires_at = loaded
@@ -154,6 +175,32 @@ def validate_equalizador_session(token: str, *, now: float | None = None) -> Tel
         except Exception:
             logger.debug("equalizador_session_store_delete_failed", exc_info=True)
         raise EqualizadorSessionError("session_expired")
+
+    ttl = int(renew_ttl_seconds or 0)
+    if ttl > 0:
+        new_expires_at = current + ttl
+        remaining = int(session.expires_at) - current
+        renew_threshold = max(300, ttl // 2)
+        if new_expires_at > int(session.expires_at) and remaining <= renew_threshold:
+            session = EqualizadorSession(
+                token=value,
+                identity=session.identity,
+                issued_at=session.issued_at,
+                expires_at=new_expires_at,
+            )
+            _sessions[value] = session
+            try:
+                from app.equalizador.session_store import save_session
+
+                save_session(
+                    token=value,
+                    identity=session.identity,
+                    issued_at=session.issued_at,
+                    expires_at=new_expires_at,
+                )
+            except Exception as exc:
+                logger.warning("equalizador_session_store_renew_failed", exc_info=True)
+                raise EqualizadorStorageError("session_store_renew_failed") from exc
     return session.identity
 
 

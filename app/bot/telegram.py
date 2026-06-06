@@ -22,6 +22,8 @@ from app.config import settings
 from app.config.settings import LASTFM_API_KEY
 from app.services.connection_check import connect_hint_for, is_user_connected
 from app.services.lastfm import lastfm_service
+from app.services.lastfm_capsule import lastfm_capsule_service
+from app.services.lyrics import lyrics_service
 from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service
@@ -1233,4 +1235,14 @@ def _register_handlers(dp: Dispatcher) -> None:
 
 
 async def shutdown_telegram_bot() -> None:
-    await spotify_service.shutdown()
+    shutdown_steps = (
+        ("spotify", spotify_service.shutdown),
+        ("lastfm", lastfm_service.shutdown),
+        ("lastfm_capsule", lastfm_capsule_service.shutdown),
+        ("lyrics", lyrics_service.shutdown),
+    )
+    for service_name, shutdown in shutdown_steps:
+        try:
+            await shutdown()
+        except Exception:
+            logger.exception("SERVICE_SHUTDOWN_FAILED service=%s", service_name)

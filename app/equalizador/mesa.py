@@ -1053,6 +1053,115 @@ def build_action_payload(
     raise MesaError("ajuste_indisponivel")
 
 
+
+def _unique_msg_refs(raw_refs: object) -> list[str]:
+    if not isinstance(raw_refs, list):
+        raise MesaTargetError("Informe uma lista de mensagens.")
+    refs: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_refs:
+        ref = _safe_text(raw)
+        if not ref.startswith("msg_"):
+            raise MesaNotFoundError("mensagem_indisponivel")
+        if ref in seen:
+            continue
+        seen.add(ref)
+        refs.append(ref)
+    if not refs:
+        raise MesaTargetError("Selecione ao menos uma mensagem.")
+    if len(refs) > 100:
+        raise MesaTargetError("Selecione no máximo 100 mensagens por lote.")
+    return refs
+
+
+async def executar_mensagens_apagar_lote(
+    *,
+    palco: dict[str, object],
+    ator_ref: str,
+    payload: dict[str, Any],
+    bot_token: str,
+    alias_secret: str,
+    db_engine: Engine = default_engine,
+    telegram_api_call: TelegramApiCallable = _telegram_api_call,
+) -> dict[str, object]:
+    """Delete 1-100 known message aliases in one Bot API request.
+
+    The frontend still sends only public msg_ref aliases. The real chat_id and
+    message_ids are resolved server-side to preserve Equalizador privacy rules.
+    """
+    spec = ACTION_SPECS["mensagens.apagar"]
+    palco_id = int(palco["telegram_chat_id"])
+    palco_ref = str(palco["ui_ref"])
+    refs = _unique_msg_refs(payload.get("msg_refs") or payload.get("mensagens") or payload.get("message_refs"))
+
+    resolved: list[tuple[str, dict[str, object]]] = []
+    skipped: list[dict[str, object]] = []
+    for ref in refs:
+        message = resolve_mensagem_ref(palco_id=palco_id, msg_ref=ref, db_engine=db_engine)
+        if mensagem_fora_da_janela_apagar(message):
+            skipped.append({"msg_ref": ref, "motivo": "fora_da_janela_telegram"})
+            continue
+        resolved.append((ref, message))
+    if not resolved:
+        raise MesaTargetError("Nenhuma mensagem selecionada está dentro da janela de apagamento do Telegram.")
+
+    message_ids = [int(message["telegram_message_id"]) for _, message in resolved]
+    telegram_payload = {"chat_id": palco_id, "message_ids": message_ids}
+    try:
+        await ensure_bot_right(
+            bot_token=bot_token,
+            chat_id=palco_id,
+            required_right=spec.direito,
+            telegram_api_call=telegram_api_call,
+        )
+        await telegram_api_call(bot_token, "deleteMessages", telegram_payload)
+        for ref, _ in resolved:
+            mark_mensagem_inativa(palco_id=palco_id, msg_ref=ref, db_engine=db_engine)
+        resumo = f"{len(resolved)} mensagens apagadas em lote"
+        if skipped:
+            resumo += f"; {len(skipped)} ignoradas por limite do Telegram"
+        history = record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=None,
+            ajuste="mensagens.apagar_lote",
+            status="concluido",
+            resumo_publico=resumo,
+            payload_tecnico={"method": "deleteMessages", "message_count": len(resolved), "skipped": skipped},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        return {
+            "ok": True,
+            "ajuste": "mensagens.apagar_lote",
+            "status": "concluido",
+            "apagadas": len(resolved),
+            "ignoradas": skipped,
+            "historico_ref": history["historico_ref"],
+            "resumo": history["resumo"],
+        }
+    except Exception as exc:
+        detail = mesa_error_public_detail(exc)
+        history = record_historico(
+            ator_ref=ator_ref,
+            palco_ref=palco_ref,
+            alvo_ref=None,
+            ajuste="mensagens.apagar_lote",
+            status="falhou",
+            resumo_publico=f"mensagens.apagar_lote não concluído · {detail}",
+            payload_tecnico={"erro": _safe_error_text(exc, fallback=exc.__class__.__name__), "motivo_publico": detail, "method": "deleteMessages"},
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
+        if isinstance(exc, MesaRightError):
+            raise
+        if isinstance(exc, MesaNotFoundError):
+            raise
+        if isinstance(exc, MesaError):
+            raise
+        raise MesaError("ajuste_falhou") from exc
+
+
 async def executar_ajuste(
     *,
     ajuste: str,

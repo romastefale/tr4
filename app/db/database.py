@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -33,9 +33,30 @@ _prepare_sqlite_directory()
 
 connect_args: dict = {}
 if DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    # check_same_thread=False is required because FastAPI can use worker threads.
+    # timeout gives SQLite time to wait for a writer instead of failing instantly.
+    connect_args = {"check_same_thread": False, "timeout": 10.0}
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
+
+
+if DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record) -> None:  # pragma: no cover - SQLAlchemy hook
+        """Make SQLite safer under concurrent Equalizador/Webhook load.
+
+        WAL allows readers to continue while a writer is active. busy_timeout
+        prevents transient writer contention from surfacing as immediate
+        OperationalError and being misreported as an authentication failure.
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA busy_timeout=10000;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+        finally:
+            cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

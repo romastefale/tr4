@@ -32,11 +32,11 @@ TR4_EQUALIZADOR_PALCO_IDS=
 TR4_EQUALIZADOR_CANAIS=
 TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS=true
 TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS=600
-TR4_EQUALIZADOR_SESSION_TTL_SECONDS=900
-TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE=30
+TR4_EQUALIZADOR_SESSION_TTL_SECONDS=28800
+TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE=120
 ```
 
-As APIs `/equalizador/api/me`, `/equalizador/api/palcos`, `/equalizador/api/canais` e `/equalizador/api/palcos/{grp_ref}/afinacao` exigem `Authorization: tma <Telegram.WebApp.initData>` ou sessão curta `Authorization: eqs <token>`. A sessão curta é opaca, expira por `TR4_EQUALIZADOR_SESSION_TTL_SECONDS` e não contém ID Telegram codificado. As rotas validam assinatura e `auth_date` no backend, conferem allowlist por variável e aplicam `TR4_EQUALIZADOR_CANAIS` em negação por padrão. A resposta retorna aliases públicos, nomes públicos, `@username` público quando existir, link `https://t.me/<username>` quando aplicável, perfis, canais concedidos, títulos de grupos e diagnóstico de direitos reais do bot. IDs numéricos continuam internos; a interface não usa link interno por ID do Telegram.
+As APIs `/equalizador/api/me`, `/equalizador/api/palcos`, `/equalizador/api/canais` e `/equalizador/api/palcos/{grp_ref}/afinacao` exigem `Authorization: tma <Telegram.WebApp.initData>` ou sessão curta `Authorization: eqs <token>`. A sessão curta é opaca, expira por `TR4_EQUALIZADOR_SESSION_TTL_SECONDS` e é renovada enquanto houver atividade válida e não contém ID Telegram codificado. As rotas validam assinatura e `auth_date` no backend, conferem allowlist por variável e aplicam `TR4_EQUALIZADOR_CANAIS` em negação por padrão. A resposta retorna aliases públicos, nomes públicos, `@username` público quando existir, link `https://t.me/<username>` quando aplicável, perfis, canais concedidos, títulos de grupos e diagnóstico de direitos reais do bot. IDs numéricos continuam internos; a interface não usa link interno por ID do Telegram.
 
 A rota de permissões do bot exige o canal crítico `grupo.afinar` e chama a Bot API em modo leitura (`getMe` e `getChatMember`) para verificar se o bot está como administrador no grupo e quais direitos estão disponíveis.
 
@@ -71,7 +71,7 @@ GET  /equalizador/api/canais/distribuicao
 
 `silencio.ativar` usa `setChatPermissions` para restringir permissões padrão de não administradores no grupo. `transmissao.enviar` usa `sendMessage` e registra a mensagem enviada como `msg_ref` quando a Bot API retorna `message_id`. A exportação de histórico retorna somente dados públicos; `payload_tecnico_json` não é exposto. A distribuição de canais mostra aliases (`usr_ref`, `grp_ref`) e escopos musicais, nunca IDs numéricos.
 
-Na fase 7 entram os reforços de hardening: rate limit por operador (`TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE`), sessão curta opaca, trava de mesa para impedir ações concorrentes sobre o mesmo grupo/ajuste, logs operacionais sanitizados e estado do Equalizador em `/readyz`. Logs do Equalizador usam aliases como `usr_...` e `grp_...`; payloads, IDs numéricos e `message_id` não são enviados aos logs públicos; `@username` público pode aparecer na interface quando já conhecido, com link t.me.
+Na fase 7 entram os reforços de hardening: rate limit por operador (`TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE`, padrão 120/min; Maestro não consome cota em rotas de ação), sessão curta opaca, trava de mesa para impedir ações concorrentes sobre o mesmo grupo/ajuste, logs operacionais sanitizados e estado do Equalizador em `/readyz`. Logs do Equalizador usam aliases como `usr_...` e `grp_...`; payloads, IDs numéricos e `message_id` não são enviados aos logs públicos; `@username` público pode aparecer na interface quando já conhecido, com link t.me.
 
 
 ## Validação
@@ -172,3 +172,16 @@ Guia operacional: `docs/FASE54_8_CONSOLIDACAO_RAILWAY.md`.
 ## Fase 55.7 — Reações, auditoria e reactors
 
 Adiciona janela Reações no Equalizador, auditoria sanitizada de `message_reaction`, seleção de reactors recentes e silêncio de reactor em modo conservador, sem expor ID real na interface.
+
+## Fase 58-59 consolidada — UI de lote e erros estruturados
+
+Esta fase integra no Mini App a operação real de apagar mensagens em lote criada na fase 57. A tela de Mensagens agora possui seleção múltipla por `msg_ref`, mantém os IDs reais no servidor e envia uma única requisição para `/equalizador/api/palcos/{grp_ref}/mensagens/apagar-lote`.
+
+Também foi reforçado o bloqueio preventivo de janelas quando o operador não tem canal concedido ou quando o bot não tem direito real confirmado no Telegram. Isso reduz cliques que terminariam em `403`, `409` ou `428` previsíveis.
+
+As respostas de erro da Mesa agora preservam detalhes estruturados quando a falha vem do Telegram, usando categorias sanitizadas como `bot_lacks_permissions`, `target_not_admin`, `target_already_admin`, `target_is_creator`, `rate_limit`, `bad_request`, `conflict` e `telegram_unavailable`. Tokens, IDs e payloads internos seguem ocultos.
+
+## Fase 60 — Auditoria final de estabilização
+
+Auditoria final da sequência 56–59, sem novas funcionalidades. Confirma SQLite/WAL, DDX persistente, endpoint seguro de apagamento em lote, UX preventiva por permissão, erros Telegram estruturados e fechamento de pools HTTP. Inclui `scripts/equalizador_phase60_audit.py`, `tests/test_equalizador_phase60_auditoria.py` e o memorial técnico `docs/FASE60_AUDITORIA_FINAL.md`.
+

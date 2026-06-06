@@ -60,6 +60,29 @@ def telegram_error_info(
             retry_after=retry_after,
         )
 
+    precondition_markers = {
+        "chat admin required": ("Bot precisa ser administrador do grupo para executar esta ação.", "bot_lacks_admin"),
+        "not enough rights to restrict": ("Bot sem direito real de restringir membros neste grupo.", "bot_lacks_permissions"),
+        "not enough rights to promote": ("Bot sem direito real de promover ou alterar administradores neste grupo.", "bot_lacks_permissions"),
+        "not enough rights to delete": ("Bot sem direito real de apagar mensagens neste grupo.", "bot_lacks_permissions"),
+        "not enough rights to manage topics": ("Bot sem direito real de gerenciar tópicos neste grupo.", "bot_lacks_permissions"),
+        "user is not an administrator": ("O alvo não é administrador ativo no momento da ação.", "target_not_admin"),
+        "user is an administrator": ("O alvo já é administrador; atualize o painel antes de repetir a operação.", "target_already_admin"),
+        "can't demote chat creator": ("O dono do grupo não pode ser rebaixado pelo bot.", "target_is_creator"),
+        "can't restrict chat owner": ("O dono do grupo não pode ser restringido pelo bot.", "target_is_creator"),
+        "can't remove chat owner": ("O dono do grupo não pode ser removido pelo bot.", "target_is_creator"),
+    }
+    for marker, (message, category) in precondition_markers.items():
+        if marker in lower:
+            status = 403 if category.startswith("bot_lacks") else 409
+            return TelegramErrorInfo(
+                public_detail=message,
+                category=category,
+                status_code=http_status or status,
+                error_code=code,
+                retry_after=retry_after,
+            )
+
     if code == 403 or http_status == 403 or "forbidden" in lower or "not enough rights" in lower:
         return TelegramErrorInfo(
             public_detail="Bot sem acesso ou sem hierarquia suficiente para executar esta ação no grupo.",
@@ -80,8 +103,11 @@ def telegram_error_info(
 
     bad_request_markers = {
         "message to delete not found": "Mensagem não encontrada pelo Telegram. Ela pode já ter sido apagada ou a referência ficou antiga.",
+        "message identifier is not specified": "Referência de mensagem ausente ou inválida para o Telegram.",
+        "message_id_invalid": "Referência de mensagem inválida ou antiga para o Telegram.",
         "message can't be deleted": "Mensagem fora da janela de apagamento ou sem direito real de apagar.",
         "message to pin not found": "Mensagem não encontrada para fixação. Resolva novamente o link ou selecione outra mensagem.",
+        "message to unpin not found": "Mensagem fixada não encontrada. Atualize o painel antes de repetir a operação.",
         "chat not found": "Grupo não encontrado pelo bot. Verifique se o bot ainda está no grupo autorizado.",
         "user not found": "Usuário não encontrado pelo bot. O alvo precisa ter sido visto pelo bot ou informado por referência válida.",
         "user is not a member": "Usuário não é membro ativo do grupo no momento da ação.",
@@ -96,6 +122,8 @@ def telegram_error_info(
         "file must be non-empty": "Arquivo de imagem vazio. Escolha outra imagem.",
         "invite link not found": "Convite não encontrado ou já revogado pelo Telegram.",
         "topic not found": "Tópico não encontrado. Atualize a lista de tópicos e tente novamente.",
+        "topic closed": "Tópico já fechado ou indisponível. Atualize o painel antes de repetir.",
+        "topic not modified": "Tópico já estava nesse estado. Atualize o painel para conferir.",
         "chat is not a forum": "Este grupo não está com fóruns/tópicos habilitados.",
     }
     for marker, message in bad_request_markers.items():

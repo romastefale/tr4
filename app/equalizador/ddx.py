@@ -528,6 +528,116 @@ def _actor_public(message: Any) -> tuple[str, str | None]:
     return _safe_text(getattr(user, "full_name", None), fallback="Membro"), safe_public_username(getattr(user, "username", None))
 
 
+def _snapshot_from_pending_row(row: dict[str, Any]) -> _DDXSnapshot:
+    try:
+        words = tuple(str(word) for word in json.loads(str(row.get("matched_words_json") or "[]")) if str(word).strip())
+    except Exception:
+        words = ()
+    return _DDXSnapshot(
+        scheduled_ref=str(row.get("scheduled_ref") or ""),
+        event_ref=str(row.get("event_ref") or ""),
+        chat_id=int(row.get("telegram_chat_id") or 0),
+        message_id=int(row.get("telegram_message_id") or 0),
+        palco_ref=str(row.get("palco_ref") or ""),
+        chat_title="Grupo",
+        actor_name=_safe_text(row.get("actor_name"), fallback="Membro"),
+        actor_username=safe_public_username(row.get("actor_username")),
+        text_value=str(row.get("text_preview") or ""),
+        matched_words=words,
+        created_at=str(row.get("created_at") or _now_iso()),
+    )
+
+
+async def _execute_soft_delete(bot: Any, snap: _DDXSnapshot) -> str:
+    try:
+        await bot.delete_message(chat_id=snap.chat_id, message_id=snap.message_id)
+        status = "deleted"
+        detail = "Mensagem apagada após 10 minutos."
+    except Exception:
+        status = "failed"
+        detail = "Telegram recusou o apagamento agendado."
+        logger.debug("DDX_SOFT_DELETE_FAILED", exc_info=True)
+    now = _now_iso()
+    with default_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE eq_ddx_soft_pending SET status=:status, updated_at=:now WHERE scheduled_ref=:ref"),
+            {"status": status, "now": now, "ref": snap.scheduled_ref},
+        )
+    _record_event(
+        event_ref=snap.event_ref,
+        scheduled_ref=snap.scheduled_ref,
+        chat_id=snap.chat_id,
+        palco_ref=snap.palco_ref,
+        mode=DDX_SOFT_MODE,
+        status=status,
+        actor_name=snap.actor_name,
+        actor_username=snap.actor_username,
+        matched_words=snap.matched_words,
+        text_preview=snap.text_value,
+        public_detail=detail,
+    )
+    if status == "deleted":
+        words = ", ".join(html.escape(w) for w in snap.matched_words) or "filtro"
+        await _notify_maestros(
+            bot,
+            "Equalizador · DDX 10 minutos\n\n"
+            f"Grupo: {html.escape(snap.chat_title)}\n"
+            f"Autor: {html.escape(snap.actor_name)}{(' · @' + html.escape(snap.actor_username)) if snap.actor_username else ''}\n"
+            f"Filtro: {words}\n\n"
+            f"Mensagem apagada após 10 minutos:\n<blockquote>{html.escape(_safe_summary(snap.text_value, limit=900))}</blockquote>",
+        )
+    return status
+
+
+async def process_due_ddx_soft_deletions(bot: Any, *, limit: int = 20) -> dict[str, int]:
+    """Process persisted DDX 10-minute deletions that survived restarts.
+
+    The old per-message asyncio task remains a fast path while the process is
+    alive. This worker is the durable path: it scans eq_ddx_soft_pending and
+    executes overdue deletions after deploys/restarts.
+    """
+    ensure_ddx_tables()
+    now = _now_iso()
+    with default_engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT * FROM eq_ddx_soft_pending
+                WHERE status='pending' AND due_at <= :now
+                ORDER BY due_at ASC, id ASC
+                LIMIT :limit
+                """
+            ),
+            {"now": now, "limit": max(1, min(int(limit), 100))},
+        ).mappings().all()
+        refs = [str(row.get("scheduled_ref") or "") for row in rows if str(row.get("scheduled_ref") or "")]
+        for ref in refs:
+            conn.execute(
+                text("UPDATE eq_ddx_soft_pending SET status='processing', updated_at=:now WHERE scheduled_ref=:ref AND status='pending'"),
+                {"now": now, "ref": ref},
+            )
+    processed = 0
+    deleted = 0
+    failed = 0
+    for row in rows:
+        snap = _snapshot_from_pending_row(dict(row))
+        if not snap.scheduled_ref or not snap.chat_id or not snap.message_id:
+            failed += 1
+            with default_engine.begin() as conn:
+                conn.execute(
+                    text("UPDATE eq_ddx_soft_pending SET status='failed', updated_at=:now WHERE scheduled_ref=:ref"),
+                    {"now": _now_iso(), "ref": snap.scheduled_ref},
+                )
+            continue
+        status = await _execute_soft_delete(bot, snap)
+        processed += 1
+        if status == "deleted":
+            deleted += 1
+        else:
+            failed += 1
+    return {"processed": processed, "deleted": deleted, "failed": failed}
+
+
 async def _delete_soft_after_delay(bot: Any, snap: _DDXSnapshot, delay_seconds: int = DDX_SOFT_DELAY_SECONDS) -> None:
     try:
         await asyncio.sleep(max(1, int(delay_seconds)))
@@ -539,43 +649,11 @@ async def _delete_soft_after_delay(bot: Any, snap: _DDXSnapshot, delay_seconds: 
             ).mappings().first()
             if not row or str(row.get("status") or "") != "pending":
                 return
-        try:
-            await bot.delete_message(chat_id=snap.chat_id, message_id=snap.message_id)
-            status = "deleted"
-            detail = "Mensagem apagada após 10 minutos."
-        except Exception as exc:
-            status = "failed"
-            detail = "Telegram recusou o apagamento agendado."
-            logger.debug("DDX_SOFT_DELETE_FAILED", exc_info=True)
-        now = _now_iso()
-        with default_engine.begin() as conn:
             conn.execute(
-                text("UPDATE eq_ddx_soft_pending SET status=:status, updated_at=:now WHERE scheduled_ref=:ref"),
-                {"status": status, "now": now, "ref": snap.scheduled_ref},
+                text("UPDATE eq_ddx_soft_pending SET status='processing', updated_at=:now WHERE scheduled_ref=:ref AND status='pending'"),
+                {"now": _now_iso(), "ref": snap.scheduled_ref},
             )
-        _record_event(
-            event_ref=snap.event_ref,
-            scheduled_ref=snap.scheduled_ref,
-            chat_id=snap.chat_id,
-            palco_ref=snap.palco_ref,
-            mode=DDX_SOFT_MODE,
-            status=status,
-            actor_name=snap.actor_name,
-            actor_username=snap.actor_username,
-            matched_words=snap.matched_words,
-            text_preview=snap.text_value,
-            public_detail=detail,
-        )
-        if status == "deleted":
-            words = ", ".join(html.escape(w) for w in snap.matched_words) or "filtro"
-            await _notify_maestros(
-                bot,
-                "Equalizador · DDX 10 minutos\n\n"
-                f"Grupo: {html.escape(snap.chat_title)}\n"
-                f"Autor: {html.escape(snap.actor_name)}{(' · @' + html.escape(snap.actor_username)) if snap.actor_username else ''}\n"
-                f"Filtro: {words}\n\n"
-                f"Mensagem apagada após 10 minutos:\n<blockquote>{html.escape(_safe_summary(snap.text_value, limit=900))}</blockquote>",
-            )
+        await _execute_soft_delete(bot, snap)
     except asyncio.CancelledError:
         raise
     finally:
