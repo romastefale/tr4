@@ -185,3 +185,25 @@ As respostas de erro da Mesa agora preservam detalhes estruturados quando a falh
 
 Auditoria final da sequência 56–59, sem novas funcionalidades. Confirma SQLite/WAL, DDX persistente, endpoint seguro de apagamento em lote, UX preventiva por permissão, erros Telegram estruturados e fechamento de pools HTTP. Inclui `scripts/equalizador_phase60_audit.py`, `tests/test_equalizador_phase60_auditoria.py` e o memorial técnico `docs/FASE60_AUDITORIA_FINAL.md`.
 
+
+## Fase 62 — UX visual segura do Equalizador
+
+A fase 62 é exclusivamente visual/operacional no Mini App Equalizador. Ela não altera banco, autenticação, webhook, regras de Telegram API ou fluxo de sessão.
+
+Melhorias aplicadas:
+- divisão visual mais clara entre blocos do painel;
+- grade responsiva para botões de ação, reduzindo botões amontoados em telas pequenas;
+- feedback tátil opcional via Telegram WebApp HapticFeedback quando disponível;
+- botões com transição, estado pressionado, estado aguardando confirmação, execução, sucesso e erro;
+- confirmação inline no próprio painel: ações deixam de depender de popup nativo `confirm()` e passam a exigir segundo toque no mesmo botão;
+- painel persistente de confirmações e erros da sessão, com botão para copiar detalhes;
+- seleção em lote com destaque visual de item selecionado;
+- resumo de membros vistos e administradores diretamente na tela inicial do grupo selecionado.
+
+Validações principais:
+```bash
+python -m compileall -q app scripts tests
+python scripts/equalizador_phase60_audit.py
+python -m pytest -q tests/test_phase62_ux_equalizador.py tests/test_phase61_poslog_correcoes.py tests/test_equalizador_phase60_auditoria.py
+node --check /tmp/equalizador_phase62_script.js
+```

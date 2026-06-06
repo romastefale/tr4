@@ -196,9 +196,10 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <style>
     :root { color-scheme: dark light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 16px; background: var(--tg-theme-bg-color, #0b0d10); color: var(--tg-theme-text-color, #f8fafc); }
-    main { max-width: 820px; margin: 0 auto; }
-    .card { border: 1px solid rgba(255,255,255,.18); border-radius: 20px; padding: 18px; background: #151923; box-shadow: 0 16px 42px rgba(0,0,0,.38); }
+    body { margin: 0; padding: 16px 16px 84px; background: var(--tg-theme-bg-color, #0b0d10); color: var(--tg-theme-text-color, #f8fafc); }
+    body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at top, rgba(91,140,255,.12), transparent 34%); }
+    main { max-width: 920px; margin: 0 auto; position: relative; z-index: 1; }
+    .card { border: 1px solid rgba(255,255,255,.18); border-radius: 20px; padding: 18px; background: #151923; box-shadow: 0 16px 42px rgba(0,0,0,.38); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
     h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; }
     h2 { margin: 22px 0 10px; font-size: 18px; }
     h3 { margin: 14px 0 8px; font-size: 15px; }
@@ -209,18 +210,32 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .pill { display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: #f8fafc; background: rgba(255,255,255,.08); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
     .formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-    .panel { border: 1px solid rgba(255,255,255,.16); border-radius: 16px; padding: 14px; background: #1a202b; }
+    .panel { border: 1px solid rgba(255,255,255,.16); border-radius: 16px; padding: 14px; background: #1a202b; transition: border-color .18s ease, background-color .18s ease, transform .18s ease; }
+    .panel:hover { border-color: rgba(255,255,255,.24); }
+    .section-divider { display: grid; gap: 4px; margin: 22px 0 10px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.12); }
+    .section-divider strong { font-size: 15px; }
+    .section-divider span { font-size: 12px; color: var(--tg-theme-hint-color, #cbd5e1); }
     .palco { width: 100%; text-align: left; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.06); color: inherit; font: inherit; }
     .palco.active { outline: 2px solid var(--tg-theme-button-color, #5b8cff); }
     .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,.08); padding-top: 10px; margin-top: 10px; }
     .bulk-list { display: grid; gap: 8px; max-height: 260px; overflow: auto; margin-top: 10px; padding-right: 2px; }
-    .bulk-item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: start; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.04); }
+    .bulk-item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: start; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.04); cursor: pointer; transition: background-color .16s ease, border-color .16s ease, transform .12s ease, box-shadow .16s ease; }
+    .bulk-item:hover { border-color: rgba(91,140,255,.48); background: rgba(91,140,255,.08); }
+    .bulk-item:active { transform: scale(.992); }
+    .bulk-item.selected { border-color: rgba(80,216,144,.72); background: rgba(22,138,85,.18); box-shadow: inset 4px 0 0 rgba(80,216,144,.85); }
     .bulk-item input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--tg-theme-button-color, #5b8cff); }
     .bulk-item.locked { opacity: .62; }
     .bulk-actions { position: sticky; bottom: 0; margin-top: 10px; padding: 10px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: #1a202b; box-shadow: 0 10px 28px rgba(0,0,0,.28); }
     .nav.access-blocked { opacity: .42; }
     button, select, textarea, input { font: inherit; }
-    button.action, button.nav { border: 0; border-radius: 14px; padding: 12px 14px; background: var(--tg-theme-button-color, #5b8cff); color: var(--tg-theme-button-text-color, white); font-weight: 650; }
+    button.action, button.nav { border: 0; border-radius: 14px; padding: 12px 14px; background: var(--tg-theme-button-color, #5b8cff); color: var(--tg-theme-button-text-color, white); font-weight: 650; transition: transform .12s ease, filter .12s ease, box-shadow .16s ease, background-color .16s ease, opacity .16s ease; touch-action: manipulation; }
+    button.action:hover, button.nav:hover { filter: brightness(1.07); box-shadow: 0 10px 22px rgba(0,0,0,.22); }
+    button.action:active, button.nav:active, button.action.pressed, button.nav.pressed { transform: scale(.975); filter: brightness(.82); }
+    button.action:focus-visible, button.nav:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--tg-theme-button-color, #5b8cff); outline-offset: 2px; }
+    button.action.confirming { filter: brightness(.72); box-shadow: inset 0 0 0 2px rgba(255,255,255,.34), 0 10px 24px rgba(0,0,0,.28); }
+    button.action.working { opacity: .78; cursor: wait; }
+    button.action.success { box-shadow: inset 0 0 0 2px rgba(80,216,144,.70); }
+    button.action.error { box-shadow: inset 0 0 0 2px rgba(255,138,128,.70); }
     .app-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
     .app-tabs button.nav { width: 100%; min-height: 54px; text-align: left; padding: 9px 10px; border-radius: 14px; line-height: 1.15; }
     .app-tabs button.nav strong { display: block; font-size: 14px; color: #fff; margin-bottom: 2px; }
@@ -233,7 +248,9 @@ _EQUALIZADOR_HTML = """<!doctype html>
     button.action[data-action="fixados.criar"], button.action[data-action="fixados.remover"], button.action[data-action="topicos.criar"], button.action[data-action="topicos.editar"], button.action[data-action="topicos.reabrir"], button.action[data-action="topicos.desfixar"], button.action[data-action="topicos.geral.reabrir"], button.action[data-action="topicos.geral.exibir"], button.action[data-action="topicos.geral.desfixar"], button.action[data-action="grupo.descricao"], button.action[data-action="admins.titulo"], button#resolver_mensagem, button#resolver_alvo { background: #2563eb; color: #fff; }
     button.action[data-action="transmissao.enviar"], button.action[data-action="mensagens.enviar"], button#radio_schedule_criar, button#radio_quiet_salvar, button#radio_broadcast_enviar, button#radio_schedules_processar, button#ddx_hard_salvar, button#ddx_soft_salvar, button#reacoes_silenciar_reactor, button#novos_silenciar, button#novos_ignorar, button.action[data-action="convites.editar"], button.action[data-action="convites.exportar_primario"], button.action[data-action="grupo.titulo"], button.action[data-action="membros.tag.definir"], button.action[data-action="membros.silenciar"], button.action[data-action="silencio.ativar"], button.action[data-action="topicos.fechar"], button.action[data-action="topicos.geral.fechar"], button.action[data-action="topicos.geral.ocultar"], button.action[data-action="reacoes.mensagem.limpar"], button.action[data-action="reacoes.recentes.limpar"], button#seguranca_modo_alerta, button#seguranca_exportar_jsonl, button#seguranca_exportar_assinado, button#seguranca_exportar_criptografado, button#seguranca_limpar_auditoria, button#seguranca_limpar_locks, button#atualizar_configuracao, button#gerar_config_raw, button#resetar_config_form, button#copiar_config_raw, button#exportar_historico { background: #c77800; color: #fff; }
     button.action[data-action="mensagens.apagar"], button#seguranca_modo_restrito, button#radio_schedule_cancelar, button#ddx_cancelar_agendado, button#novos_apagar, button#novos_banir, button.action[data-action="membros.remover"], button.action[data-action="entradas.recusar"], button.action[data-action="convites.revogar"], button.action[data-action="topicos.apagar"], button.action[data-action="canais_remetentes.banir"], button.action[data-action="admins.rebaixar"], button.action[data-action="grupo.foto.remover"] { background: #b42318; color: #fff; }
-    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .toolbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; align-items: stretch; }
+    .toolbar.compact { grid-template-columns: repeat(auto-fit, minmax(120px, max-content)); justify-content: start; }
+    .toolbar > button { width: 100%; min-height: 44px; }
     select, textarea, input { width: 100%; border: 1px solid rgba(255,255,255,.22); border-radius: 14px; padding: 12px; background: #0f172a; color: #f8fafc; }
     textarea { min-height: 92px; resize: vertical; }
     .list { display: grid; gap: 8px; }
@@ -254,6 +271,19 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .select-note { margin-top: 6px; }
     .empty { border: 1px dashed rgba(255,255,255,.24); border-radius: 14px; padding: 12px; color: #d1d5db; background: #0f172a; }
     .toast { position: sticky; bottom: 12px; margin-top: 16px; border-radius: 14px; padding: 12px; background: #273449; border: 1px solid rgba(255,255,255,.20); white-space: pre-wrap; }
+    .toast.ok { border-color: rgba(80,216,144,.55); background: rgba(22,138,85,.18); }
+    .toast.warn { border-color: rgba(255,209,102,.55); background: rgba(199,120,0,.18); }
+    .toast.bad { border-color: rgba(255,138,128,.50); background: rgba(180,35,24,.18); }
+    .feedback-panel { margin-top: 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 12px; background: #0f172a; }
+    .feedback-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }
+    .feedback-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .feedback-actions button { width: auto; min-height: 34px; padding: 8px 10px; }
+    .feedback-items { display: grid; gap: 8px; max-height: 240px; overflow: auto; }
+    .feedback-item { border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 9px; background: rgba(255,255,255,.04); white-space: pre-wrap; }
+    .feedback-item.ok { border-color: rgba(80,216,144,.50); }
+    .feedback-item.warn { border-color: rgba(255,209,102,.52); }
+    .feedback-item.bad { border-color: rgba(255,138,128,.48); }
+    .feedback-meta { display: block; margin-bottom: 3px; color: var(--tg-theme-hint-color, #cbd5e1); font-size: 11px; }
     .headline { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; }
     .bot-hero { display: grid; grid-template-columns: 86px 1fr; gap: 14px; align-items: center; border: 1px solid rgba(255,255,255,.18); border-radius: 18px; padding: 14px; background: #111827; margin-bottom: 12px; }
     .bot-hero h2 { margin: 0 0 4px; font-size: 22px; }
@@ -269,6 +299,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .mini-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .mini-table td { border-top: 1px solid rgba(255,255,255,.14); padding: 7px 4px; vertical-align: top; }
     .home-hint-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .panel-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+    .member-preview { display: grid; gap: 8px; max-height: 260px; overflow: auto; }
     .home-hint { border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 10px; background: #0f172a; min-height: 68px; }
     .home-hint strong { display: block; font-size: 13px; color: #fff; margin-bottom: 3px; }
     .home-hint span { display: block; color: #d1d5db; font-size: 11px; line-height: 1.3; }
@@ -291,7 +323,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
     .governance-role.active { border-color: rgba(80,216,144,.52); background: rgba(22,138,85,.14); }
     .governance-role.locked { opacity: .72; }
     .governance-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-    @media (max-width: 560px) { body { padding: 10px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { gap: 6px; } button.action { width: 100%; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .feedback-head { display: grid; } }
   </style>
 </head>
 <body>
@@ -376,6 +408,17 @@ _EQUALIZADOR_HTML = """<!doctype html>
             <div class="home-hint"><strong>Mensagens</strong><span>envio, fixação, desfixação e exclusão.</span></div>
             <div class="home-hint"><strong>Pessoas</strong><span>membros, administradores humanos e bots.</span></div>
             <div class="home-hint"><strong>Diagnóstico</strong><span>motivo real de bloqueios antes da ação.</span></div>
+          </div>
+          <div class="section-divider"><strong>Pessoas do painel</strong><span>Membros vistos, administradores humanos e bots carregados do grupo selecionado.</span></div>
+          <div class="panel-split">
+            <div class="panel">
+              <strong>Resumo de membros</strong>
+              <div id="mesa_pessoas_resumo" class="empty small">Escolha um grupo para carregar membros e administradores.</div>
+            </div>
+            <div class="panel">
+              <strong>Membros vistos recentemente</strong>
+              <div id="mesa_membros_preview" class="member-preview muted small">Nenhum membro carregado ainda.</div>
+            </div>
           </div>
           <h3>Governantes deste grupo</h3>
           <p class="section-note">Mapa de delegação por janela: quem pode atuar, com nome público e @username quando já visto pelo bot.</p>
@@ -996,6 +1039,16 @@ frase temporária"></textarea>
         </section>
       </div>
       <div id="toast" class="toast hidden"></div>
+      <div id="feedback_panel" class="feedback-panel hidden">
+        <div class="feedback-head">
+          <strong>Confirmações e erros desta sessão</strong>
+          <div class="feedback-actions">
+            <button id="feedback_copy" class="action secondary" type="button">Copiar detalhes</button>
+            <button id="feedback_clear" class="action secondary" type="button">Limpar</button>
+          </div>
+        </div>
+        <div id="feedback_items" class="feedback-items muted">Nenhuma ação registrada nesta sessão.</div>
+      </div>
     </section>
   </main>
   <script>
@@ -1053,6 +1106,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       let afinacaoLoaded = false;
       let modoMaestroPermitido = false;
       let carregandoPalco = false;
+      let feedbackEntries = [];
+      let confirmTimer = null;
       const criticalActions = new Set(["silencio.ativar", "silencio.desativar", "transmissao.enviar", "grupo.titulo", "grupo.descricao", "grupo.foto", "grupo.foto.remover", "admins.promover", "admins.rebaixar", "admins.titulo"]);
       const cienteCritico = () => Array.from(document.querySelectorAll(".admin-ciente")).some((el) => Boolean(el.checked));
       const endpoints = {
@@ -1339,6 +1394,38 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           .replace(/\\b\\d{7,16}\\b/g, "referência oculta");
       };
 
+      const buttonLabel = (button) => String(button && (button.dataset.originalText || button.textContent) || "Ação").trim();
+      const restoreButton = (button) => {
+        if (!button) return;
+        if (button.dataset.originalText) button.textContent = button.dataset.originalText;
+        button.classList.remove("pressed", "confirming", "working", "success", "error");
+        delete button.dataset.confirmArmed;
+      };
+      const armInlineConfirmation = (button, label, critical) => {
+        if (!button) return true;
+        if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+        if (button.dataset.confirmArmed === "1") {
+          if (confirmTimer) clearTimeout(confirmTimer);
+          restoreButton(button);
+          return true;
+        }
+        document.querySelectorAll("button.action[data-confirm-armed='1']").forEach(restoreButton);
+        button.dataset.confirmArmed = "1";
+        button.classList.add("confirming");
+        button.textContent = "Confirmar: " + String(label || buttonLabel(button)).slice(0, 34);
+        const msg = (critical ? "Ação crítica preparada. " : "Ação preparada. ") + "Toque novamente no mesmo botão para confirmar.";
+        statusMesa(msg, "warn");
+        addFeedback(msg, "warn");
+        haptic("selection");
+        confirmTimer = setTimeout(() => restoreButton(button), 8500);
+        return false;
+      };
+      const markButton = (button, state) => {
+        if (!button) return;
+        button.classList.remove("pressed", "confirming", "working", "success", "error");
+        if (state) button.classList.add(state);
+        if (state === "working") button.disabled = true;
+      };
       const fileToBase64 = (file) => new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -1353,10 +1440,50 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         for (const el of document.querySelectorAll("main > section")) el.classList.add("hidden");
         document.getElementById(id).classList.remove("hidden");
       };
+      const haptic = (type, style) => {
+        try {
+          const feedback = tg && tg.HapticFeedback;
+          if (!feedback) return;
+          if (type === "selection" && feedback.selectionChanged) feedback.selectionChanged();
+          else if (type === "impact" && feedback.impactOccurred) feedback.impactOccurred(style || "light");
+          else if (type === "notification" && feedback.notificationOccurred) feedback.notificationOccurred(style || "success");
+        } catch (_) {}
+      };
+      const renderFeedbackPanel = () => {
+        const panel = document.getElementById("feedback_panel");
+        const items = document.getElementById("feedback_items");
+        if (!panel || !items) return;
+        panel.classList.toggle("hidden", feedbackEntries.length === 0);
+        if (!feedbackEntries.length) {
+          items.className = "feedback-items muted";
+          items.textContent = "Nenhuma ação registrada nesta sessão.";
+          return;
+        }
+        items.className = "feedback-items";
+        items.replaceChildren(...feedbackEntries.slice(0, 10).map((entry) => {
+          const div = document.createElement("div");
+          div.className = "feedback-item " + (entry.kind || "");
+          div.innerHTML = `<span class="feedback-meta">${escapeHtml(entry.time)} · ${escapeHtml(entry.kind || 'info')}</span>${escapeHtml(entry.text)}`;
+          return div;
+        }));
+      };
+      const addFeedback = (text, kind) => {
+        const now = new Date();
+        const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        feedbackEntries.unshift({ time, text: String(text || ""), kind: kind || "info" });
+        feedbackEntries = feedbackEntries.slice(0, 12);
+        renderFeedbackPanel();
+      };
       const toast = (text, kind) => {
+        const clean = String(text || "").trim();
+        const level = kind || "";
         const el = document.getElementById("toast");
-        el.textContent = text;
-        el.className = "toast " + (kind || "");
+        el.textContent = clean;
+        el.className = "toast " + level;
+        addFeedback(clean, level || "info");
+        if (level === "ok") haptic("notification", "success");
+        else if (level === "bad") haptic("notification", "error");
+        else if (level === "warn") haptic("notification", "warning");
         setTimeout(() => el.classList.add("hidden"), 5200);
       };
       const api = async (url, options) => {
@@ -1473,7 +1600,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         }
         applyPreventiveAccessUI();
       };
-      document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
+      document.querySelectorAll("button.nav").forEach((button) => button.addEventListener("click", () => { button.classList.add("pressed"); setTimeout(() => button.classList.remove("pressed"), 180); haptic("selection"); openView(button.dataset.view); }));
       const perfilAtualizar = document.getElementById("perfil_atualizar_dados");
       if (perfilAtualizar) perfilAtualizar.addEventListener("click", () => currentPalco ? loadPalcoData() : toast("Escolha um grupo antes de atualizar.", "warn"));
       let palcosDisponiveis = [];
@@ -1534,7 +1661,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const ref = String(row.msg_ref || "");
           const apagavel = row.apagavel !== false;
           const item = document.createElement("label");
-          item.className = "bulk-item" + (apagavel ? "" : " locked");
+          item.className = "bulk-item" + (apagavel ? "" : " locked") + (mensagensSelecionadas.has(ref) ? " selected" : "");
           const checked = mensagensSelecionadas.has(ref) ? "checked" : "";
           const disabled = apagavel ? "" : "disabled";
           const idade = typeof row.idade_segundos === "number" ? ` · ${Math.floor(row.idade_segundos / 60)} min` : "";
@@ -1569,6 +1696,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (!ref) return;
         if (checked) mensagensSelecionadas.add(ref);
         else mensagensSelecionadas.delete(ref);
+        const input = Array.from(document.querySelectorAll("input[data-msg-ref]")).find((el) => el.getAttribute("data-msg-ref") === ref);
+        const item = input ? input.closest(".bulk-item") : null;
+        if (item) item.classList.toggle("selected", Boolean(checked));
+        haptic("selection");
         updateBulkDeleteControls();
       }
       function limparMensagensSelecionadas() {
@@ -1797,6 +1928,24 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           fillSelect("admin_alvo_select", options, "ref", "label", "Nenhum alvo administrativo registrado");
           const hint = document.getElementById("admin_alvo_hint");
           if (hint) hint.textContent = options.length ? `${options.length} alvo(s) administrativo(s) disponível(is), sem exibir ID real.` : "Faça o Telegram retornar administradores ou registre um membro antes de usar ações administrativas.";
+        }
+      }
+      function renderMesaMembrosResumo(painel, alvosRows) {
+        const resumoEl = document.getElementById("mesa_pessoas_resumo");
+        const previewEl = document.getElementById("mesa_membros_preview");
+        const data = painel || {};
+        const resumo = data.resumo || {};
+        const humanos = data.administradores_humanos || (data.administradores || []).filter((row) => !row.bot);
+        const bots = data.bots_administradores || (data.administradores || []).filter((row) => row.bot);
+        const membros = Array.isArray(alvosRows) ? alvosRows : [];
+        if (resumoEl) {
+          resumoEl.textContent = `${humanos.length || resumo.administradores_humanos || 0} admin humano(s) · ${bots.length || resumo.bots_administradores || 0} bot(s) admin · ${membros.length} membro(s) visto(s).`;
+          resumoEl.className = "empty small " + ((humanos.length || bots.length || membros.length) ? "ok" : "warn");
+        }
+        if (previewEl) {
+          const sample = membros.slice(0, 8);
+          previewEl.className = sample.length ? "member-preview" : "member-preview muted small";
+          previewEl.replaceChildren(...(sample.length ? sample.map((row) => itemText(pessoaLabel(row, "Membro"), row && row.tag ? "tag: " + row.tag : "referência interna segura")) : [document.createTextNode("Nenhum membro visto carregado para este grupo.")]));
         }
       }
       async function loadBotPhoto(disponivel) {
@@ -2432,7 +2581,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const templateRef = (document.getElementById("radio_template_select") || {}).value || "";
         if (!texto.trim() && !templateRef) { toast("Escreva texto ou escolha modelo antes do broadcast.", "warn"); return; }
         const todos = Boolean(document.getElementById("radio_broadcast_todos").checked);
-        if (!todos && !confirm("Enviar broadcast somente para o grupo atual?")) return;
+        const button = document.getElementById("radio_broadcast_enviar");
+        if (!armInlineConfirmation(button, todos ? "broadcast geral" : "broadcast no grupo atual", true)) return;
+        markButton(button, "working");
         const payload = {
           texto,
           template_ref: templateRef,
@@ -2445,7 +2596,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/broadcast", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders), body: JSON.stringify(payload) });
         const data = await res.json().catch(() => ({}));
         const box = document.getElementById("radio_broadcast_resultado");
-        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); markButton(button, "error"); setTimeout(() => restoreButton(button), 1600); return; }
+        markButton(button, "success"); setTimeout(() => restoreButton(button), 1300);
         if (box) {
           box.className = "list";
           const rows = (data.resultados || []).map((row) => {
@@ -2511,10 +2663,13 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const ref = (document.getElementById("radio_template_select") || {}).value || "";
         const row = ref ? radioTemplatesPorRef.get(ref) : null;
         if (!ref || !row) { toast("Escolha um modelo.", "warn"); return; }
-        if (!confirm(`Apagar o modelo "${radioTemplateLabel(row)}"?`)) return;
+        const button = document.getElementById("radio_template_apagar");
+        if (!armInlineConfirmation(button, "apagar modelo " + radioTemplateLabel(row), true)) return;
+        markButton(button, "working");
         const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/templates/" + encodeURIComponent(ref), { method: "DELETE", headers: apiHeaders });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); markButton(button, "error"); setTimeout(() => restoreButton(button), 1600); return; }
+        markButton(button, "success"); setTimeout(() => restoreButton(button), 1300);
         toast("Modelo apagado.", "ok");
         await reloadRadioTemplates();
       }
@@ -2845,6 +3000,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           api(base + "/novos-membros").then((r) => r.ok ? r.json() : { eventos: [], recentes: [], resumo: {} }).catch(() => ({ eventos: [], recentes: [], resumo: {} }))
         ]);
         renderGovernanca("governantes_palco", governantesRes, { palcoRef: currentPalco && currentPalco.grp_ref, onlyActive: true });
+        renderMesaMembrosResumo(painelRes, (alvosRes && alvosRes.alvos) || []);
         renderRadioDrafts((radioRes && radioRes.rascunhos) || []);
         renderRadioTemplates((radioTemplatesRes && radioTemplatesRes.templates) || []);
         renderRadioHistory((radioHistoryRes && radioHistoryRes.historico) || []);
@@ -3140,9 +3296,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (refs.length > 100) { toast("Selecione no máximo 100 mensagens por lote.", "warn"); return; }
         const diagnostic = diagnosticForAction("mensagens.apagar_lote");
         if (!diagnostic.ok) { toast("Apagamento em lote bloqueado: " + diagnostic.motivos.join(" · "), "warn"); return; }
-        if (!confirm("Confirmar apagamento em lote de " + refs.length + " mensagem(ns)?")) return;
         const button = document.getElementById("mensagens_lote_apagar");
-        if (button) button.disabled = true;
+        if (!armInlineConfirmation(button, refs.length + " mensagem(ns)", true)) return;
+        markButton(button, "working");
         statusMesa("Apagando " + refs.length + " mensagem(ns) em lote…", "muted");
         const url = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/" + endpoints["mensagens.apagar_lote"];
         const res = await api(url, { method: "POST", headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }), body: JSON.stringify({ msg_refs: refs }) });
@@ -3151,22 +3307,25 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const detail = detailPublico(data.detail || data);
           statusMesa("Apagamento em lote não concluído: " + detail, "bad");
           toast(detail, "bad");
+          markButton(button, "error");
+          setTimeout(() => restoreButton(button), 1600);
           updateButtons();
           return;
         }
         mensagensSelecionadas = new Set();
         const ignoradas = Array.isArray(data.ignoradas) && data.ignoradas.length ? ` · ${data.ignoradas.length} ignorada(s)` : "";
         toast((data.apagadas || refs.length) + " mensagem(ns) apagada(s)" + ignoradas + ".", "ok");
+        markButton(button, "success");
+        setTimeout(() => restoreButton(button), 1300);
         statusMesa(data.resumo || "Apagamento em lote concluído.", "ok");
         await loadPalcoData();
       }
 
       async function runPhotoAction(action) {
         if (!currentPalco) return;
-        if (!confirm("Confirmar ajuste: " + (actionLabels[action] || action) + "?")) return;
-        if (!confirm("Ação crítica de administrador principal. Confirmar novamente?")) return;
         const button = document.querySelector(`button.action[data-action="${action}"]`);
-        if (button) button.disabled = true;
+        if (!armInlineConfirmation(button, actionLabels[action] || action, true)) return;
+        markButton(button, "working");
         statusMesa("Executando: " + (actionLabels[action] || action) + "…", "muted");
         const url = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/" + endpoints[action];
         let options;
@@ -3194,6 +3353,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const detail = detailPublico(data.detail || data);
           if (box) { box.textContent = detail; box.className = "empty small bad"; }
           toast(detail, "bad");
+          markButton(button, "error");
+          setTimeout(() => restoreButton(button), 1600);
           updateButtons();
           // Compatibilidade de teste legado: await loadPalcoData(); return;
           return;
@@ -3202,18 +3363,19 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (action === "grupo.foto") { const input = document.getElementById("grupo_foto_input"); if (input) input.value = ""; }
         if (box) { box.textContent = data.resumo || "Foto do grupo atualizada."; box.className = "empty small ok"; }
         toast(data.resumo || "Foto do grupo ajustada.", "ok");
+        markButton(button, "success");
+        setTimeout(() => restoreButton(button), 1300);
         statusMesa("Último ajuste concluído: " + (actionLabels[action] || action) + ".", "ok");
         await loadPalcoData();
       }
       async function runAction(action) {
         if (action === "grupo.foto" || action === "grupo.foto.remover") { await runPhotoAction(action); return; }
         if (!currentPalco) return;
-        if (!confirm("Confirmar ajuste: " + (actionLabels[action] || action) + "?")) return;
-        if (criticalActions.has(action) && !confirm("Ação crítica de administrador principal. Confirmar novamente?")) return;
-        let payload;
-        try { payload = buildPayload(action); } catch (err) { toast(err.message, "warn"); return; }
         const button = document.querySelector(`button.action[data-action="${action}"]`);
-        if (button) button.disabled = true;
+        if (!armInlineConfirmation(button, actionLabels[action] || action, criticalActions.has(action))) return;
+        let payload;
+        try { payload = buildPayload(action); } catch (err) { toast(err.message, "warn"); restoreButton(button); return; }
+        markButton(button, "working");
         statusMesa("Executando: " + (actionLabels[action] || action) + "…", "muted");
         const url = "/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/" + endpoints[action];
         const res = await api(url, { method: "POST", headers: Object.assign({}, apiHeaders, { "Content-Type": "application/json" }), body: JSON.stringify(payload) });
@@ -3222,9 +3384,13 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const detail = detailPublico(data.detail || data);
           statusMesa("Ajuste não concluído: " + detail, "bad");
           toast(detail, "bad");
+          markButton(button, "error");
+          setTimeout(() => restoreButton(button), 1600);
           updateButtons();
           return;
         }
+        markButton(button, "success");
+        setTimeout(() => restoreButton(button), 1300);
         if (data.convite && typeof data.convite === "string") {
           setConviteResult(data.convite, data.dm || null, data.convite_info || null);
           try { await navigator.clipboard.writeText(data.convite); toast("Convite criado, exibido e copiado.", "ok"); }
@@ -3248,6 +3414,15 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         statusMesa("Último ajuste concluído: " + (actionLabels[action] || action) + ".", "ok");
         await loadPalcoData();
       }
+      const feedbackCopyButton = document.getElementById("feedback_copy");
+      if (feedbackCopyButton) feedbackCopyButton.addEventListener("click", async () => {
+        const texto = feedbackEntries.map((entry) => `[${entry.time}] ${entry.kind || 'info'}: ${entry.text}`).join("\\n");
+        if (!texto) return;
+        try { await navigator.clipboard.writeText(texto); toast("Detalhes do painel copiados.", "ok"); }
+        catch (_) { toast("Não foi possível copiar automaticamente. Selecione os detalhes manualmente.", "warn"); }
+      });
+      const feedbackClearButton = document.getElementById("feedback_clear");
+      if (feedbackClearButton) feedbackClearButton.addEventListener("click", () => { feedbackEntries = []; renderFeedbackPanel(); haptic("selection"); });
       document.getElementById("mensagem_select").addEventListener("change", updateButtons);
       document.getElementById("alvo_select").addEventListener("change", updateButtons);
       document.getElementById("admin_alvo_select").addEventListener("change", updateButtons);
@@ -3329,7 +3504,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       document.getElementById("novos_silenciar").addEventListener("click", () => acaoNovoMembro("silenciar"));
       document.getElementById("novos_banir").addEventListener("click", () => acaoNovoMembro("banir"));
       document.getElementById("novos_ignorar").addEventListener("click", () => acaoNovoMembro("ignorar"));
-      document.querySelectorAll("button.action[data-action]").forEach((button) => button.addEventListener("click", () => runAction(button.dataset.action)));
+      document.querySelectorAll("button.action[data-action]").forEach((button) => button.addEventListener("click", () => { button.classList.add("pressed"); setTimeout(() => button.classList.remove("pressed"), 180); haptic("impact", "light"); runAction(button.dataset.action); }));
       document.getElementById("exportar_historico").addEventListener("click", async () => {
         if (!modoMaestroPermitido) { toast("Exportação restrita ao administrador principal.", "warn"); return; }
         const res = await api("/equalizador/api/historico/exportar");
