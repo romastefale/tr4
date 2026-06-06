@@ -12,16 +12,27 @@ Mantido:
 - SQLite para dados musicais;
 - rate limit simples em memória para comandos pesados.
 
-Removido/desativado:
+Comandos públicos exibidos no menu:
 
-- `/tigrao`;
-- `/owner`;
-- `/radio` de governança/postagem administrativa;
-- moderação por grupo;
-- panic/security mode;
-- BTB;
-- exports/auditoria crítica;
-- locks operacionais de moderação.
+- `/playing`;
+- `/albnow`;
+- `/tcanvas`;
+- `/tstory`;
+- `/tly`;
+- `/radiofm`;
+- `/tnow`;
+- `/nowp`;
+- `/myself`;
+- `/weekfm`;
+- `/monthfm`;
+- `/songcharts`;
+- `/lastfm`;
+- `/lastfmoff`;
+- `/login`;
+- `/help`;
+- `/start`.
+
+Painéis antigos ou operacionais não devem aparecer no menu público. O startup regrava os escopos público, privado, grupos e administradores para evitar comandos antigos em clientes que preservam escopos anteriores.
 
 
 ## Fase 55.7 — Reações, auditoria e reactors

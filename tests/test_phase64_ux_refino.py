@@ -8,8 +8,7 @@ CONFIG = (ROOT / 'app/equalizador/configuracao.py').read_text()
 def test_phase64_group_picker_outside_card_and_extra_group_metadata():
     assert 'class="group-picker header-select"' in ROUTER
     assert 'id="grupo_resumo_card" class="panel group-card"' in ROUTER
-    assert 'id="grupo_estado"' in ROUTER
-    assert 'id="grupo_recursos"' in ROUTER
+    assert ('id="grupo_estado"' in ROUTER and 'id="grupo_recursos"' in ROUTER) or 'id="grupo_meta_linha"' in ROUTER
 
 
 def test_phase64_removes_redundant_home_cards_and_adds_searchable_members():
