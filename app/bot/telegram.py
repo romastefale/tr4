@@ -89,8 +89,15 @@ _CARD_EMOJI_TNOW = "🔥"      # mosaico /tnow (energia do grupo)
 _LOVED_PLAYS_THRESHOLD = 5
 
 
-def _pick_card_emoji(total_plays: int, plays_source: str) -> str:
-    """Decide emoji do bot pro card. Múltiplo de 5 plays Last.fm = ❤; resto = 🔥."""
+def _pick_card_emoji(total_plays: int, plays_source: str) -> str | None:
+    """Decide emoji do bot pro card quando reactions estiverem habilitadas.
+
+    Fase 114: por segurança, o sistema de LED/reaction tracking fica
+    desligado por padrão. Não remove tabelas nem código histórico; apenas
+    impede novas reactions automáticas.
+    """
+    if not settings.TR4_MUSIC_REACTIONS_ENABLED:
+        return None
     if (
         plays_source == "lastfm"
         and total_plays > 0
@@ -100,9 +107,10 @@ def _pick_card_emoji(total_plays: int, plays_source: str) -> str:
     return _CARD_EMOJI_DEFAULT
 
 
-async def _react_to_own_card(bot, chat_id: int, message_id: int, emoji: str) -> None:
-    """Sprint 10: bot reage no card que ele mesmo enviou. Silencioso em falha
-    (bot pode não ter permissão de reagir, ou emoji rejeitado pela região)."""
+async def _react_to_own_card(bot, chat_id: int, message_id: int, emoji: str | None) -> None:
+    """Bot reage no card apenas quando o recurso estiver habilitado."""
+    if not settings.TR4_MUSIC_REACTIONS_ENABLED or not emoji:
+        return
     try:
         await bot.set_message_reaction(
             chat_id=chat_id,
@@ -114,6 +122,7 @@ async def _react_to_own_card(bot, chat_id: int, message_id: int, emoji: str) -> 
             "OWN_CARD_REACT_FAILED chat=%s msg=%s emoji=%s",
             chat_id, message_id, emoji, exc_info=True,
         )
+
 
 
 async def _answer_with_effect(message: Message, text: str, effect_id: str, **kwargs) -> Message:
@@ -326,29 +335,16 @@ async def build_playing_payload_for_user(
         logger.exception("REGISTER_PLAY_FAILED user=%s track=%s", user_id, track_id)
 
     total_plays, plays_source = await _resolve_play_button_count(user_id, track_id, artist_raw, track_name_raw)
-    total_likes = await likes_service.get_total_likes(track_id, owner_user_id=user_id)
-    user_total_likes = await likes_service.get_user_received_likes(user_id)
-    liked = await likes_service.is_track_liked(user_id, track_id, owner_user_id=user_id)
 
-    display_name = html.escape(display_name_raw or "Usuário")
+    display_name = html.escape((display_name_raw or "").strip() or (f"@{username}" if username else "Usuário"))
     user_link = public_tme_url(username)
     track_name, artist, track_url, cover = _track_label(track)
-    track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
-    # Sprint 8: caption agora mostra "♫ N · track — artist" onde N é o
-    # playcount per-user (Last.fm ou local). Botões ♫ plays e ♥ likes
-    # removidos — substituídos por reactions nativas do Telegram (count
-    # via @dp.message_reaction + tabela track_reactions). Layout +clean.
-    # NOTA: total_likes/liked/plays_source ainda calculados acima pra
-    # preservar compatibilidade com `register_play` (side effect) e o
-    # ♥ user_total_likes da linha 1 (legacy, dados históricos).
-    _ = (total_likes, liked)  # mantém vars pra clareza/grep
+    track_part = f'<a href="{track_url}"><b>{track_name}</b></a>' if track_url else f'<b>{track_name}</b>'
     user_part = f'<a href="{html.escape(user_link, quote=True)}">{display_name}</a>' if user_link else display_name
     caption = (
-        f"<b>{user_part}</b> · ♥ <code>{user_total_likes}</code>\n\n"
-        f"♫ <code>{total_plays}</code> · <b>{track_part}</b> — <i>{artist}</i>"
+        f"{user_part} · ♫ <code>{total_plays}</code>\n\n"
+        f"{track_part} — <i>{artist}</i>"
     )
-    # Sprint 10: emoji vai pro 5º slot do tuple — callers usam pra
-    # set_message_reaction depois de enviar o card.
     card_emoji = _pick_card_emoji(total_plays, plays_source)
     return track_id, caption, cover, None, card_emoji
 
@@ -1175,6 +1171,8 @@ def _register_handlers(dp: Dispatcher) -> None:
 
     @dp.message_reaction()
     async def on_message_reaction(event: MessageReactionUpdated) -> None:
+        if not settings.TR4_MUSIC_REACTIONS_ENABLED:
+            return
         """Sprint 8: tracking de reactions nos cards /playing.
 
         Telegram envia este update toda vez que um user adiciona/remove

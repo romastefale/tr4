@@ -293,18 +293,19 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
                 pass
             return
 
-        # Sprint 8: registra card no grupo pra reactions tracking.
-        try:
-            await reactions_service.register_card(
-                chat_id=sent_group.chat.id,
-                message_id=sent_group.message_id,
-                track_id=_track_id,
-                owner_user_id=requester_id,
-                track_name=_normalize_optional_text(track.get("track_name")),
-                artist_name=_normalize_optional_text(track.get("artist")),
-            )
-        except Exception:
-            logger.exception("NOWP_REGISTER_CARD_FAILED chat=%s", target_chat_id)
+        # Reactions/LED desativado por padrão (fase 114).
+        if settings.TR4_MUSIC_REACTIONS_ENABLED:
+            try:
+                await reactions_service.register_card(
+                    chat_id=sent_group.chat.id,
+                    message_id=sent_group.message_id,
+                    track_id=_track_id,
+                    owner_user_id=requester_id,
+                    track_name=_normalize_optional_text(track.get("track_name")),
+                    artist_name=_normalize_optional_text(track.get("artist")),
+                )
+            except Exception:
+                logger.exception("NOWP_REGISTER_CARD_FAILED chat=%s", target_chat_id)
         # Sprint 10: bot reage 🔥/❤ no card do grupo (mesma lógica /playing).
         from app.bot.telegram import _react_to_own_card
         await _react_to_own_card(query.bot, sent_group.chat.id, sent_group.message_id, card_emoji)

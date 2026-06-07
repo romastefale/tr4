@@ -34,6 +34,7 @@ from app.equalizador.rbac_runtime import (
     revoke_runtime_canal,
     update_governance_operator,
     disable_governance_operator,
+    governance_persistence_public,
 )
 from app.equalizador.session_store import cleanup_expired_sessions, session_store_status
 from app.equalizador.mesa import (
@@ -7670,8 +7671,8 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     .eyebrow { color: #45e0a5; font-size: 12px; text-transform: uppercase; letter-spacing: .18em; font-weight: 900; }
     .title { margin-top: 5px; font-size: clamp(25px, 7vw, 46px); line-height: .95; letter-spacing: -.04em; font-weight: 950; text-transform: uppercase; overflow-wrap: anywhere; }
     .artist { margin-top: 8px; color: var(--muted); font-size: 16px; overflow-wrap: anywhere; }
-    .metric { margin-top: 10px; color: #45e0a5; font-size: 32px; font-weight: 950; letter-spacing: -.04em; }
-    .metric small { color: #d5dae3; font-size: 13px; letter-spacing: .14em; }
+    .metric { margin-top: 10px; color: #45e0a5; font-size: 18px; font-weight: 850; letter-spacing: -.01em; }
+    .title a { color: inherit; text-decoration: none; }
     .section-title { padding: 2px 2px 8px; color: var(--muted); font-size: 13px; }
     .group-list { max-height: 286px; overflow: auto; border-radius: 20px; }
     .group-row { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 14px 16px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; }
@@ -7723,7 +7724,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
         <div class="eyebrow">tocando agora</div>
         <div class="title" id="trackTitle">Carregando</div>
         <div class="artist" id="trackArtist">Aguarde.</div>
-        <div class="metric"><span id="plays">—</span> <small>PLAYS</small></div>
+        <div class="metric" id="nowLine">Você · ♫ <span id="plays">0</span></div>
       </div>
     </div>
     <div class="selected" id="selectedGroup">Grupo: <strong>selecione abaixo</strong></div>
@@ -7782,15 +7783,17 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function setTrack(track){
     trackAvailable = !!(track && track.available);
     if (trackAvailable) {
-      $("trackTitle").textContent = track.track_name || "Música";
-      $("trackArtist").textContent = track.artist || "Artista";
+      const title = track.track_name || "Música";
+      const url = track.spotify_url || "";
+      $("trackTitle").innerHTML = url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener"><b>${escapeHtml(title)}</b></a>` : `<b>${escapeHtml(title)}</b>`;
+      $("trackArtist").innerHTML = `— <i>${escapeHtml(track.artist || "Artista")}</i>`;
       $("plays").textContent = track.user_plays || 0;
       if (track.cover_url) { $("cover").src = track.cover_url; $("cover").classList.remove("hidden"); $("coverFallback").classList.add("hidden"); }
       else { $("cover").classList.add("hidden"); $("coverFallback").classList.remove("hidden"); }
     } else {
       $("trackTitle").textContent = "Nada tocando";
       $("trackArtist").textContent = "Conecte Last.fm ou Spotify e tente novamente.";
-      $("plays").textContent = "—";
+      $("plays").textContent = "0";
     }
     updatePublishState();
   }
@@ -7936,7 +7939,32 @@ async def _public_track_for_user(user_id: int) -> dict[str, object]:
         "artist": artist[:120],
         "album": str(track.get("album_name") or "")[:120],
         "cover_url": str(track.get("album_image_url") or track.get("cover_url") or "")[:500],
+        "spotify_url": str(track.get("spotify_url") or "")[:500],
         "user_plays": user_plays,
+    }
+
+
+@router.get("/api/public/status")
+def public_music_status() -> dict[str, object]:
+    """Status público e sanitizado do Mini App musical.
+
+    Não depende de initData e não expõe dados internos. Serve para confirmar em
+    produção se a interface pública está implantada e se o sistema de LED/reactions
+    continua desligado por segurança.
+    """
+    return {
+        "ok": True,
+        "player": {
+            "rota": "/equalizador/player",
+            "implantado": True,
+            "layout": "musica_publica_sem_curtidas",
+            "publicacao": "nowp",
+        },
+        "seguranca": {
+            "led_reactions_ativas": bool(settings.TR4_MUSIC_REACTIONS_ENABLED),
+            "led_reactions_status": "desligado" if not settings.TR4_MUSIC_REACTIONS_ENABLED else "ativo",
+            "painel_moderador": "visivel_apenas_para_operador_autorizado",
+        },
     }
 
 
@@ -8015,14 +8043,15 @@ async def public_music_nowp(request: Request, authorization: str | None = Header
     else:
         sent = await _bot_api("sendMessage", {"chat_id": chat_id, "text": caption, "parse_mode": "HTML"})
     try:
-        await reactions_service.register_card(
-            chat_id=chat_id,
-            message_id=int(sent.get("message_id") or 0),
-            track_id=track_id,
-            owner_user_id=identity.user_id,
-            track_name=str(track.get("track_name") or ""),
-            artist_name=str(track.get("artist") or ""),
-        )
+        if settings.TR4_MUSIC_REACTIONS_ENABLED:
+            await reactions_service.register_card(
+                chat_id=chat_id,
+                message_id=int(sent.get("message_id") or 0),
+                track_id=track_id,
+                owner_user_id=identity.user_id,
+                track_name=str(track.get("track_name") or ""),
+                artist_name=str(track.get("artist") or ""),
+            )
     except Exception:
         pass
     return {"ok": True, "message": f"Publicado em {str(group.get('title') or 'grupo')[:80]}."}
