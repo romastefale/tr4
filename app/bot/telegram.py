@@ -1307,6 +1307,36 @@ def _register_handlers(dp: Dispatcher) -> None:
         keyboard = _multimedia_return_keyboard()
         await message.answer("Texto recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
 
+
+    @dp.message(
+        StateFilter(None),
+        F.chat.type == "private",
+        F.text,
+        ~F.text.startswith("/"),
+    )
+    async def equalizador_multimedia_private_text_active_session(message: Message) -> object:
+        if not message.from_user:
+            return UNHANDLED
+        try:
+            active = active_session_for_user(telegram_user_id=int(message.from_user.id))
+        except Exception:
+            active = None
+        if not active:
+            return UNHANDLED
+        payload_data = _multimedia_message_payload(message)
+        if not payload_data:
+            return UNHANDLED
+        try:
+            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data)
+        except MultimediaError as exc:
+            await message.answer(str(exc)[:160] or "Texto não aceito.")
+            return None
+        if not sessao:
+            return UNHANDLED
+        keyboard = _multimedia_return_keyboard()
+        await message.answer("Texto recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
+        return None
+
     # IMPORTANTE: o filtro `~F.text.startswith("/")` impede que este handler
     # consuma comandos. Sem isso, qualquer texto começando com "/" (ex.:
     # /weekfm, /monthfm em sub-routers) bateria neste handler primeiro, o

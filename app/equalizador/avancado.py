@@ -80,6 +80,9 @@ async def telegram_api_call(token: str, method: str, payload: dict[str, Any] | N
 
 
 def avancado_error_public_detail(exc: BaseException) -> str:
+    text = _safe_error_text(exc, fallback="Ajuste avançado indisponível.")
+    if "topico_nome_duplicado" in text:
+        return "Já existe um tópico registrado com esse nome. Escolha outro nome ou atualize a lista."
     if isinstance(exc, MesaTelegramError):
         return _safe_error_text(exc.description, fallback='operação recusada')
     if isinstance(exc, MesaRightError):
@@ -88,7 +91,7 @@ def avancado_error_public_detail(exc: BaseException) -> str:
         return "Referência indisponível."
     if isinstance(exc, MesaTargetError):
         return _safe_error_text(exc.description if hasattr(exc, 'description') else str(exc), fallback="Alvo indisponível.")
-    return _safe_error_text(exc, fallback="Ajuste avançado indisponível.")
+    return text
 
 
 def _now_text() -> str:
@@ -201,6 +204,20 @@ def list_topics_publicos(*, palco_id: int, db_engine: Engine = default_engine) -
     return [{"topico_ref": str(row["topico_ref"]), "nome": str(row["nome_publico"]), "estado": str(row["estado"]), "updated_at": str(row["updated_at"])} for row in rows]
 
 
+def topic_name_exists(*, palco_id: int, nome_publico: str, db_engine: Engine = default_engine) -> bool:
+    ensure_phase44_tables(db_engine)
+    nome = _safe_text(nome_publico, fallback="").strip().casefold()
+    if not nome:
+        return False
+    with db_engine.begin() as conn:
+        row = conn.execute(text("""
+            SELECT id FROM eq_topicos
+            WHERE telegram_chat_id=:chat_id AND lower(nome_publico)=lower(:nome) AND estado != 'apagado'
+            LIMIT 1
+        """), {"chat_id": int(palco_id), "nome": nome}).mappings().first()
+    return bool(row)
+
+
 def resolve_sender_ref(*, palco_id: int, sender_ref: str, db_engine: Engine = default_engine) -> dict[str, object]:
     ensure_phase44_tables(db_engine)
     ref = str(sender_ref or "").strip()
@@ -265,7 +282,9 @@ def build_advanced_payload(*, ajuste: str, palco_id: int, payload: dict[str, Any
         tag = _safe_text(payload.get("tag"), fallback="")[:16]
         return {"chat_id": int(palco_id), "user_id": int(target["telegram_user_id"]), "tag": tag}, str(target["ui_ref"]), str(target.get("nome_publico") or "Membro")
     if ajuste == "topicos.criar":
-        name = _safe_text(payload.get("nome"), fallback="Novo tópico")[:128]
+        name = _safe_text(payload.get("nome"), fallback="Novo tópico")[:128].strip() or "Novo tópico"
+        if topic_name_exists(palco_id=palco_id, nome_publico=name, db_engine=db_engine):
+            raise AvancadoError("topico_nome_duplicado")
         return {"chat_id": int(palco_id), "name": name}, None, name
     if ajuste.startswith("topicos.geral."):
         return {"chat_id": int(palco_id)}, None, "Tópico Geral"

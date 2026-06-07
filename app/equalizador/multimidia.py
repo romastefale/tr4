@@ -100,15 +100,39 @@ def _tipo_public_label(kind: str) -> str:
     }.get(str(kind or ""), str(kind or "conteúdo"))
 
 
+def _session_next_step(status: str, kind: str, row: dict[str, Any]) -> tuple[str, bool, str]:
+    status = str(status or "awaiting")
+    kind = str(kind or "")
+    if status == "awaiting":
+        return "Envie texto ou mídia no privado do bot.", False, "aguardando_conteudo"
+    if status == "ready":
+        return "Confirme a publicação no Web App.", True, "pronto"
+    if status == "publishing":
+        return "Publicação em andamento. Atualize a lista em alguns segundos.", False, "publicando"
+    if status == "published":
+        return "Sessão já publicada.", False, "publicado"
+    if status == "failed":
+        return _safe_text(row.get("error_public"), fallback="Falha registrada. Crie nova sessão se necessário."), False, "falhou"
+    if status == "cancelled":
+        return "Sessão cancelada.", False, "cancelado"
+    return "Atualize a lista para conferir o estado real.", False, "estado_desconhecido"
+
+
 def public_multimedia_session(row: dict[str, Any]) -> dict[str, object]:
     status = str(row.get("status") or "awaiting")
     kind = str(row.get("media_kind") or ("text" if row.get("texto") else ""))
+    next_step, pode_publicar, codigo_estado = _session_next_step(status, kind, row)
+    tem_conteudo = bool(row.get("texto") or row.get("file_id"))
     return {
         "session_ref": str(row.get("session_ref") or ""),
         "status": status,
         "estado": _status_public_label(status),
         "tipo": kind,
         "tipo_label": _tipo_public_label(kind),
+        "tem_conteudo": tem_conteudo,
+        "pode_publicar": pode_publicar,
+        "codigo_estado": codigo_estado,
+        "proximo_passo": next_step,
         "resumo": _safe_text(row.get("texto"), fallback=_safe_text(row.get("file_name"), fallback="Aguardando conteúdo"))[:160],
         "arquivo": _safe_text(row.get("file_name"), fallback=""),
         "mime": _safe_text(row.get("mime_type"), fallback=""),
@@ -194,8 +218,13 @@ def mark_session_waiting(*, session_ref: str, telegram_user_id: int, db_engine: 
     session = get_multimedia_session(session_ref=session_ref, db_engine=db_engine)
     if int(session.get("telegram_user_id") or 0) != int(telegram_user_id):
         raise MultimediaError("Sessão pertence a outro usuário.")
-    if str(session.get("status")) in {"published", "cancelled"}:
+    current_status = str(session.get("status") or "awaiting")
+    if current_status in {"published", "cancelled"}:
         raise MultimediaError("Sessão já encerrada.")
+    # Reabrir o deep link não pode apagar uma mídia já recebida. Antes disso, a sessão
+    # voltava para awaiting e gerava 409 mesmo depois de o bot receber o conteúdo.
+    if current_status == "ready":
+        return public_multimedia_session(session)
     with db_engine.begin() as conn:
         conn.execute(
             text("UPDATE eq_multimedia_sessions SET status='awaiting', updated_at=:updated_at WHERE session_ref=:ref"),
@@ -265,8 +294,10 @@ async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str,
         raise MultimediaError("Sessão já publicada. Atualize a lista antes de tentar novamente.")
     if status == "publishing":
         raise MultimediaError("Sessão já está publicando. Aguarde a conclusão.")
+    if status == "failed":
+        raise MultimediaError(_safe_text(session.get("error_public"), fallback="Sessão falhou. Crie uma nova sessão."))
     if status != "ready":
-        raise MultimediaError("Envie a mídia ou texto no privado do bot antes de publicar.")
+        raise MultimediaError("Sessão ainda aguardando conteúdo. Envie texto ou mídia no privado do bot antes de publicar.")
     now = _now_iso()
     with db_engine.begin() as conn:
         result_update = conn.execute(

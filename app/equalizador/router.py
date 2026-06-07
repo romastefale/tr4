@@ -25,6 +25,7 @@ from app.equalizador.rbac_runtime import (
     canais_for_palco_effective,
     filter_palco_ids_by_canal_effective,
     grant_runtime_canal,
+    rbac_runtime_error_payload,
     list_runtime_grants_public,
     rbac_runtime_catalogo_publico,
     revoke_runtime_canal,
@@ -176,30 +177,37 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
     (function () {
-      function report(kind, message, source, line, col) {
+      function report(kind, message, source, line, col, extra) {
         try {
+          var payload = {
+            kind: String(kind || "client_error").slice(0, 40),
+            message: String(message || "").slice(0, 320),
+            source: String(source || "").slice(0, 180),
+            line: Number(line || 0),
+            col: Number(col || 0),
+            href: String(location && location.pathname || "").slice(0, 160),
+            user_agent: String(navigator.userAgent || "").slice(0, 220)
+          };
+          if (extra) payload.extra = String(extra).slice(0, 500);
           fetch("/equalizador/api/client-error", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              kind: String(kind || "client_error").slice(0, 40),
-              message: String(message || "").slice(0, 240),
-              source: String(source || "").slice(0, 160),
-              line: Number(line || 0),
-              col: Number(col || 0),
-              user_agent: String(navigator.userAgent || "").slice(0, 220)
-            })
+            body: JSON.stringify(payload)
           }).catch(function () {});
         } catch (_) {}
       }
       window.__eqClientError = report;
       window.addEventListener("error", function (event) {
-        report("error", event.message, event.filename, event.lineno, event.colno);
-      });
+        var err = event.error || null;
+        var stack = err && err.stack ? err.stack : "";
+        var kind = event.message === "Script error." ? "script_error_restrito" : "error";
+        report(kind, event.message, event.filename, event.lineno, event.colno, stack);
+      }, true);
       window.addEventListener("unhandledrejection", function (event) {
         var reason = event.reason;
         var message = reason && reason.message ? reason.message : String(reason || "unhandledrejection");
-        report("unhandledrejection", message, "", 0, 0);
+        var stack = reason && reason.stack ? reason.stack : "";
+        report("unhandledrejection", message, "", 0, 0, stack);
       });
     })();
   </script>
@@ -2078,8 +2086,17 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       if (tg) { tg.ready(); tg.expand(); }
       const initData = tg && tg.initData ? tg.initData : "";
       const SESSION_KEY = "tr4_equalizador_eqs";
-      const reportClient = (kind, message) => {
-        try { if (window.__eqClientError) window.__eqClientError(kind, message, "equalizador", 0, 0); } catch (_) {}
+      const reportClient = (kind, message, extra) => {
+        try { if (window.__eqClientError) window.__eqClientError(kind, message, "equalizador", 0, 0, extra || ""); } catch (_) {}
+      };
+      const reportException = (kind, error) => {
+        const msg = error && error.message ? error.message : String(error || "erro");
+        const stack = error && error.stack ? error.stack : "";
+        reportClient(kind, msg, stack);
+      };
+      const safeAsync = (kind, fn) => async (...args) => {
+        try { return await fn(...args); }
+        catch (error) { reportException(kind, error); toast("Falha na interface. Detalhe registrado no log.", "bad"); throw error; }
       };
       const getStoredSession = () => {
         try { return String(sessionStorage.getItem(SESSION_KEY) || "").trim(); } catch (_) { return ""; }
@@ -2459,6 +2476,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (value && typeof value === "object") {
           const code = String(value.code || value.category || original.code || original.category || "").toLowerCase();
           if (code.includes("topic") || code.includes("topico")) value = value.motivo_publico || value.public_detail || "Ação de tópico não aplicada. Verifique se o grupo usa fórum, se o tópico existe e se o bot tem direito real para gerenciar tópicos.";
+          else if (code.includes("rbac") || code.includes("operador") || code.includes("canal_invalido") || code.includes("grupo_indisponivel")) value = value.public_detail || value.motivo_publico || "Delegação não aplicada. Revise governante, grupo e canal.";
           else if (code.includes("permission") || code.includes("forbidden") || code.includes("rights")) value = value.motivo_publico || value.public_detail || "Ação bloqueada por permissão real do bot ou do operador.";
           else value = value.motivo_publico || value.public_detail || value.message || value.erro || "Ajuste não concluído.";
         }
@@ -4120,8 +4138,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const publicar = document.getElementById("multimidia_publicar");
         if (!row) { box.textContent = "Crie uma sessão e envie o conteúdo no privado do bot."; if (publicar) publicar.disabled = true; return; }
         const aguardando = row.status === "awaiting" ? " · falta enviar conteúdo no privado" : "";
-        box.textContent = `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${aguardando}${row.erro ? " · " + row.erro : ""}`;
-        if (publicar) publicar.disabled = row.status !== "ready";
+        const passo = row.proximo_passo ? " · " + row.proximo_passo : "";
+        box.textContent = `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${aguardando}${passo}${row.erro ? " · " + row.erro : ""}`;
+        if (publicar) publicar.disabled = !(row.pode_publicar || row.status === "ready");
       }
       async function reloadMultimediaSessions() {
         if (!currentPalco) return;
@@ -4375,6 +4394,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           canal_codigo: (document.getElementById("rbac_canal_codigo") || {}).value || "",
           motivo: (document.getElementById("rbac_motivo") || {}).value || "",
         };
+        if (!payload.usr_ref) { toast("Escolha um governante conhecido para delegar.", "warn"); return; }
+        if (!payload.canal_codigo) { toast("Escolha o canal de permissão.", "warn"); return; }
         const res = await api("/equalizador/api/rbac/runtime", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}), body: JSON.stringify(payload) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
@@ -4843,7 +4864,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (action.startsWith("topicos.")) {
           const nome = (document.getElementById("topico_nome") || {}).value || "";
           const topico = (document.getElementById("topico_select") || {}).value || "";
-          if (action === "topicos.criar") return { nome: nome || "Novo tópico" };
+          if (action === "topicos.criar") {
+            if (!nome.trim()) throw new Error("Informe um nome para o novo tópico.");
+            return { nome: nome.trim() };
+          }
           if (!action.startsWith("topicos.geral") && !topico) throw new Error("Escolha um tópico registrado.");
           return { topico_ref: topico, nome: nome || undefined };
         }
@@ -5103,10 +5127,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       });
       document.getElementById("radio_draft_select").addEventListener("change", updateRadioPreview);
       document.getElementById("radio_criar_rascunho").addEventListener("click", criarRadioRascunho);
-      document.getElementById("multimidia_iniciar").addEventListener("click", iniciarMultimediaNativa);
-      document.getElementById("multimidia_atualizar").addEventListener("click", reloadMultimediaSessions);
-      document.getElementById("multimidia_session_select").addEventListener("change", updateMultimediaPreview);
-      document.getElementById("multimidia_publicar").addEventListener("click", publicarMultimediaSessao);
+      document.getElementById("multimidia_iniciar").addEventListener("click", safeAsync("multimidia_iniciar_failed", iniciarMultimediaNativa));
+      document.getElementById("multimidia_atualizar").addEventListener("click", safeAsync("multimidia_reload_failed", reloadMultimediaSessions));
+      document.getElementById("multimidia_session_select").addEventListener("change", () => { try { updateMultimediaPreview(); } catch (error) { reportException("multimidia_preview_failed", error); } });
+      document.getElementById("multimidia_publicar").addEventListener("click", safeAsync("multimidia_publicar_failed", publicarMultimediaSessao));
       document.getElementById("radio_publicar").addEventListener("click", publicarRadioRascunho);
       document.getElementById("radio_cancelar").addEventListener("click", cancelarRadioRascunho);
       document.getElementById("radio_template_salvar").addEventListener("click", salvarRadioTemplate);
@@ -5686,16 +5710,22 @@ async def equalizador_client_error(request: Request) -> dict[str, object]:
     kind = clean(payload.get("kind"), 40) or "client_error"
     message = clean(payload.get("message"), 240)
     source = clean(payload.get("source"), 120)
+    href = clean(payload.get("href"), 120)
+    extra = clean(payload.get("extra"), 240)
     user_agent = clean(payload.get("user_agent"), 180)
     logger = __import__("logging").getLogger(__name__)
-    log_method = logger.info if kind in {"initdata_ausente", "initdata_ausente_usando_sessao"} else logger.warning
+    # compat_phase100_initdata_log: logger.info if kind in {"initdata_ausente", "initdata_ausente_usando_sessao"}
+    info_kinds = {"initdata_ausente", "initdata_ausente_usando_sessao", "script_error_restrito"}
+    log_method = logger.info if kind in info_kinds else logger.warning
     log_method(
-        "EQUALIZADOR_CLIENT_EVENT | tipo=%s | mensagem=%s | origem=%s | linha=%s | coluna=%s | ua=%s",
+        "EQUALIZADOR_CLIENT_EVENT | tipo=%s | mensagem=%s | origem=%s | caminho=%s | linha=%s | coluna=%s | detalhe=%s | ua=%s",
         kind,
         message or "-",
         source or "-",
+        href or "-",
         payload.get("line") or 0,
         payload.get("col") or 0,
+        extra or "-",
         user_agent or "-",
     )
     return {"ok": True}
@@ -6242,7 +6272,7 @@ async def equalizador_rbac_runtime_grant(request: Request, authorization: str | 
             alias_secret=settings.equalizador_alias_secret(),
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Concessão inválida ou alvo indisponível.") from exc
+        raise HTTPException(status_code=400, detail={"code": "rbac_runtime_invalido", **rbac_runtime_error_payload(exc)}) from exc
     return {"ok": True, "concessao": grant, **list_runtime_grants_public(alias_secret=settings.equalizador_alias_secret())}
 
 
@@ -6525,7 +6555,10 @@ async def equalizador_multimidia_sessao_publicar(
             sessao_publica = None
         detail = {
             "mensagem": str(exc)[:180] or "Publicação multimídia não concluída.",
-            "codigo": "multimidia_conflito_estado",
+            # compat_phase101_codigo_multimidia: "codigo": "multimidia_conflito_estado"
+            "codigo": (sessao_publica or {}).get("codigo_estado") or "multimidia_conflito_estado",
+            "estado": (sessao_publica or {}).get("status") or "indisponivel",
+            "proximo_passo": (sessao_publica or {}).get("proximo_passo") or "Atualize a lista e confira a sessão.",
             "sessao": sessao_publica,
         }
         raise HTTPException(status_code=409, detail=detail) from exc
@@ -7118,7 +7151,11 @@ async def _execute_avancado_endpoint(*, grp_ref: str, ajuste: str, request: Requ
     except EqualizadorMesaBusyError as exc:
         raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
     except (MesaError, AvancadoError) as exc:
-        raise HTTPException(status_code=409, detail=avancado_error_public_detail(exc)) from exc
+        detail_text = avancado_error_public_detail(exc)
+        detail = {"code": "topico_conflito" if ajuste.startswith("topicos.") else "ajuste_conflito", "public_detail": detail_text, "motivo_publico": detail_text, "ajuste": ajuste}
+        if ajuste.startswith("topicos."):
+            detail["proximo_passo"] = "Atualize a lista de tópicos, confirme se o fórum está ativo e use um nome novo quando for criar tópico."
+        raise HTTPException(status_code=409, detail=detail) from exc
 
 
 async def _execute_admin_endpoint(*, grp_ref: str, ajuste: str, request: Request, authorization: str | None) -> dict[str, object]:

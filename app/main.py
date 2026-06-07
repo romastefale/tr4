@@ -244,6 +244,12 @@ def _db_ready_check() -> tuple[bool, str | None]:
         return False, f"{type(exc).__name__}: {exc}"
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def root_favicon() -> Response:
+    svg = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='#161b20'/><path d='M18 35h28M22 25h20M26 45h12' stroke='#66aaff' stroke-width='5' stroke-linecap='round'/></svg>"""
+    return Response(content=svg, media_type="image/svg+xml")
+
+
 @app.get("/healthz", status_code=200)
 def healthz() -> dict[str, object]:
     return {

@@ -15,6 +15,20 @@ from app.equalizador.palcos import ensure_equalizador_tables, get_operador_publi
 from app.equalizador.permissions import CANAL_BY_CODE, CANAL_DEFINITIONS, CRITICAL_CANAL_CODES, canal_is_allowed, canais_for_palco, parse_equalizador_canais
 
 
+
+
+class RbacRuntimeError(ValueError):
+    def __init__(self, code: str, public_detail: str):
+        super().__init__(code)
+        self.code = code
+        self.public_detail = public_detail
+
+
+def rbac_runtime_error_payload(exc: BaseException) -> dict[str, str]:
+    code = str(exc) or exc.__class__.__name__
+    public = getattr(exc, "public_detail", "Concessão inválida ou alvo indisponível.")
+    return {"code": code, "public_detail": str(public)}
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -274,7 +288,7 @@ def update_governance_operator(
     ensure_rbac_runtime_tables(db_engine)
     user_id = _resolve_usr_ref(usr_ref, db_engine=db_engine)
     if not user_id:
-        raise ValueError("operador_indisponivel")
+        raise RbacRuntimeError("operador_indisponivel", "Escolha um governante conhecido antes de conceder permissão.")
     safe_nome = str(nome or "Governante designado").strip()[:80] or "Governante designado"
     safe_username = str(username or "").strip().lstrip("@")[:32]
     safe_perfil = str(perfil or "Governante designado").strip()[:80] or "Governante designado"
@@ -300,7 +314,7 @@ def update_governance_operator(
     )
     row = _operator_public_by_usr_ref(str(usr_ref), alias_secret=alias_secret, db_engine=db_engine)
     if not row:
-        raise ValueError("operador_indisponivel")
+        raise RbacRuntimeError("operador_indisponivel", "Escolha um governante conhecido antes de conceder permissão.")
     return row
 
 
@@ -315,7 +329,7 @@ def disable_governance_operator(
     ensure_rbac_runtime_tables(db_engine)
     user_id = _resolve_usr_ref(usr_ref, db_engine=db_engine)
     if not user_id:
-        raise ValueError("operador_indisponivel")
+        raise RbacRuntimeError("operador_indisponivel", "Escolha um governante conhecido antes de conceder permissão.")
     if protected_user_ids and int(user_id) in {int(v) for v in protected_user_ids}:
         raise ValueError("dono_protegido")
     now = _now_iso()
@@ -387,13 +401,13 @@ def grant_runtime_canal(
     ensure_rbac_runtime_tables(db_engine)
     canal = CANAL_BY_CODE.get(str(canal_codigo or "").strip())
     if not canal:
-        raise ValueError("canal_invalido")
+        raise RbacRuntimeError("canal_invalido", "Escolha um canal de permissão válido.")
     user_id = _resolve_usr_ref(usr_ref, db_engine=db_engine)
     if not user_id:
-        raise ValueError("operador_indisponivel")
+        raise RbacRuntimeError("operador_indisponivel", "Escolha um governante conhecido antes de conceder permissão.")
     chat_id = _resolve_grp_ref(grp_ref, db_engine=db_engine)
     if grp_ref and str(grp_ref).strip() != "*" and chat_id is None:
-        raise ValueError("grupo_indisponivel")
+        raise RbacRuntimeError("grupo_indisponivel", "Escolha um grupo válido ou deixe Global.")
     now = _now_iso()
     grant_ref = _grant_ref(user_id=int(user_id), chat_id=chat_id, canal_codigo=canal.codigo, alias_secret=alias_secret)
     with db_engine.begin() as conn:
