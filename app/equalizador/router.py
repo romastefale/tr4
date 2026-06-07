@@ -1183,12 +1183,111 @@ _EQUALIZADOR_HTML = """<!doctype html>
     body.phase89-owner-governance .owner-governance-add input { min-width: 0; }
     body.phase89-owner-governance .owner-governance-add .hint-private { color: #8d98a7; font-size: 12px; line-height: 1.35; }
 
+    /* Fase 98: UX minimalista final — reduz card sobre card, texto redundante e azul estrutural. */
+    body.phase98-ux-final {
+      --eq-bg: #0e1217;
+      --eq-surface: #14191f;
+      --eq-surface-2: #11161c;
+      --eq-surface-3: #0d1116;
+      --eq-border: rgba(255,255,255,.07);
+      --eq-muted: #8b96a5;
+      background: var(--eq-bg);
+      color: #f3f6f8;
+    }
+    body.phase98-ux-final .view,
+    body.phase98-ux-final .panel,
+    body.phase98-ux-final .feedback-panel,
+    body.phase98-ux-final .group-card,
+    body.phase98-ux-final .app-tabs,
+    body.phase98-ux-final details.disclosure-row,
+    body.phase98-ux-final details.diagnostic-section,
+    body.phase98-ux-final .governance-card,
+    body.phase98-ux-final .empty,
+    body.phase98-ux-final .item,
+    body.phase98-ux-final .item-line {
+      background: var(--eq-surface);
+      border-color: var(--eq-border);
+      box-shadow: none;
+    }
+    body.phase98-ux-final.detail-mode .view { background: transparent; border-color: transparent; padding: 8px; }
+    body.phase98-ux-final .view .panel { background: var(--eq-surface); border-color: var(--eq-border); }
+    body.phase98-ux-final .panel .panel,
+    body.phase98-ux-final .view .panel .panel,
+    body.phase98-ux-final .diagnostic-card,
+    body.phase98-ux-final .governance-role,
+    body.phase98-ux-final .disclosure-body,
+    body.phase98-ux-final .diagnostic-section-body { background: var(--eq-surface-2); border-color: var(--eq-border); }
+    body.phase98-ux-final .section-note,
+    body.phase98-ux-final .view p.section-note,
+    body.phase98-ux-final .panel > p.muted.small { display: none !important; }
+    body.phase98-ux-final .panel h3 { margin: 2px 0 9px; font-size: 14px; letter-spacing: -.01em; }
+    body.phase98-ux-final .grid,
+    body.phase98-ux-final .panel-split,
+    body.phase98-ux-final .diagnostic-grid,
+    body.phase98-ux-final .disclosure-list { gap: 8px; }
+    body.phase98-ux-final .panel { padding: 10px; border-radius: 15px; }
+    body.phase98-ux-final .item,
+    body.phase98-ux-final .item-line,
+    body.phase98-ux-final .empty { padding: 9px 10px; border-radius: 12px; }
+    body.phase98-ux-final button.action { min-height: 42px; border-radius: 12px; background: #232b34; }
+    body.phase98-ux-final button.action.secondary { background: #20272f; }
+    body.phase98-ux-final button.action.warn { background: #5c3d16; }
+    body.phase98-ux-final button.action.bad { background: #6a201c; }
+    body.phase98-ux-final input,
+    body.phase98-ux-final textarea,
+    body.phase98-ux-final select { background: var(--eq-surface-3); border-color: var(--eq-border); }
+    body.phase98-ux-final .toolbar,
+    body.phase98-ux-final .config-actions,
+    body.phase98-ux-final .feedback-actions { gap: 7px; }
+
+
+    /* Fase 99: menus recolhíveis e listas roláveis por padrão. */
+    body.phase99-collapsible-menus .collapsible-list-shell {
+      border: 1px solid var(--eq-border, rgba(255,255,255,.07));
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--eq-surface, #14191f);
+    }
+    body.phase99-collapsible-menus .collapsible-list-shell > summary {
+      list-style: none;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+    }
+    body.phase99-collapsible-menus .collapsible-list-shell > summary::-webkit-details-marker { display: none; }
+    body.phase99-collapsible-menus .collapsible-list-shell > summary::after {
+      content: '›';
+      color: var(--eq-muted, #8b96a5);
+      font-size: 22px;
+      transform: rotate(90deg);
+      transition: transform .16s ease;
+    }
+    body.phase99-collapsible-menus .collapsible-list-shell[open] > summary::after { transform: rotate(-90deg); }
+    body.phase99-collapsible-menus .collapsible-list-body {
+      border-top: 1px solid var(--eq-border, rgba(255,255,255,.07));
+      display: grid;
+      gap: 7px;
+      padding: 9px;
+      max-height: min(54vh, 420px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    body.phase99-collapsible-menus .collapsible-list-title { font-weight: 700; color: #f3f6f8; }
+    body.phase99-collapsible-menus .collapsible-list-sub { display: block; color: var(--eq-muted, #8b96a5); font-size: 12px; margin-top: 2px; }
+    body.phase99-collapsible-menus #config_matriz,
+    body.phase99-collapsible-menus #config_permissoes_auditoria,
+    body.phase99-collapsible-menus #diagnostico_acoes { max-height: min(58vh, 460px); overflow-y: auto; padding-right: 2px; }
+
+
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
-  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback", "phase85-cleanup", "phase89-owner-governance");</script>
+  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback", "phase85-cleanup", "phase89-owner-governance", "phase98-ux-final", "phase99-collapsible-menus");</script>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -3020,8 +3119,14 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const el = document.getElementById(id);
         if (!el) return;
         const data = rows || [];
+        const rendered = data.length ? data.map(render) : [document.createTextNode(emptyText)];
+        if (data.length > 3 && collapsibleListIds.has(id)) {
+          el.className = "list compact-collapsible";
+          el.replaceChildren(makeCollapsibleList(id, rendered, emptyText));
+          return;
+        }
         el.className = data.length ? "list" : "list muted";
-        el.replaceChildren(...(data.length ? data.map(render) : [document.createTextNode(emptyText)]));
+        el.replaceChildren(...rendered);
       };
       const disclosureRow = (title, summary, detail) => {
         const row = document.createElement("details");
@@ -3041,6 +3146,23 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const data = rows || [];
         el.className = data.length ? "disclosure-list" : "list muted";
         el.replaceChildren(...(data.length ? data.map((row) => disclosureRow(row.titulo, row.resumo || "Toque para ver canais.", row.detalhe)) : [document.createTextNode(emptyText)]));
+      };
+      const collapsibleListIds = new Set(["config_aliases", "config_operadores", "config_palcos_ativos", "config_palcos_ocultos", "rbac_runtime_lista", "rbac_auditoria_governanca", "seguranca_auditoria", "historico", "mensagens_lote_lista", "mesa_membros_preview", "convites_lista", "topicos_lista"]);
+      const listTitleById = {
+        config_aliases: "Aliases de grupos", config_operadores: "Governantes e operadores", config_palcos_ativos: "Grupos ativos", config_palcos_ocultos: "Grupos ocultos", rbac_runtime_lista: "Permissões runtime", rbac_auditoria_governanca: "Auditoria de governança", seguranca_auditoria: "Auditoria de segurança", historico: "Histórico", mensagens_lote_lista: "Mensagens recentes", mesa_membros_preview: "Pessoas do painel", convites_lista: "Convites", topicos_lista: "Tópicos"
+      };
+      const makeCollapsibleList = (id, items, emptyText) => {
+        const wrapper = document.createElement("details");
+        wrapper.className = "collapsible-list-shell small";
+        const summary = document.createElement("summary");
+        const title = listTitleById[id] || "Lista";
+        summary.innerHTML = `<span><span class="collapsible-list-title">${escapeHtml(title)}</span><span class="collapsible-list-sub">${items.length} item(ns) · toque para abrir</span></span>`;
+        const body = document.createElement("div");
+        body.className = "collapsible-list-body";
+        body.replaceChildren(...(items.length ? items : [document.createTextNode(emptyText || "Nada para mostrar.")]));
+        wrapper.appendChild(summary);
+        wrapper.appendChild(body);
+        return wrapper;
       };
       const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
       const safeText = (value, fallback) => String(value || fallback || "").replace(/[<>]/g, "");
