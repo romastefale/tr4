@@ -253,13 +253,27 @@ HTTP_TIMEOUT_SECONDS = _float_env(
     legacy=("HTTP_TIMEOUT_SECONDS",),
 )
 
-def _data_dir() -> Path:
-    """Return the runtime data directory, preferring Railway's mounted volume.
+def _path_is_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".tr4_persistence_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False
 
-    TR3_DATA_DIR/DATA_DIR remain explicit overrides. When no explicit value is
-    set, Railway exposes RAILWAY_VOLUME_MOUNT_PATH for the persistent volume;
-    using it avoids silently creating a fresh SQLite database in the ephemeral
-    container after deploys. Local/default deployments keep /app/data.
+
+def _data_dir() -> Path:
+    """Return the runtime data directory, with Railway volume as hard preference.
+
+    Deploy regression seen in the Mini App happens when SQLite silently falls
+    back to an ephemeral container directory. The order below makes persistence
+    explicit and stable:
+    1. TR3_DATA_DIR/DATA_DIR override;
+    2. Railway's RAILWAY_VOLUME_MOUNT_PATH;
+    3. /data when it is a writable mounted volume;
+    4. /app/data only as local/container fallback.
     """
     explicit = _env("TR3_DATA_DIR", "", legacy=("DATA_DIR",)).strip()
     if explicit:
@@ -267,6 +281,9 @@ def _data_dir() -> Path:
     railway_volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
     if railway_volume:
         return Path(railway_volume)
+    data_path = Path("/data")
+    if _path_is_writable_dir(data_path):
+        return data_path
     return Path("/app/data")
 
 

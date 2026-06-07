@@ -1162,12 +1162,25 @@ _EQUALIZADOR_HTML = """<!doctype html>
       body.phase85-cleanup .view .panel { padding: 12px; }
     }
 
+
+    /* Fase 89: governança owner-only e cadastro pelo painel sem expor IDs no resumo. */
+    body.phase89-owner-governance .owner-governance-add {
+      border: 1px solid rgba(255,255,255,.075);
+      border-radius: 14px;
+      background: #12171d;
+      padding: 12px;
+      margin: 10px 0;
+    }
+    body.phase89-owner-governance .owner-governance-add .formgrid { margin-top: 8px; }
+    body.phase89-owner-governance .owner-governance-add input { min-width: 0; }
+    body.phase89-owner-governance .owner-governance-add .hint-private { color: #8d98a7; font-size: 12px; line-height: 1.35; }
+
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
   </style>
 </head>
 <body class="phase68-minimal">
-  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback", "phase85-cleanup");</script>
+  <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback", "phase85-cleanup", "phase89-owner-governance");</script>
   <main>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
@@ -1859,6 +1872,17 @@ frase temporária"></textarea>
             <div id="config_governantes" class="governance-grid muted">Governança não carregada.</div>
             <h3>Delegação runtime</h3>
             <p class="muted small">Concessões salvas no banco persistente. Use para delegar governantes sem editar Railway a cada ajuste. As variáveis continuam como base estável.</p>
+            <div class="owner-governance-add">
+              <strong>Adicionar governante conhecido</strong>
+              <div class="hint-private">Restrito ao dono. O identificador informado é usado só para cadastro interno e não aparece no resumo público.</div>
+              <div class="formgrid">
+                <label class="small muted">Identificador informado pelo dono<br><input id="rbac_new_user_id" inputmode="numeric" placeholder="somente números" /></label>
+                <label class="small muted">Nome público<br><input id="rbac_new_nome" placeholder="ex.: Governante de mensagens" /></label>
+                <label class="small muted">@username opcional<br><input id="rbac_new_username" placeholder="sem @" /></label>
+                <label class="small muted">Função<br><input id="rbac_new_perfil" placeholder="Governante designado" /></label>
+              </div>
+              <div class="toolbar"><button id="rbac_adicionar_governante" class="action" type="button">Adicionar governante</button></div>
+            </div>
             <div class="formgrid">
               <label class="small muted">Governante<br><select id="rbac_usr_ref"></select></label>
               <label class="small muted">Grupo<br><select id="rbac_grp_ref"></select></label>
@@ -1875,6 +1899,8 @@ frase temporária"></textarea>
             <div id="rbac_runtime_lista" class="list muted">Delegação runtime não carregada.</div>
             <h3>Sessões persistentes</h3>
             <div id="sessoes_persistentes" class="empty small">Sessões não carregadas.</div>
+            <h3>Persistência real</h3>
+            <div id="persistencia_status" class="empty small">Persistência não carregada.</div>
             <h3>Matriz completa de permissões</h3>
             <p class="muted small">Leitura de segurança por operador, grupo e canal. Canais críticos ficam marcados e operadores comuns permanecem bloqueados.</p>
             <div id="config_matriz_resumo" class="empty small">Matriz não carregada.</div>
@@ -3198,8 +3224,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         metricas.replaceChildren();
         const usuarios = typeof stats.usuarios_conhecidos === "number" ? stats.usuarios_conhecidos : "—";
         const palcos = typeof stats.palcos_ativos === "number" ? stats.palcos_ativos : "—";
-        const operadores = typeof stats.operadores_autorizados === "number" ? stats.operadores_autorizados : "—";
-        metricas.textContent = `${usuarios} usuários • ${palcos} grupos • ${operadores} operadores`;
+        const partes = [`${usuarios} usuários`, `${palcos} grupos`];
+        if (typeof stats.operadores_autorizados === "number") partes.push(`${stats.operadores_autorizados} governante(s)`);
+        metricas.textContent = partes.join(" • ");
         const revisoes = document.getElementById("bot_revisoes");
         const importantes = (data && data.revisoes_importantes) || [];
         if (revisoes) {
@@ -4075,6 +4102,23 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const sessoesEl = document.getElementById("sessoes_persistentes");
         if (sessoesEl) sessoesEl.textContent = `${sessoes.ativas || 0} sessão(ões) ativa(s) · ${sessoes.expiradas || 0} expirada(s) · ${sessoes.total || 0} total`;
       }
+      async function adicionarGovernanteRuntime() {
+        if (!modoMaestroPermitido) { toast("Cadastro restrito ao dono do código.", "warn"); return; }
+        const payload = {
+          telegram_user_id: (document.getElementById("rbac_new_user_id") || {}).value || "",
+          nome: (document.getElementById("rbac_new_nome") || {}).value || "",
+          username: (document.getElementById("rbac_new_username") || {}).value || "",
+          perfil: (document.getElementById("rbac_new_perfil") || {}).value || "Governante designado",
+        };
+        const res = await api("/equalizador/api/rbac/operadores", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, apiHeaders || {}), body: JSON.stringify(payload) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        const fields = ["rbac_new_user_id", "rbac_new_nome", "rbac_new_username", "rbac_new_perfil"];
+        fields.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+        renderRbacRuntime({ rbac_runtime: data.rbac_runtime || data });
+        toast("Governante adicionado ao painel.", "ok");
+        await loadConfiguracaoMaestro();
+      }
       async function concederRbacRuntime() {
         if (!modoMaestroPermitido) { toast("Delegação restrita ao dono do código.", "warn"); return; }
         const payload = {
@@ -4206,6 +4250,19 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         return div;
       }
 
+      function renderPersistencia(persistencia) {
+        const el = document.getElementById("persistencia_status");
+        if (!el) return;
+        const tabelas = persistencia && persistencia.tabelas ? persistencia.tabelas : {};
+        const importadas = ["lastfm_profiles", "track_plays", "track_likes", "track_reactions"].map((name) => {
+          const value = Object.prototype.hasOwnProperty.call(tabelas, name) ? tabelas[name] : null;
+          return `${name}: ${value === null || typeof value === "undefined" ? "ausente" : value}`;
+        }).join(" · ");
+        const estado = persistencia && persistencia.persistente ? "volume persistente" : "atenção: fora do volume";
+        const alertas = Array.isArray(persistencia && persistencia.alertas) && persistencia.alertas.length ? ` · ${persistencia.alertas.join(", ")}` : "";
+        el.textContent = `${estado} · ${importadas}${alertas}`;
+      }
+
       async function loadConfiguracaoMaestro() {
         if (!modoMaestroPermitido) return;
         const res = await api("/equalizador/api/configuracao");
@@ -4239,6 +4296,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         renderGovernanca("config_governantes", gov, { onlyActive: true });
         renderRbacRuntime(data);
         renderSeguranca(data);
+        renderPersistencia(data.persistencia || {});
         const matriz = data.matriz_permissoes || {};
         const resumo = matriz.resumo || {};
         const resumoEl = document.getElementById("config_matriz_resumo");
@@ -4288,7 +4346,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           api(base + "/convites").then((r) => r.ok ? r.json() : { convites: [] }).catch(() => ({ convites: [] })),
           api(base + "/topicos").then((r) => r.ok ? r.json() : { topicos: [] }).catch(() => ({ topicos: [] })),
           api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] }).catch(() => ({ remetentes: [] })),
-          api(base + "/governantes").then((r) => r.ok ? r.json() : { governantes: [] }).catch(() => ({ governantes: [] })),
+          (modoMaestroPermitido ? api(base + "/governantes").then((r) => r.ok ? r.json() : { governantes: [] }).catch(() => ({ governantes: [] })) : Promise.resolve({ governantes: [] })),
           api(base + "/radio/rascunhos").then((r) => r.ok ? r.json() : { rascunhos: [] }).catch(() => ({ rascunhos: [] })),
           api(base + "/radio/templates").then((r) => r.ok ? r.json() : { templates: [] }).catch(() => ({ templates: [] })),
           api(base + "/radio/historico").then((r) => r.ok ? r.json() : { historico: [] }).catch(() => ({ historico: [] })),
@@ -4826,6 +4884,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       document.getElementById("atualizar_configuracao").addEventListener("click", () => loadConfiguracaoMaestro());
       document.getElementById("gerar_config_raw").addEventListener("click", () => gerarConfigRaw());
       document.getElementById("resetar_config_form").addEventListener("click", () => loadConfiguracaoMaestro());
+      const rbacAdicionarGovernante = document.getElementById("rbac_adicionar_governante");
+      if (rbacAdicionarGovernante) rbacAdicionarGovernante.addEventListener("click", () => adicionarGovernanteRuntime());
       document.getElementById("rbac_conceder").addEventListener("click", () => concederRbacRuntime());
       document.getElementById("rbac_revogar").addEventListener("click", () => revogarRbacRuntime());
       document.getElementById("sessoes_limpar").addEventListener("click", () => limparSessoesExpiradas());
@@ -5051,7 +5111,7 @@ def _bot_revisoes_importantes() -> list[str]:
     return revisoes[:6]
 
 
-async def _bot_public_summary() -> dict[str, object]:
+async def _bot_public_summary(*, is_maestro: bool = False) -> dict[str, object]:
     bot_payload: dict[str, object] = {"nome": "TR4", ("user" + "name"): "", "foto_disponivel": False}
     if settings.TELEGRAM_BOT_TOKEN:
         try:
@@ -5074,15 +5134,19 @@ async def _bot_public_summary() -> dict[str, object]:
                             bot_payload["foto_disponivel"] = bool(int(result.get("total_count") or 0) > 0)
         except Exception:
             pass
-    return {
-        "bot": bot_payload,
-        "estatisticas": {
-            "usuarios_conhecidos": _count_known_bot_users(),
-            "palcos_ativos": len(settings.equalizador_allowed_palco_ids()),
+    estatisticas: dict[str, object] = {
+        "usuarios_conhecidos": _count_known_bot_users(),
+        "palcos_ativos": len(settings.equalizador_allowed_palco_ids()),
+    }
+    if is_maestro:
+        estatisticas.update({
             "operadores_autorizados": len(settings.TR4_EQUALIZADOR_OPERADOR_IDS_SET),
             "maestros": len(settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET),
-        },
-        "revisoes_importantes": _bot_revisoes_importantes(),
+        })
+    return {
+        "bot": bot_payload,
+        "estatisticas": estatisticas,
+        "revisoes_importantes": _bot_revisoes_importantes() if is_maestro else [],
     }
 
 def _has_canal_for_palco(identity: TelegramWebAppIdentity, *, palco_id: int, canal_codigo: str) -> bool:
@@ -5374,8 +5438,8 @@ def equalizador_me(authorization: str | None = Header(default=None)) -> dict[str
 
 @router.get("/api/bot/resumo")
 async def equalizador_bot_resumo(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    _require_identity(authorization, rate_kind="read")
-    return await _bot_public_summary()
+    identity = _require_identity(authorization, rate_kind="read")
+    return await _bot_public_summary(is_maestro=_is_maestro(identity))
 
 
 @router.get("/api/bot/foto")
@@ -5693,17 +5757,60 @@ def equalizador_historico_exportar(authorization: str | None = Header(default=No
     return {"exportacao": exportar_historico_publico(palco_refs=palco_refs, alias_secret=settings.equalizador_alias_secret())}
 
 
+_PERSISTENCE_TABLES = (
+    "lastfm_profiles",
+    "spotify_tokens",
+    "track_plays",
+    "track_likes",
+    "track_reactions",
+    "reaction_audit",
+    "eq_runtime_grants",
+    "eq_private_sessions",
+    "eq_security_mode",
+    "eq_security_audit",
+    "eq_radio_drafts",
+    "eq_ddx_events",
+)
+
+
+def _persistence_status_public() -> dict[str, object]:
+    data_dir = str(getattr(settings, "DATA_DIR", ""))
+    under_volume = data_dir == "/data" or data_dir.startswith("/data/")
+    tables: dict[str, int | None] = {}
+    try:
+        with default_engine.begin() as conn:
+            for table in _PERSISTENCE_TABLES:
+                exists = conn.execute(
+                    text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:name"),
+                    {"name": table},
+                ).scalar()
+                if exists:
+                    count = conn.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
+                    tables[table] = int(count or 0)
+                else:
+                    tables[table] = None
+    except Exception:
+        return {
+            "ok": False,
+            "local": "volume" if under_volume else "container",
+            "persistente": under_volume,
+            "tabelas": {},
+            "alertas": ["persistencia_indisponivel"],
+        }
+    alertas = [] if under_volume else ["banco_fora_do_volume_persistente"]
+    return {
+        "ok": not alertas,
+        "local": "volume" if under_volume else "container",
+        "persistente": under_volume,
+        "tabelas": tables,
+        "alertas": alertas,
+    }
+
+
 @router.get("/api/configuracao")
 def equalizador_configuracao(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal_effective(
-        raw_canais=settings.equalizador_canais_raw(),
-        user_id=identity.user_id,
-        chat_ids=settings.equalizador_allowed_palco_ids(),
-        canal_codigo="canais.distribuir",
-        is_maestro=_is_maestro(identity),
-    )
-    if not palco_ids:
+    if not _is_maestro(identity):
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
     return {
         "configuracao": True,
@@ -5712,7 +5819,49 @@ def equalizador_configuracao(authorization: str | None = Header(default=None)) -
         "governanca": governantes_publicos(alias_secret=settings.equalizador_alias_secret()),
         "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret()),
         "sessoes_persistentes": session_store_status(now_ts=int(__import__("time").time())),
+        "persistencia": _persistence_status_public(),
         "seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret()),
+    }
+
+
+@router.get("/api/persistencia/status")
+def equalizador_persistencia_status(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    return {"persistencia": _persistence_status_public()}
+
+
+@router.post("/api/rbac/operadores")
+async def equalizador_rbac_operador_criar(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    payload = await request.json()
+    try:
+        user_id = int(str(payload.get("telegram_user_id") or "").strip())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Governante inválido.") from exc
+    if user_id <= 0:
+        raise HTTPException(status_code=400, detail="Governante inválido.")
+    nome = str(payload.get("nome") or "Governante designado").strip()[:80] or "Governante designado"
+    username = str(payload.get("username") or "").strip().lstrip("@")[:32]
+    perfil = str(payload.get("perfil") or "Governante designado").strip()[:80] or "Governante designado"
+    operador = upsert_operador(
+        user_id=user_id,
+        user={"id": user_id, "first_name": nome, "username": username},
+        perfil=perfil,
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+    return {
+        "ok": True,
+        "governante": {
+            "usr_ref": operador["ui_ref"],
+            "nome": operador["nome"],
+            "username": operador.get("username") or "",
+            "perfil": operador["perfil"],
+        },
+        "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret()),
     }
 
 
@@ -5884,10 +6033,11 @@ def equalizador_palco_governantes(
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
     palco = get_palco_internal_by_ref(grp_ref=grp_ref)
     if not palco:
         raise HTTPException(status_code=404, detail="Grupo indisponível.")
-    _require_any_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigos=("palco.status", "palco.ver"))
     return governantes_publicos(alias_secret=settings.equalizador_alias_secret(), grp_ref=grp_ref)
 
 
@@ -6282,14 +6432,7 @@ async def equalizador_configuracao_raw_preview(
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal_effective(
-        raw_canais=settings.equalizador_canais_raw(),
-        user_id=identity.user_id,
-        chat_ids=settings.equalizador_allowed_palco_ids(),
-        canal_codigo="canais.distribuir",
-        is_maestro=_is_maestro(identity),
-    )
-    if not palco_ids:
+    if not _is_maestro(identity):
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
     payload = await _read_json_payload(request)
     return raw_editor_from_form_payload(payload)
@@ -6298,14 +6441,7 @@ async def equalizador_configuracao_raw_preview(
 @router.get("/api/permissoes/matriz")
 def equalizador_permissoes_matriz(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal_effective(
-        raw_canais=settings.equalizador_canais_raw(),
-        user_id=identity.user_id,
-        chat_ids=settings.equalizador_allowed_palco_ids(),
-        canal_codigo="canais.distribuir",
-        is_maestro=_is_maestro(identity),
-    )
-    if not palco_ids:
+    if not _is_maestro(identity):
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
     return matriz_permissoes_publica(alias_secret=settings.equalizador_alias_secret())
 
@@ -6313,19 +6449,13 @@ def equalizador_permissoes_matriz(authorization: str | None = Header(default=Non
 @router.get("/api/canais/distribuicao")
 def equalizador_canais_distribuicao(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
-    palco_ids = filter_palco_ids_by_canal_effective(
-        raw_canais=settings.equalizador_canais_raw(),
-        user_id=identity.user_id,
-        chat_ids=settings.equalizador_allowed_palco_ids(),
-        canal_codigo="canais.distribuir",
-        is_maestro=_is_maestro(identity),
-    )
-    if not palco_ids:
+    if not _is_maestro(identity):
         raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    palco_ids = settings.equalizador_allowed_palco_ids()
     return {
         "distribuicao": distribuicao_canais_publica(
             raw_canais=settings.equalizador_canais_raw(),
-            allowed_palco_ids=settings.equalizador_allowed_palco_ids(),
+            allowed_palco_ids=palco_ids,
             visible_palco_ids=palco_ids,
             alias_secret=settings.equalizador_alias_secret(),
         )

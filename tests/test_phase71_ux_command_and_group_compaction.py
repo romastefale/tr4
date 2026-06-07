@@ -45,7 +45,8 @@ def test_phase71_home_is_compact_and_group_meta_is_single_line():
     assert 'id="grupo_recursos"' not in html
     assert 'id="grupo_card_status"' in html
     assert 'body.phase68-minimal #app > .top { display: none !important; }' in html
-    assert 'metricas.textContent = `${usuarios} usuários • ${palcos} grupos • ${operadores} operadores`;' in html
+    assert 'const partes = [`${usuarios} usuários`, `${palcos} grupos`];' in html
+    assert 'if (typeof stats.operadores_autorizados === "number") partes.push' in html
     assert 'recursos.filter(Boolean).join(" • ")' in html
 
 
