@@ -1301,7 +1301,8 @@ _EQUALIZADOR_HTML = """<!doctype html>
 
     @media (max-width: 560px) { body { padding: 10px 10px 88px; } .card { padding: 14px; border-radius: 18px; } h1 { font-size: 22px; } .toolbar { grid-template-columns: 1fr; gap: 6px; } button.action { width: 100%; } .app-tabs { grid-template-columns: 1fr 1fr; } .app-tabs button.nav { width: 100%; } .top { display: block; } .grid { grid-template-columns: 1fr; } .home-hint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .group-meta { grid-template-columns: 1fr; } .config-actions { grid-template-columns: 1fr; } .feedback-head { display: grid; } .status-row { grid-template-columns: 1fr; } .refresh-action { width: 100%; } }
     @media (max-width: 560px) { body.phase68-minimal .view .toolbar:not(.app-tabs), body.phase68-minimal .panel .toolbar:not(.app-tabs), body.phase68-minimal .config-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.phase68-minimal .group-head { grid-template-columns: 56px 1fr auto; } body.phase68-minimal .group-card { margin-top: 10px; } }
-  </style>
+  .command-panel{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 24px}.command-chip{border:1px solid rgba(255,255,255,.12);background:#1d2731;color:#f3f6fb;border-radius:18px;padding:13px 10px;font-weight:800;font-size:15px}.command-chip:active{transform:scale(.98)}@media(max-width:380px){.command-panel{grid-template-columns:1fr;margin-left:18px;margin-right:18px}}
+</style>
 </head>
 <body class="phase68-minimal">
   <script>document.body.classList.add("phase74-botfather-pages", "phase75-miniapp-review", "phase76-governance-compact", "phase77-search-home", "phase78-internal-pages", "phase79-governantes-reais", "phase80-visual-system", "phase81-search-suggestions", "phase82-state-feedback", "phase85-cleanup", "phase89-owner-governance", "phase98-ux-final", "phase99-collapsible-menus");</script>
@@ -7826,6 +7827,22 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       setTrack(data.track || {});
       currentGroups = data.groups || [];
       $("stats").textContent = (currentGroups.length || 0) + " grupos em comum";
+      if (data.atalhos && !document.getElementById("commandPanel")) {
+        const panel = document.createElement("div");
+        panel.id = "commandPanel";
+        panel.className = "command-panel";
+        panel.innerHTML = data.atalhos.map(function(a){ return `<button type="button" class="command-chip" data-command="${escapeHtml(a.command)}">${escapeHtml(a.label)}</button>`; }).join("");
+        const anchor = document.getElementById("nowCard") || document.getElementById("search") || document.body;
+        anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+        panel.addEventListener("click", function(ev){
+          const btn = ev.target.closest("button[data-command]");
+          if (!btn) return;
+          const cmd = btn.getAttribute("data-command") || "";
+          const bot = ($("botUser").textContent || "@tigraoRADIObot").replace(/^@/, "");
+          if (tg && tg.openTelegramLink) tg.openTelegramLink(`https://t.me/${bot}?start=cmd_${encodeURIComponent(cmd.replace(/^\//,""))}`);
+          else window.open(`https://t.me/${bot}`, "_blank");
+        });
+      }
       renderGroups(currentGroups);
       status(trackAvailable ? "Prévia pronta. Escolha o grupo e publique." : "Sem música atual para publicar.", trackAvailable ? "ok" : "");
     } catch (e) { status((e && (e.detail || e.public_detail)) || "Não foi possível carregar.", "bad"); showBotFallback(); }
@@ -7938,23 +7955,22 @@ async def _public_groups_for_user(user_id: int) -> list[dict[str, object]]:
 
 
 async def _public_track_for_user(user_id: int) -> dict[str, object]:
-    try:
-        from app.services.connection_check import connect_hint_for, is_user_connected
-        if not is_user_connected(int(user_id)):
-            return {
-                "available": False,
-                "code": "music_account_not_connected",
-                "message": connect_hint_for("private"),
-            }
-    except Exception:
-        # Não derruba o player público: continua tentando a mesma fonte usada por /playing e /nowp.
-        pass
+    # Fase 122: não bloqueia o player público antes de consultar a mesma
+    # fonte usada por /playing e /nowp. O helper de conexão pode falhar quando
+    # o banco legado ainda não foi importado/cacheado, então ele fica só como
+    # mensagem de fallback depois da tentativa real.
     try:
         track = await music_service.get_current_or_last_played(int(user_id))
     except Exception:
         logger.exception("PUBLIC_PLAYER_TRACK_LOOKUP_FAILED user=%s", user_id)
         return {"available": False, "code": "track_lookup_failed", "message": "Não foi possível carregar sua música agora."}
     if not track:
+        try:
+            from app.services.connection_check import connect_hint_for, is_user_connected
+            if not is_user_connected(int(user_id)):
+                return {"available": False, "code": "music_account_not_connected", "message": connect_hint_for("private")}
+        except Exception:
+            pass
         return {"available": False, "code": "nothing_playing", "message": "Nada tocando agora."}
     track_name = str(track.get("track_name") or "").strip()
     artist = str(track.get("artist") or "").strip()
@@ -8030,6 +8046,14 @@ async def public_music_home(authorization: str | None = Header(default=None)) ->
         "ok": True,
         "track": await _public_track_for_user(identity.user_id),
         "groups": await _public_groups_for_user(identity.user_id),
+        "atalhos": [
+            {"label": "Tocando agora", "command": "/playing", "kind": "music"},
+            {"label": "Publicar atual", "command": "/nowp", "kind": "publish"},
+            {"label": "Meu extrato", "command": "/myself", "kind": "stats"},
+            {"label": "Semana", "command": "/weekfm", "kind": "stats"},
+            {"label": "Mês", "command": "/monthfm", "kind": "stats"},
+            {"label": "Ranking", "command": "/songcharts", "kind": "stats"},
+        ],
     }
 
 
