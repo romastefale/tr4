@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
+import html
 import httpx
 
 from app.config import settings
 from app.db.database import engine as default_engine
-from app.bot.music_groups import remember_group
+from app.bot.music_groups import remember_group, list_groups
+from app.services.music import music_service
+from app.services.reactions import reactions_service
 from sqlalchemy import text
 from app.equalizador.afinacao import PalcoNotFoundError, get_palco_internal_by_ref, sincronizar_afinacao_palco
 from app.equalizador.palcos import list_equalizador_palcos, upsert_operador
@@ -101,6 +104,8 @@ from app.equalizador.multimidia import (
     publish_multimedia_session,
     public_multimedia_session,
     get_multimedia_session,
+    multimedia_center_public,
+    multimedia_session_diagnostic,
 )
 from app.equalizador.maestro import (
     MaestroConfirmationError,
@@ -125,6 +130,7 @@ from app.equalizador.hardening import (
     reset_equalizador_rate_limits,
     validate_equalizador_session,
 )
+from app.equalizador.identity import make_ui_ref
 from app.equalizador.security import InitDataError, TelegramWebAppIdentity, extract_tma_authorization, validate_init_data
 from app.equalizador.erros_telegram import telegram_error_payload
 from app.equalizador.seguranca_avancada import (
@@ -2000,6 +2006,7 @@ frase temporária"></textarea>
             <h3>Governantes por janela</h3>
             <p class="muted small">Leitura operacional para o dono do código delegar governantes sem expor identificador técnico na interface.</p>
             <div id="config_governantes_resumo" class="empty small">Governança não carregada.</div>
+            <div id="config_governanca_persistencia" class="empty small">Persistência de governança não verificada.</div>
             <div id="config_governantes" class="governance-grid muted">Governança não carregada.</div>
             <h3>Delegação runtime</h3>
             <p class="muted small">Concessões salvas no banco persistente. Use para delegar governantes sem editar Railway a cada ajuste. As variáveis continuam como base estável.</p>
@@ -4136,7 +4143,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const ref = select ? select.value : "";
         const row = ref ? multimediaSessionsPorRef.get(ref) : null;
         const publicar = document.getElementById("multimidia_publicar");
-        if (!row) { box.textContent = "Crie uma sessão e envie o conteúdo no privado do bot."; if (publicar) publicar.disabled = true; return; }
+        if (!row) { box.textContent = box.dataset.resumo || "Crie uma sessão e envie o conteúdo no privado do bot."; if (publicar) publicar.disabled = true; return; }
         const aguardando = row.status === "awaiting" ? " · falta enviar conteúdo no privado" : "";
         const passo = row.proximo_passo ? " · " + row.proximo_passo : "";
         box.textContent = `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${aguardando}${passo}${row.erro ? " · " + row.erro : ""}`;
@@ -4144,9 +4151,16 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       async function reloadMultimediaSessions() {
         if (!currentPalco) return;
-        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/multimidia/sessoes");
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/multimidia/centro");
         const data = await res.json().catch(() => ({}));
-        if (res.ok) renderMultimediaSessions(data.sessoes || []);
+        if (res.ok) {
+          renderMultimediaSessions(data.sessoes || []);
+          const preview = document.getElementById("multimidia_preview");
+          if (preview && data.resumo) {
+            const r = data.resumo;
+            preview.dataset.resumo = `${r.prontas || 0} pronta(s) • ${r.aguardando || 0} aguardando • ${r.falhas || 0} falha(s)`;
+          }
+        }
       }
       async function iniciarMultimediaNativa() {
         if (!currentPalco) { toast("Escolha um grupo antes de iniciar postagem.", "warn"); return; }
@@ -4562,6 +4576,9 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const govResumo = (gov && gov.resumo) || {};
         const govResumoEl = document.getElementById("config_governantes_resumo");
         if (govResumoEl) govResumoEl.textContent = `${govResumo.governantes || 0} governante(s) · ${govResumo.palcos || 0} grupo(s) · ${govResumo.janelas_ativas || 0} janela(s) ativa(s)`;
+        const govPersistEl = document.getElementById("config_governanca_persistencia");
+        const gp = data.governanca_persistencia && data.governanca_persistencia.resumo ? data.governanca_persistencia.resumo : {};
+        if (govPersistEl) govPersistEl.textContent = `Persistência: ${data.governanca_persistencia && data.governanca_persistencia.status ? data.governanca_persistencia.status : "não verificada"} · ${gp.governantes_ativos || 0} governante(s) · ${gp.concessoes_ativas || 0} concessão(ões) · ${gp.eventos_auditoria || 0} evento(s)`;
         renderGovernanca("config_governantes", gov, { onlyActive: true });
         renderRbacRuntime(data);
         renderSeguranca(data);
@@ -6163,6 +6180,7 @@ def equalizador_configuracao(authorization: str | None = Header(default=None)) -
         "matriz_permissoes": matriz_permissoes_publica(alias_secret=settings.equalizador_alias_secret()),
         "governanca": governantes_publicos(alias_secret=settings.equalizador_alias_secret()),
         "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret()),
+        "governanca_persistencia": governance_persistence_public(alias_secret=settings.equalizador_alias_secret()),
         "sessoes_persistentes": session_store_status(now_ts=int(__import__("time").time())),
         "persistencia": _persistence_status_public(),
         "seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret()),
@@ -6246,6 +6264,14 @@ def equalizador_rbac_operador_remover(usr_ref: str, authorization: str | None = 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Governante protegido ou indisponível.") from exc
     return {"ok": True, "governante": governante, "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.get("/api/rbac/persistencia")
+def equalizador_rbac_persistencia(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    return {"governanca_persistencia": governance_persistence_public(alias_secret=settings.equalizador_alias_secret())}
 
 
 @router.get("/api/rbac/runtime")
@@ -6493,6 +6519,20 @@ async def equalizador_ddx_cancelar(
 
 
 
+@router.get("/api/palcos/{grp_ref}/multimidia/centro")
+def equalizador_multimidia_centro(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    centro = multimedia_center_public(palco_ref=str(palco["ui_ref"]))
+    return {"ok": True, **centro}
+
+
 @router.get("/api/palcos/{grp_ref}/multimidia/sessoes")
 def equalizador_multimidia_sessoes(
     grp_ref: str,
@@ -6523,6 +6563,24 @@ def equalizador_multimidia_sessao_criar(
         alias_secret=settings.equalizador_alias_secret(),
     )
     return {"ok": True, "sessao": sessao, "start_payload": "mm_" + str(sessao.get("session_ref", "")).replace("mm_", "", 1)}
+
+
+@router.get("/api/palcos/{grp_ref}/multimidia/sessoes/{session_ref}/diagnostico")
+def equalizador_multimidia_sessao_diagnostico(
+    grp_ref: str,
+    session_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    diagnostico = multimedia_session_diagnostic(session_ref=session_ref)
+    sessao = diagnostico.get("sessao") if isinstance(diagnostico, dict) else None
+    if isinstance(sessao, dict) and str(sessao.get("session_ref") or "") != str(session_ref):
+        raise HTTPException(status_code=404, detail="Sessão indisponível.")
+    return {"diagnostico": diagnostico}
 
 
 @router.post("/api/palcos/{grp_ref}/multimidia/sessoes/{session_ref}/publicar")
@@ -6559,6 +6617,7 @@ async def equalizador_multimidia_sessao_publicar(
             "codigo": (sessao_publica or {}).get("codigo_estado") or "multimidia_conflito_estado",
             "estado": (sessao_publica or {}).get("status") or "indisponivel",
             "proximo_passo": (sessao_publica or {}).get("proximo_passo") or "Atualize a lista e confira a sessão.",
+            "faltando": multimedia_session_diagnostic(session_ref=session_ref).get("faltando", []) if sessao_publica else [],
             "sessao": sessao_publica,
         }
         raise HTTPException(status_code=409, detail=detail) from exc
@@ -7557,3 +7616,413 @@ router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/reabrir", _topico_rout
 router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/ocultar", _topico_route("topicos.geral.ocultar"), methods=["POST"], include_in_schema=False)
 router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/exibir", _topico_route("topicos.geral.exibir"), methods=["POST"], include_in_schema=False)
 router.add_api_route("/api/palcos/{grp_ref}/topicos/geral/desfixar", _topico_route("topicos.geral.desfixar"), methods=["POST"], include_in_schema=False)
+
+# ---------------------------------------------------------------------------
+# Phase 106/107 — Mini App público musical.
+#
+# Decisão técnica: a interface pública só usa Telegram Mini App initData para
+# autenticar identidade. Ela não concede moderação; apenas mostra botão de
+# entrada no Equalizador quando o usuário já é maestro/operador configurado.
+# A publicação do /nowp é feita por file/url já conhecido pelo bot, sem upload
+# pesado no navegador.
+# ---------------------------------------------------------------------------
+
+_PUBLIC_MUSIC_HTML = """<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>tigraoRADIO · player</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: var(--tg-theme-bg-color, #11161c);
+      --section: var(--tg-theme-section-bg-color, #18202a);
+      --section-2: #202a35;
+      --text: var(--tg-theme-text-color, #f5f7fb);
+      --muted: var(--tg-theme-hint-color, #9aa5b4);
+      --link: var(--tg-theme-link-color, #64a7ff);
+      --ok: #58d69a;
+      --line: rgba(255,255,255,.10);
+      --danger: #ff9d9d;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body { padding: calc(14px + env(safe-area-inset-top)) 16px calc(84px + env(safe-area-inset-bottom)); font-size: 15px; }
+    main { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 16px; }
+    button, input { font: inherit; }
+    .hero { position: relative; display: grid; justify-items: center; gap: 8px; padding: 18px 56px 12px; text-align: center; }
+    .bot-avatar { width: 82px; height: 82px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,.2); box-shadow: 0 16px 44px rgba(0,0,0,.45); background: #242c36; }
+    .brand { font-size: clamp(30px, 8vw, 44px); font-weight: 900; font-style: italic; letter-spacing: -.04em; line-height: .95; }
+    .username { color: #ee88c8; font-weight: 700; font-size: 16px; }
+    .stats { color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+    .mod-link { position: absolute; right: 0; top: 12px; color: var(--link); text-decoration: none; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); padding: 7px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+    .hidden { display: none !important; }
+    .search { display: flex; align-items: center; gap: 12px; min-height: 58px; border-radius: 18px; background: var(--section-2); color: var(--muted); padding: 0 18px; border: 1px solid rgba(255,255,255,.06); }
+    .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 18px; min-width: 0; }
+    .search input::placeholder { color: var(--muted); }
+    .card { border: 1px solid rgba(255,255,255,.09); border-radius: 24px; background: var(--section); overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,.32); }
+    .track-card { padding: 18px; }
+    .track { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: center; min-width: 0; }
+    .cover { width: 92px; height: 92px; border-radius: 18px; object-fit: cover; background: linear-gradient(135deg, #2b3340, #151a22); border: 1px solid rgba(255,255,255,.1); }
+    .eyebrow { color: #45e0a5; font-size: 12px; text-transform: uppercase; letter-spacing: .18em; font-weight: 900; }
+    .title { margin-top: 5px; font-size: clamp(25px, 7vw, 46px); line-height: .95; letter-spacing: -.04em; font-weight: 950; text-transform: uppercase; overflow-wrap: anywhere; }
+    .artist { margin-top: 8px; color: var(--muted); font-size: 16px; overflow-wrap: anywhere; }
+    .metric { margin-top: 10px; color: #45e0a5; font-size: 32px; font-weight: 950; letter-spacing: -.04em; }
+    .metric small { color: #d5dae3; font-size: 13px; letter-spacing: .14em; }
+    .section-title { padding: 2px 2px 8px; color: var(--muted); font-size: 13px; }
+    .group-list { max-height: 286px; overflow: auto; border-radius: 20px; }
+    .group-row { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 14px 16px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; }
+    .group-row:first-child { border-top: 0; }
+    .group-row[aria-selected="true"] { background: rgba(100,167,255,.12); }
+    .group-title { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .group-meta { color: var(--muted); font-size: 13px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chev { color: var(--muted); font-size: 24px; }
+    .selected { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,.04); color: var(--muted); font-size: 14px; }
+    .selected strong { color: var(--text); }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .btn { min-height: 54px; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; font-weight: 850; color: var(--text); background: #26313e; }
+    .btn.primary { background: #3478f6; border-color: rgba(255,255,255,.16); }
+    .btn:disabled { opacity: .45; }
+    .status { border-radius: 16px; padding: 12px 14px; background: rgba(255,255,255,.04); color: var(--muted); margin-top: 12px; font-size: 14px; overflow-wrap: anywhere; }
+    .status.ok { color: #a4f1c0; border: 1px solid rgba(74, 222, 128, .22); }
+    .status.bad { color: var(--danger); border: 1px solid rgba(248,113,113,.24); }
+    .tip { color: var(--muted); font-size: 13px; line-height: 1.45; padding: 0 4px; }
+    @media (max-width: 520px) {
+      body { padding-left: 12px; padding-right: 12px; }
+      .hero { padding-left: 46px; padding-right: 46px; }
+      .mod-link { top: 8px; }
+      .track { grid-template-columns: 76px 1fr; gap: 13px; }
+      .cover { width: 76px; height: 76px; border-radius: 16px; }
+      .actions { grid-template-columns: 1fr; }
+      .search input { font-size: 16px; }
+      .title { font-size: 25px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero" aria-label="Mini App público do tigraoRADIO">
+    <a id="modBtn" class="mod-link hidden" href="/equalizador">Painel</a>
+    <img id="botPhoto" class="bot-avatar hidden" alt="Foto do bot" />
+    <div id="botPhotoFallback" class="bot-avatar" aria-hidden="true"></div>
+    <div class="brand">tigraoRADIO</div>
+    <div class="username" id="botUser">@tigraoRADIObot</div>
+    <div class="stats" id="stats">música atual • publicação</div>
+  </section>
+
+  <label class="search" aria-label="Busca de grupos e ações">⌕ <input id="search" autocomplete="off" placeholder="Buscar grupo ou ação" /></label>
+
+  <section class="card track-card" id="trackCard">
+    <div class="track">
+      <img id="cover" class="cover hidden" alt="Capa da música atual" />
+      <div id="coverFallback" class="cover" aria-hidden="true"></div>
+      <div>
+        <div class="eyebrow">tocando agora</div>
+        <div class="title" id="trackTitle">Carregando</div>
+        <div class="artist" id="trackArtist">Aguarde.</div>
+        <div class="metric"><span id="plays">—</span> <small>PLAYS</small></div>
+      </div>
+    </div>
+    <div class="selected" id="selectedGroup">Grupo: <strong>selecione abaixo</strong></div>
+    <div class="actions">
+      <button class="btn" id="refreshBtn" type="button">Atualizar</button>
+      <button class="btn primary" id="publishBtn" type="button" disabled>Publicar atual</button>
+    </div>
+    <div id="status" class="status">Abra pelo Telegram para validar sua sessão.</div>
+  </section>
+
+  <section class="card" aria-label="Grupos em comum">
+    <div class="track-card">
+      <div class="section-title">Grupos em comum</div>
+      <div id="groups" class="group-list"></div>
+    </div>
+  </section>
+
+  <p class="tip">A publicação usa o fluxo já existente do bot, equivalente ao comando /nowp. O botão de moderação só aparece para operadores autorizados.</p>
+</main>
+<script>
+(function(){
+  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  if (tg) {
+    try {
+      tg.ready(); tg.expand();
+      if (tg.setHeaderColor) tg.setHeaderColor('#11161c');
+      if (tg.setBackgroundColor) tg.setBackgroundColor('#11161c');
+      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    } catch (_) {}
+  }
+  const initData = tg && tg.initData ? tg.initData : "";
+  const headers = initData ? { Authorization: "tma " + initData } : {};
+  let selectedGroup = "";
+  let selectedTitle = "";
+  let currentGroups = [];
+  let trackAvailable = false;
+  function $(id){ return document.getElementById(id); }
+  function text(value){ return String(value == null ? "" : value); }
+  function status(message, kind){ const el=$("status"); el.textContent=message; el.className="status"+(kind?" "+kind:""); }
+  function updatePublishState(){ $("publishBtn").disabled = !(initData && selectedGroup && trackAvailable); }
+  function api(path, opts){ opts=opts||{}; opts.headers=Object.assign({}, headers, opts.headers||{}); return fetch(path, opts).then(async r => { const data = await r.json().catch(()=>({})); if(!r.ok) throw data; return data; }); }
+  function renderGroups(groups){
+    const q = text($("search").value).toLowerCase().trim();
+    const root = $("groups"); root.innerHTML = "";
+    (groups || []).filter(g => !q || text(g.title).toLowerCase().includes(q) || text(g.username).toLowerCase().includes(q)).forEach(g => {
+      const row = document.createElement("button"); row.className="group-row"; row.type="button"; row.setAttribute("aria-selected", g.ref === selectedGroup ? "true" : "false");
+      const meta = [g.status || "em comum", g.username ? "@"+g.username : "grupo"].filter(Boolean).join(" • ");
+      row.innerHTML = '<div><div class="group-title"></div><div class="group-meta"></div></div><div class="chev">›</div>';
+      row.querySelector(".group-title").textContent = g.title || "Grupo";
+      row.querySelector(".group-meta").textContent = meta;
+      row.onclick = () => { selectedGroup = g.ref; selectedTitle = g.title || "grupo"; $("selectedGroup").innerHTML = "Grupo: <strong></strong>"; $("selectedGroup").querySelector("strong").textContent = selectedTitle; status("Grupo selecionado. A prévia será publicada pelo bot.", "ok"); renderGroups(currentGroups); updatePublishState(); };
+      root.appendChild(row);
+    });
+    if (!root.children.length) root.innerHTML = '<div class="status">Nenhum grupo encontrado.</div>';
+  }
+  function setTrack(track){
+    trackAvailable = !!(track && track.available);
+    if (trackAvailable) {
+      $("trackTitle").textContent = track.track_name || "Música";
+      $("trackArtist").textContent = track.artist || "Artista";
+      $("plays").textContent = track.user_plays || 0;
+      if (track.cover_url) { $("cover").src = track.cover_url; $("cover").classList.remove("hidden"); $("coverFallback").classList.add("hidden"); }
+      else { $("cover").classList.add("hidden"); $("coverFallback").classList.remove("hidden"); }
+    } else {
+      $("trackTitle").textContent = "Nada tocando";
+      $("trackArtist").textContent = "Conecte Last.fm ou Spotify e tente novamente.";
+      $("plays").textContent = "—";
+    }
+    updatePublishState();
+  }
+  async function load(){
+    if (!initData) { status("Abra pelo Telegram para carregar sua música e seus grupos.", "bad"); return; }
+    try {
+      const me = await api("/equalizador/api/public/me");
+      $("botUser").textContent = me.bot_username || "@tigraoRADIObot";
+      if (me.bot_photo_url) { $("botPhoto").src = me.bot_photo_url; $("botPhoto").classList.remove("hidden"); $("botPhotoFallback").classList.add("hidden"); }
+      if (me.can_open_equalizador) $("modBtn").classList.remove("hidden"); else $("modBtn").classList.add("hidden");
+      const data = await api("/equalizador/api/public/home");
+      setTrack(data.track || {});
+      currentGroups = data.groups || [];
+      $("stats").textContent = (currentGroups.length || 0) + " grupos • publicação via /nowp";
+      renderGroups(currentGroups);
+      status(trackAvailable ? "Prévia pronta. Escolha o grupo e publique." : "Sem música atual para publicar.", trackAvailable ? "ok" : "");
+    } catch (e) { status((e && (e.detail || e.public_detail)) || "Não foi possível carregar.", "bad"); }
+  }
+  $("search").addEventListener("input", () => renderGroups(currentGroups));
+  $("refreshBtn").onclick = load;
+  $("publishBtn").onclick = async () => {
+    if (!selectedGroup) { status("Escolha um grupo primeiro.", "bad"); return; }
+    $("publishBtn").disabled = true;
+    status("Publicando pelo bot...", "");
+    try {
+      const res = await api("/equalizador/api/public/nowp", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ group_ref: selectedGroup }) });
+      status(res.message || "Publicado.", "ok");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    } catch(e) {
+      status((e && (e.detail || e.public_detail)) || "Falha ao publicar.", "bad");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+    }
+    finally { updatePublishState(); }
+  };
+  load();
+})();
+</script>
+</body>
+</html>
+"""
+
+@router.get("/player", response_class=HTMLResponse)
+def public_music_player() -> HTMLResponse:
+    return HTMLResponse(
+        _PUBLIC_MUSIC_HTML,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+def _public_identity_from_authorization(authorization: str | None) -> TelegramWebAppIdentity:
+    try:
+        init_data = extract_tma_authorization((authorization or "").strip())
+        return validate_init_data(
+            init_data,
+            bot_token=settings.TELEGRAM_BOT_TOKEN,
+            max_age_seconds=settings.TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
+        )
+    except InitDataError as exc:
+        raise HTTPException(status_code=401, detail="Abra pelo Telegram para continuar.") from exc
+
+
+def _group_ref(chat_id: int) -> str:
+    return make_ui_ref("grp", int(chat_id), settings.equalizador_alias_secret())
+
+
+def _resolve_public_group(ref: str) -> dict | None:
+    wanted = str(ref or "").strip()
+    if not wanted:
+        return None
+    for group in list_groups(80):
+        try:
+            chat_id = int(group["chat_id"])
+        except Exception:
+            continue
+        if _group_ref(chat_id) == wanted:
+            return group
+    return None
+
+
+async def _bot_api(method: str, payload: dict[str, object]) -> dict[str, object]:
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Bot indisponível.")
+    async with httpx.AsyncClient(timeout=18.0) as client:
+        res = await client.post(f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/{method}", json=payload)
+    data = res.json()
+    if not res.is_success or not data.get("ok"):
+        raise HTTPException(status_code=409, detail={"public_detail": "Telegram recusou a publicação.", "code": "telegram_publish_rejected"})
+    result = data.get("result")
+    return result if isinstance(result, dict) else {}
+
+
+async def _public_groups_for_user(user_id: int) -> list[dict[str, object]]:
+    groups: list[dict[str, object]] = []
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return groups
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for group in list_groups(40):
+            try:
+                chat_id = int(group["chat_id"])
+                res = await client.post(
+                    f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getChatMember",
+                    json={"chat_id": chat_id, "user_id": int(user_id)},
+                )
+                data = res.json()
+                member = data.get("result") if isinstance(data, dict) else None
+                status = str((member or {}).get("status") or "")
+                if not data.get("ok") or status in {"left", "kicked"}:
+                    continue
+                if status == "restricted" and not bool((member or {}).get("is_member", True)):
+                    continue
+                groups.append({
+                    "ref": _group_ref(chat_id),
+                    "title": str(group.get("title") or "Grupo")[:80],
+                    "username": str(group.get("username") or "").lstrip("@")[:32],
+                    "status": "em comum",
+                })
+            except Exception:
+                continue
+    return groups
+
+
+async def _public_track_for_user(user_id: int) -> dict[str, object]:
+    track = await music_service.get_current_or_last_played(int(user_id))
+    if not track:
+        return {"available": False}
+    track_name = str(track.get("track_name") or "").strip()
+    artist = str(track.get("artist") or "").strip()
+    track_id = str(track.get("track_id") or "").strip()
+    user_plays = 0
+    try:
+        from app.services.lastfm import lastfm_service
+        count = await lastfm_service.get_user_track_playcount(int(user_id), artist, track_name)
+        user_plays = int(count or 0)
+    except Exception:
+        user_plays = 0
+    return {
+        "available": bool(track_id and track_name),
+        "track_name": track_name[:120],
+        "artist": artist[:120],
+        "album": str(track.get("album_name") or "")[:120],
+        "cover_url": str(track.get("album_image_url") or track.get("cover_url") or "")[:500],
+        "user_plays": user_plays,
+    }
+
+
+@router.get("/api/public/me")
+async def public_music_me(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _public_identity_from_authorization(authorization)
+    bot_username = "@tigraoRADIObot"
+    if settings.TELEGRAM_BOT_TOKEN:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.post(f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getMe")
+            data = res.json()
+            username = ((data.get("result") or {}).get("username") if data.get("ok") else None) or "tigraoRADIObot"
+            bot_username = f"@{username}"
+        except Exception:
+            pass
+    return {
+        "ok": True,
+        "user": {"name": html.escape(str(identity.user.get("first_name") or identity.user.get("username") or "Usuário"))[:80]},
+        "bot_username": bot_username,
+        "can_open_equalizador": settings.equalizador_user_is_allowed(identity.user_id),
+        "bot_photo_url": "/equalizador/api/bot/foto",
+    }
+
+
+@router.get("/api/public/home")
+async def public_music_home(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _public_identity_from_authorization(authorization)
+    return {
+        "ok": True,
+        "track": await _public_track_for_user(identity.user_id),
+        "groups": await _public_groups_for_user(identity.user_id),
+    }
+
+
+@router.post("/api/public/nowp")
+async def public_music_nowp(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _public_identity_from_authorization(authorization)
+    payload = await _read_json_payload(request)
+    group = _resolve_public_group(str(payload.get("group_ref") or ""))
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    chat_id = int(group["chat_id"])
+    # Confirma associação real do usuário ao grupo imediatamente antes de publicar.
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            res = await client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getChatMember",
+                json={"chat_id": chat_id, "user_id": int(identity.user_id)},
+            )
+        data = res.json()
+        member = data.get("result") if isinstance(data, dict) else None
+        status = str((member or {}).get("status") or "")
+        if not data.get("ok") or status in {"left", "kicked"}:
+            raise HTTPException(status_code=403, detail="Você não está neste grupo.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail="Não consegui confirmar sua presença no grupo.") from exc
+
+    track = await music_service.get_current_or_last_played(identity.user_id)
+    if not track:
+        raise HTTPException(status_code=409, detail="Nada tocando agora.")
+    from app.bot.telegram import build_playing_payload_for_user
+    built = await build_playing_payload_for_user(
+        identity.user_id,
+        str(identity.user.get("first_name") or identity.user.get("username") or "Usuário"),
+        track,
+        str(identity.user.get("username") or "") or None,
+    )
+    if not built:
+        raise HTTPException(status_code=409, detail="Não consegui montar a publicação.")
+    track_id, caption, cover, _keyboard, _emoji = built
+    if cover:
+        sent = await _bot_api("sendPhoto", {"chat_id": chat_id, "photo": str(cover), "caption": caption, "parse_mode": "HTML"})
+    else:
+        sent = await _bot_api("sendMessage", {"chat_id": chat_id, "text": caption, "parse_mode": "HTML"})
+    try:
+        await reactions_service.register_card(
+            chat_id=chat_id,
+            message_id=int(sent.get("message_id") or 0),
+            track_id=track_id,
+            owner_user_id=identity.user_id,
+            track_name=str(track.get("track_name") or ""),
+            artist_name=str(track.get("artist") or ""),
+        )
+    except Exception:
+        pass
+    return {"ok": True, "message": f"Publicado em {str(group.get('title') or 'grupo')[:80]}."}

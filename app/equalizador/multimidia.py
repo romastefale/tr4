@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from sqlalchemy import text
@@ -16,6 +17,15 @@ class MultimediaError(RuntimeError):
 
 
 ALLOWED_KINDS = {"text", "photo", "video", "document", "audio", "voice", "animation"}
+MULTIMEDIA_KIND_LABELS = {
+    "text": "texto",
+    "photo": "foto",
+    "video": "vídeo",
+    "document": "documento",
+    "audio": "áudio",
+    "voice": "voz",
+    "animation": "animação",
+}
 
 
 def _now_iso() -> str:
@@ -89,15 +99,7 @@ def _status_public_label(status: str) -> str:
 
 
 def _tipo_public_label(kind: str) -> str:
-    return {
-        "text": "texto",
-        "photo": "foto",
-        "video": "vídeo",
-        "document": "documento",
-        "audio": "áudio",
-        "voice": "voz",
-        "animation": "animação",
-    }.get(str(kind or ""), str(kind or "conteúdo"))
+    return MULTIMEDIA_KIND_LABELS.get(str(kind or ""), str(kind or "conteúdo"))
 
 
 def _session_next_step(status: str, kind: str, row: dict[str, Any]) -> tuple[str, bool, str]:
@@ -214,6 +216,33 @@ def active_session_for_user(*, telegram_user_id: int, db_engine: Engine = defaul
     return dict(row) if row else None
 
 
+
+def extract_multimedia_session_ref(text_value: str) -> str:
+    match = re.search(r"\bmm_[A-Za-z0-9]{6,32}\b", str(text_value or ""))
+    return match.group(0) if match else ""
+
+
+def session_for_incoming_message(*, telegram_user_id: int, session_ref_hint: str = "", db_engine: Engine = default_engine) -> dict[str, Any] | None:
+    ensure_multimedia_tables(db_engine)
+    hint = str(session_ref_hint or "").strip()
+    if hint:
+        with db_engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT * FROM eq_multimedia_sessions
+                    WHERE session_ref=:session_ref AND telegram_user_id=:user_id
+                      AND status IN ('awaiting','ready')
+                    LIMIT 1
+                    """
+                ),
+                {"session_ref": hint, "user_id": int(telegram_user_id)},
+            ).mappings().first()
+        if row:
+            return dict(row)
+    return active_session_for_user(telegram_user_id=int(telegram_user_id), db_engine=db_engine)
+
+
 def mark_session_waiting(*, session_ref: str, telegram_user_id: int, db_engine: Engine = default_engine) -> dict[str, object]:
     session = get_multimedia_session(session_ref=session_ref, db_engine=db_engine)
     if int(session.get("telegram_user_id") or 0) != int(telegram_user_id):
@@ -233,8 +262,8 @@ def mark_session_waiting(*, session_ref: str, telegram_user_id: int, db_engine: 
     return public_multimedia_session(get_multimedia_session(session_ref=session_ref, db_engine=db_engine))
 
 
-def attach_telegram_message_to_session(*, telegram_user_id: int, message_data: dict[str, Any], db_engine: Engine = default_engine) -> dict[str, object] | None:
-    session = active_session_for_user(telegram_user_id=int(telegram_user_id), db_engine=db_engine)
+def attach_telegram_message_to_session(*, telegram_user_id: int, message_data: dict[str, Any], session_ref_hint: str = "", db_engine: Engine = default_engine) -> dict[str, object] | None:
+    session = session_for_incoming_message(telegram_user_id=int(telegram_user_id), session_ref_hint=session_ref_hint, db_engine=db_engine)
     if not session:
         return None
     kind = str(message_data.get("media_kind") or "text")
@@ -267,6 +296,69 @@ def attach_telegram_message_to_session(*, telegram_user_id: int, message_data: d
             },
         )
     return public_multimedia_session(get_multimedia_session(session_ref=str(session["session_ref"]), db_engine=db_engine))
+
+
+
+def multimedia_center_public(*, palco_ref: str, db_engine: Engine = default_engine) -> dict[str, object]:
+    """Resumo operacional do centro multimídia.
+
+    Não expõe file_id nem identificadores internos de Telegram. Serve para a UI
+    decidir se há sessão pronta, aguardando conteúdo, publicada ou falha.
+    """
+    sessoes = list_multimedia_sessions(palco_ref=palco_ref, db_engine=db_engine)
+    resumo = {
+        "total": len(sessoes),
+        "aguardando": 0,
+        "prontas": 0,
+        "publicando": 0,
+        "publicadas": 0,
+        "falhas": 0,
+    }
+    for sessao in sessoes:
+        status = str(sessao.get("status") or "")
+        if status == "awaiting":
+            resumo["aguardando"] += 1
+        elif status == "ready":
+            resumo["prontas"] += 1
+        elif status == "publishing":
+            resumo["publicando"] += 1
+        elif status == "published":
+            resumo["publicadas"] += 1
+        elif status == "failed":
+            resumo["falhas"] += 1
+    return {
+        "resumo": resumo,
+        "sessoes": sessoes,
+        "tipos_suportados": [
+            {"tipo": key, "label": MULTIMEDIA_KIND_LABELS[key]}
+            for key in ("text", "photo", "video", "document", "audio", "voice", "animation")
+        ],
+        "instrucoes": [
+            "Crie a sessão no Web App.",
+            "Envie o conteúdo no privado do bot pelo Telegram.",
+            "Volte ao Web App e confirme a publicação no grupo.",
+        ],
+    }
+
+
+def multimedia_session_diagnostic(*, session_ref: str, db_engine: Engine = default_engine) -> dict[str, object]:
+    try:
+        session = get_multimedia_session(session_ref=session_ref, db_engine=db_engine)
+    except MultimediaError:
+        return {"ok": False, "codigo": "sessao_indisponivel", "mensagem": "Sessão multimídia indisponível."}
+    public = public_multimedia_session(session)
+    missing = []
+    if not public.get("tem_conteudo"):
+        missing.append("conteúdo no privado do bot")
+    if public.get("status") != "ready":
+        missing.append("estado pronto")
+    return {
+        "ok": True,
+        "sessao": public,
+        "faltando": missing,
+        "pode_publicar": bool(public.get("pode_publicar")),
+        "mensagem": "Sessão pronta para publicar." if public.get("pode_publicar") else "Sessão ainda não está pronta.",
+    }
 
 
 def _method_for_kind(kind: str) -> tuple[str, str, str | None]:

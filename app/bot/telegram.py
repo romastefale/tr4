@@ -57,6 +57,7 @@ from app.equalizador.hardening import mesa_operation_lock
 from app.equalizador.multimidia import (
     MultimediaError,
     attach_telegram_message_to_session,
+    extract_multimedia_session_ref,
     mark_session_waiting,
 )
 
@@ -764,7 +765,7 @@ def _register_handlers(dp: Dispatcher) -> None:
             try:
                 sessao = mark_session_waiting(session_ref=payload, telegram_user_id=int(message.from_user.id))
                 await message.answer(
-                    "Envie aqui no privado o texto, foto, vídeo, áudio ou documento. Depois volte ao Web App e confirme a publicação.",
+                    f"Sessão {payload}. Envie aqui no privado o texto, foto, vídeo, áudio ou documento. Depois volte ao Web App e confirme a publicação.",
                     reply_markup=ForceReply(selective=True),
                 )
                 return
@@ -1272,10 +1273,11 @@ def _register_handlers(dp: Dispatcher) -> None:
         if not message.from_user:
             return
         payload_data = _multimedia_message_payload(message)
+        hint = extract_multimedia_session_ref(getattr(getattr(message, "reply_to_message", None), "text", "") or getattr(getattr(message, "reply_to_message", None), "caption", ""))
         if not payload_data:
             return
         try:
-            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data)
+            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data, session_ref_hint=hint)
         except MultimediaError as exc:
             await message.answer(str(exc)[:160] or "Conteúdo multimídia não aceito.")
             return
@@ -1295,10 +1297,11 @@ def _register_handlers(dp: Dispatcher) -> None:
         if not message.from_user:
             return
         payload_data = _multimedia_message_payload(message)
+        hint = extract_multimedia_session_ref(getattr(getattr(message, "reply_to_message", None), "text", "") or getattr(getattr(message, "reply_to_message", None), "caption", ""))
         if not payload_data:
             return
         try:
-            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data)
+            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data, session_ref_hint=hint)
         except MultimediaError as exc:
             await message.answer(str(exc)[:160] or "Texto não aceito.")
             return
@@ -1324,10 +1327,11 @@ def _register_handlers(dp: Dispatcher) -> None:
         if not active:
             return UNHANDLED
         payload_data = _multimedia_message_payload(message)
+        hint = extract_multimedia_session_ref(getattr(getattr(message, "reply_to_message", None), "text", "") or getattr(getattr(message, "reply_to_message", None), "caption", ""))
         if not payload_data:
             return UNHANDLED
         try:
-            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data)
+            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data, session_ref_hint=hint)
         except MultimediaError as exc:
             await message.answer(str(exc)[:160] or "Texto não aceito.")
             return None
