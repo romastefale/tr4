@@ -28,6 +28,8 @@ from app.equalizador.rbac_runtime import (
     list_runtime_grants_public,
     rbac_runtime_catalogo_publico,
     revoke_runtime_canal,
+    update_governance_operator,
+    disable_governance_operator,
 )
 from app.equalizador.session_store import cleanup_expired_sessions, session_store_status
 from app.equalizador.mesa import (
@@ -1395,7 +1397,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
                 <button id="multimidia_atualizar" class="action secondary" type="button">Atualizar sessões</button>
               </div>
               <select id="multimidia_session_select"></select>
-              <div id="multimidia_preview" class="empty small">Nenhuma sessão multimídia criada nesta tela.</div>
+              <div id="multimidia_preview" class="empty small">Crie uma sessão. O Telegram coleta texto, foto, vídeo, áudio, voz, documento ou animação no privado do bot.</div>
               <div class="toolbar">
                 <button id="multimidia_publicar" class="action" type="button">Publicar sessão</button>
               </div>
@@ -1915,8 +1917,21 @@ frase temporária"></textarea>
               <button id="sessoes_limpar" class="action secondary" type="button">Limpar sessões expiradas</button>
             </div>
             <select id="rbac_grant_ref"></select>
+            <details class="compact-disclosure">
+              <summary>Editar governante selecionado</summary>
+              <div class="grid">
+                <label class="small muted">Nome público<br><input id="rbac_edit_nome" placeholder="nome visível" /></label>
+                <label class="small muted">@username<br><input id="rbac_edit_username" placeholder="sem @" /></label>
+                <label class="small muted">Função<br><input id="rbac_edit_perfil" placeholder="Governante designado" /></label>
+              </div>
+              <div class="toolbar">
+                <button id="rbac_atualizar_governante" class="action" type="button">Atualizar governante</button>
+                <button id="rbac_remover_governante" class="action danger" type="button">Remover governante</button>
+              </div>
+            </details>
             <div id="rbac_runtime_resumo" class="empty small">Delegação runtime não carregada.</div>
             <div id="rbac_runtime_lista" class="list muted">Delegação runtime não carregada.</div>
+            <div id="rbac_auditoria_governanca" class="list muted">Auditoria de governança não carregada.</div>
             <h3>Sessões persistentes</h3>
             <div id="sessoes_persistentes" class="empty small">Sessões não carregadas.</div>
             <h3>Persistência real</h3>
@@ -1925,6 +1940,9 @@ frase temporária"></textarea>
             <p class="muted small">Leitura de segurança por operador, grupo e canal. Canais críticos ficam marcados e operadores comuns permanecem bloqueados.</p>
             <div id="config_matriz_resumo" class="empty small">Matriz não carregada.</div>
             <div id="config_matriz" class="list muted">Configuração não carregada.</div>
+            <h3>Auditoria de permissões</h3>
+            <div id="config_permissoes_auditoria_resumo" class="empty small">Auditoria não carregada.</div>
+            <div id="config_permissoes_auditoria" class="list muted">Auditoria não carregada.</div>
             <h3>Bloco final para copiar</h3>
             <p class="muted small">Só copie este bloco depois de revisar os campos acima. Preserve as outras variáveis do Railway.</p>
             <textarea id="config_raw" readonly placeholder="Clique em Gerar bloco final para montar o conteúdo"></textarea>
@@ -3959,10 +3977,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (select) select.replaceChildren(option("", rows && rows.length ? "Escolha uma sessão" : "Nenhuma sessão"));
         const items = (rows || []).map((row) => {
           if (row && row.session_ref) multimediaSessionsPorRef.set(row.session_ref, row);
-          if (select) select.appendChild(option(row.session_ref, `${row.status || "sessão"} · ${row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}`));
+          if (select) select.appendChild(option(row.session_ref, `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}`));
           const item = document.createElement("div");
           item.className = "item-line";
-          item.textContent = `${row.status || "sessão"} · ${row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}`;
+          item.textContent = `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}`;
           item.addEventListener("click", () => { if (select) { select.value = row.session_ref; updateMultimediaPreview(); } });
           return item;
         });
@@ -3975,8 +3993,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         if (!box) return;
         const ref = select ? select.value : "";
         const row = ref ? multimediaSessionsPorRef.get(ref) : null;
-        if (!row) { box.textContent = "Crie uma sessão e envie o conteúdo no privado do bot."; return; }
-        box.textContent = `${row.status || "sessão"} · ${row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${row.erro ? " · " + row.erro : ""}`;
+        const publicar = document.getElementById("multimidia_publicar");
+        if (!row) { box.textContent = "Crie uma sessão e envie o conteúdo no privado do bot."; if (publicar) publicar.disabled = true; return; }
+        box.textContent = `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${row.erro ? " · " + row.erro : ""}`;
+        if (publicar) publicar.disabled = row.status !== "ready";
       }
       async function reloadMultimediaSessions() {
         if (!currentPalco) return;
@@ -4008,7 +4028,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         markButton(button, "working");
         const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/multimidia/sessoes/" + encodeURIComponent(ref) + "/publicar", { method: "POST", headers: apiHeaders });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { toast(detailPublico(data.detail || data), res.status === 409 ? "warn" : "bad"); markButton(button, "error"); setTimeout(() => restoreButton(button), 1600); await reloadMultimediaSessions(); return; }
+        if (!res.ok) { toast(res.status === 409 ? "Sessão em conflito. Atualizei a lista para você conferir o estado real." : detailPublico(data.detail || data), res.status === 409 ? "warn" : "bad"); markButton(button, "error"); setTimeout(() => restoreButton(button), 1600); await reloadMultimediaSessions(); return; }
         markButton(button, "success"); setTimeout(() => restoreButton(button), 1300);
         toast("Publicação multimídia enviada.", "ok");
         await reloadMultimediaSessions();
@@ -4161,6 +4181,13 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const usrSelect = document.getElementById("rbac_usr_ref");
         if (usrSelect) {
           usrSelect.replaceChildren(...(operadores.length ? operadores.map((row) => option(row.usr_ref || row.ui_ref, pessoaLabel(row, row.perfil || "Governante"))) : [option("", "Nenhum governante conhecido")]));
+          const selected = operadores.find((row) => String(row.usr_ref || row.ui_ref || "") === String(usrSelect.value || "")) || operadores[0];
+          if (selected) {
+            const setEdit = (id, value) => { const el = document.getElementById(id); if (el && !el.value) el.value = value || ""; };
+            setEdit("rbac_edit_nome", selected.nome || "");
+            setEdit("rbac_edit_username", selected.username || "");
+            setEdit("rbac_edit_perfil", selected.perfil || "Governante designado");
+          }
         }
         const grpSelect = document.getElementById("rbac_grp_ref");
         if (grpSelect) {
@@ -4405,6 +4432,12 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           const canais = String(row.detalhe || "").split(",").filter(Boolean).length;
           return { titulo: grupo, resumo: `${operador}${canais ? ` · ${canais} item(ns)` : ""}`, detalhe: row.detalhe };
         }), "Matriz sem operadores ou grupos configurados.");
+        const auditoria = data.auditoria_permissoes || {};
+        const audResumo = auditoria.resumo || {};
+        const audResumoEl = document.getElementById("config_permissoes_auditoria_resumo");
+        if (audResumoEl) audResumoEl.textContent = `${audResumo.owner_only || 0} rotas owner-only · ${audResumo.familias_com_canal || 0} famílias com canal · ${audResumo.exposicao || "sem exposição sensível"}`;
+        const audRows = (auditoria.owner_only || []).map((row) => ({ titulo: row.rota || "rota", resumo: row.finalidade || "controle", detalhe: row.bloqueio || "somente dono" }));
+        fillDisclosureList("config_permissoes_auditoria", audRows, "Auditoria de permissões vazia.");
       }
 
       async function loadPalcoData() {
@@ -4977,6 +5010,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       document.getElementById("resetar_config_form").addEventListener("click", () => loadConfiguracaoMaestro());
       const rbacAdicionarGovernante = document.getElementById("rbac_adicionar_governante");
       if (rbacAdicionarGovernante) rbacAdicionarGovernante.addEventListener("click", () => adicionarGovernanteRuntime());
+      const rbacAtualizarGovernante = document.getElementById("rbac_atualizar_governante");
+      if (rbacAtualizarGovernante) rbacAtualizarGovernante.addEventListener("click", () => atualizarGovernanteRuntime());
+      const rbacRemoverGovernante = document.getElementById("rbac_remover_governante");
+      if (rbacRemoverGovernante) rbacRemoverGovernante.addEventListener("click", () => removerGovernanteRuntime());
       document.getElementById("rbac_conceder").addEventListener("click", () => concederRbacRuntime());
       document.getElementById("rbac_revogar").addEventListener("click", () => revogarRbacRuntime());
       document.getElementById("sessoes_limpar").addEventListener("click", () => limparSessoesExpiradas());
@@ -5855,12 +5892,16 @@ _PERSISTENCE_TABLES = (
     "track_likes",
     "track_reactions",
     "reaction_audit",
+    "eq_operadores",
     "eq_runtime_grants",
     "eq_private_sessions",
     "eq_security_mode",
     "eq_security_audit",
     "eq_radio_drafts",
+    "eq_multimedia_sessions",
     "eq_ddx_events",
+    "eq_persistence_state",
+    "tr3_legacy_import_runs",
 )
 
 
@@ -5898,6 +5939,46 @@ def _persistence_status_public() -> dict[str, object]:
     }
 
 
+def _permissions_audit_public() -> dict[str, object]:
+    """Owner-only manifest of sensitive Equalizador surfaces, safe for UI."""
+    owner_only = [
+        {"rota": "/api/configuracao", "finalidade": "configuração e governança", "bloqueio": "somente dono"},
+        {"rota": "/api/configuracao/raw-preview", "finalidade": "prévia de variáveis", "bloqueio": "somente dono"},
+        {"rota": "/api/persistencia/status", "finalidade": "persistência real", "bloqueio": "somente dono"},
+        {"rota": "/api/permissoes/matriz", "finalidade": "matriz de permissões", "bloqueio": "somente dono"},
+        {"rota": "/api/canais/distribuicao", "finalidade": "distribuição de canais", "bloqueio": "somente dono"},
+        {"rota": "/api/rbac/runtime", "finalidade": "delegação runtime", "bloqueio": "somente dono"},
+        {"rota": "/api/rbac/operadores", "finalidade": "catálogo de governantes", "bloqueio": "somente dono"},
+        {"rota": "/api/palcos/{grp_ref}/governantes", "finalidade": "governantes ativos do grupo", "bloqueio": "somente dono"},
+        {"rota": "/api/seguranca", "finalidade": "painel de segurança", "bloqueio": "somente dono"},
+    ]
+    canal_checked = [
+        {"familia": "mensagens", "regra": "canal efetivo + direitos reais do bot"},
+        {"familia": "topicos", "regra": "canal efetivo + direitos reais do bot"},
+        {"familia": "convites", "regra": "canal efetivo + direitos reais do bot"},
+        {"familia": "radio/multimidia", "regra": "canal efetivo + estado persistente"},
+        {"familia": "DDX", "regra": "canal efetivo + persistência"},
+    ]
+    return {
+        "ok": True,
+        "resumo": {
+            "owner_only": len(owner_only),
+            "familias_com_canal": len(canal_checked),
+            "exposicao": "sem ids brutos, sem tokens, sem caminhos absolutos",
+        },
+        "owner_only": owner_only,
+        "familias_com_canal": canal_checked,
+    }
+
+
+@router.get("/api/permissoes/auditoria")
+def equalizador_permissoes_auditoria(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="read")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    return _permissions_audit_public()
+
+
 @router.get("/api/configuracao")
 def equalizador_configuracao(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _require_identity(authorization, rate_kind="read")
@@ -5912,6 +5993,7 @@ def equalizador_configuracao(authorization: str | None = Header(default=None)) -
         "sessoes_persistentes": session_store_status(now_ts=int(__import__("time").time())),
         "persistencia": _persistence_status_public(),
         "seguranca_avancada": security_dashboard_public(alias_secret=settings.equalizador_alias_secret()),
+        "auditoria_permissoes": _permissions_audit_public(),
     }
 
 
@@ -5954,6 +6036,43 @@ async def equalizador_rbac_operador_criar(request: Request, authorization: str |
         },
         "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret()),
     }
+
+
+@router.put("/api/rbac/operadores/{usr_ref}")
+async def equalizador_rbac_operador_atualizar(usr_ref: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    payload = await request.json()
+    try:
+        governante = update_governance_operator(
+            usr_ref=str(usr_ref or ""),
+            nome=str(payload.get("nome") or ""),
+            username=str(payload.get("username") or ""),
+            perfil=str(payload.get("perfil") or "Governante designado"),
+            actor_ref=_operator_ref(identity),
+            alias_secret=settings.equalizador_alias_secret(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Governante indisponível ou inválido.") from exc
+    return {"ok": True, "governante": governante, "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret())}
+
+
+@router.delete("/api/rbac/operadores/{usr_ref}")
+def equalizador_rbac_operador_remover(usr_ref: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _require_identity(authorization, rate_kind="action")
+    if not _is_maestro(identity):
+        raise HTTPException(status_code=403, detail="Acesso indisponível.")
+    try:
+        governante = disable_governance_operator(
+            usr_ref=str(usr_ref or ""),
+            actor_ref=_operator_ref(identity),
+            alias_secret=settings.equalizador_alias_secret(),
+            protected_user_ids=settings.TR4_EQUALIZADOR_MAESTRO_IDS_SET,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Governante protegido ou indisponível.") from exc
+    return {"ok": True, "governante": governante, "rbac_runtime": rbac_runtime_catalogo_publico(alias_secret=settings.equalizador_alias_secret())}
 
 
 @router.get("/api/rbac/runtime")

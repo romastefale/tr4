@@ -44,6 +44,7 @@ from app.equalizador.hardening import equalizador_hardening_status
 from app.equalizador.ddx import equalizador_ddx_preprocess_update, process_due_ddx_soft_deletions
 from app.equalizador.reacoes import record_reaction_update_payload
 from app.equalizador.novos_membros import equalizador_novos_membros_preprocess_update
+from app.equalizador.persistencia import ensure_persistence_state
 
 app = FastAPI(title="TR4 Music Only")
 if TR4_EQUALIZADOR_ENABLED:
@@ -175,6 +176,10 @@ async def on_startup() -> None:
         logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
     init_db()
     run_migrations(engine)
+    try:
+        ensure_persistence_state(engine)
+    except Exception:
+        logger.warning("TR4_PERSISTENCE_GUARD_STARTUP_FAILED", exc_info=True)
     ensure_music_group_tables()
     _telegram_ready = False
     _telegram_startup_error = None

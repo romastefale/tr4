@@ -718,6 +718,9 @@ def _multimedia_message_payload(message: Message) -> dict[str, object] | None:
     if getattr(message, "video", None):
         video = message.video
         return {"media_kind": "video", "file_id": video.file_id, "file_unique_id": video.file_unique_id, "file_name": getattr(video, "file_name", "") or "video", "mime_type": getattr(video, "mime_type", "") or "video/mp4", "texto": caption}
+    if getattr(message, "animation", None):
+        animation = message.animation
+        return {"media_kind": "animation", "file_id": animation.file_id, "file_unique_id": animation.file_unique_id, "file_name": getattr(animation, "file_name", "") or "animacao", "mime_type": getattr(animation, "mime_type", "") or "video/mp4", "texto": caption}
     if getattr(message, "document", None):
         document = message.document
         return {"media_kind": "document", "file_id": document.file_id, "file_unique_id": document.file_unique_id, "file_name": getattr(document, "file_name", "") or "documento", "mime_type": getattr(document, "mime_type", "") or "application/octet-stream", "texto": caption}

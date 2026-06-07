@@ -20,12 +20,16 @@ IMPORTANT_TABLES = (
     "track_likes",
     "track_reactions",
     "reaction_audit",
+    "eq_operadores",
     "eq_runtime_grants",
     "eq_private_sessions",
     "eq_security_mode",
     "eq_security_audit",
     "eq_radio_drafts",
+    "eq_multimedia_sessions",
     "eq_ddx_events",
+    "eq_persistence_state",
+    "tr3_legacy_import_runs",
 )
 
 
@@ -71,9 +75,14 @@ def audit() -> dict[str, object]:
         with sqlite3.connect(str(db_path)) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             tables: dict[str, int | None] = {}
+            missing = []
             for table in IMPORTANT_TABLES:
                 tables[table] = table_count(conn, table)
+                if tables[table] is None:
+                    missing.append(table)
             result["tables"] = tables
+            if missing:
+                warnings.append("missing_tables:" + ",".join(missing))
     except sqlite3.DatabaseError as exc:
         warnings.append(f"sqlite_error:{type(exc).__name__}")
         return result

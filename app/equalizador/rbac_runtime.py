@@ -44,6 +44,22 @@ def ensure_rbac_runtime_tables(db_engine: Engine = default_engine) -> None:
         )
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_runtime_grants_user ON eq_runtime_grants(telegram_user_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_runtime_grants_ref ON eq_runtime_grants(grant_ref)"))
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS eq_governance_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_ref TEXT NOT NULL UNIQUE,
+                    actor_ref TEXT NOT NULL,
+                    subject_ref TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    public_detail TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_governance_audit_created ON eq_governance_audit(created_at)"))
 
 
 def _grant_ref(*, user_id: int, chat_id: int | None, canal_codigo: str, alias_secret: str) -> str:
@@ -62,6 +78,65 @@ def _resolve_usr_ref(usr_ref: str, *, db_engine: Engine = default_engine) -> int
     if not row:
         return None
     return int(row["telegram_user_id"])
+
+
+def _operator_public_by_usr_ref(usr_ref: str, *, alias_secret: str, db_engine: Engine = default_engine) -> dict[str, object] | None:
+    ensure_rbac_runtime_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT telegram_user_id, ui_ref, nome, username, perfil, habilitado, updated_at
+                FROM eq_operadores
+                WHERE ui_ref=:ui_ref
+                LIMIT 1
+                """
+            ),
+            {"ui_ref": str(usr_ref or "").strip()},
+        ).mappings().first()
+    if not row:
+        return None
+    payload = get_operador_public_by_user_id(
+        user_id=int(row["telegram_user_id"]),
+        alias_secret=alias_secret,
+        perfil=str(row["perfil"] or "Governante"),
+        db_engine=db_engine,
+    )
+    payload["habilitado"] = bool(int(row["habilitado"] or 0))
+    payload["updated_at"] = row["updated_at"]
+    return payload
+
+
+def _record_governance_audit(
+    *,
+    actor_ref: str,
+    subject_ref: str,
+    action: str,
+    public_detail: str = "",
+    alias_secret: str,
+    db_engine: Engine = default_engine,
+) -> None:
+    ensure_rbac_runtime_tables(db_engine)
+    now = _now_iso()
+    seed = f"{actor_ref}:{subject_ref}:{action}:{now}"
+    event_ref = make_ui_ref("exp", abs(hash((seed, alias_secret))) % (10**12), alias_secret)
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO eq_governance_audit (event_ref, actor_ref, subject_ref, action, public_detail, created_at)
+                VALUES (:event_ref, :actor_ref, :subject_ref, :action, :public_detail, :created_at)
+                """
+            ),
+            {
+                "event_ref": event_ref,
+                "actor_ref": str(actor_ref or ""),
+                "subject_ref": str(subject_ref or ""),
+                "action": str(action or "")[:80],
+                "public_detail": str(public_detail or "")[:240],
+                "created_at": now,
+            },
+        )
 
 
 def _resolve_grp_ref(grp_ref: str | None, *, db_engine: Engine = default_engine) -> int | None:
@@ -183,6 +258,119 @@ def filter_palco_ids_by_canal_effective(
             is_maestro=is_maestro,
             db_engine=db_engine,
         )
+    }
+
+
+def update_governance_operator(
+    *,
+    usr_ref: str,
+    nome: str,
+    username: str = "",
+    perfil: str = "Governante designado",
+    actor_ref: str,
+    alias_secret: str,
+    db_engine: Engine = default_engine,
+) -> dict[str, object]:
+    ensure_rbac_runtime_tables(db_engine)
+    user_id = _resolve_usr_ref(usr_ref, db_engine=db_engine)
+    if not user_id:
+        raise ValueError("operador_indisponivel")
+    safe_nome = str(nome or "Governante designado").strip()[:80] or "Governante designado"
+    safe_username = str(username or "").strip().lstrip("@")[:32]
+    safe_perfil = str(perfil or "Governante designado").strip()[:80] or "Governante designado"
+    now = _now_iso()
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE eq_operadores
+                SET nome=:nome, username=:username, perfil=:perfil, habilitado=1, updated_at=:updated_at
+                WHERE ui_ref=:usr_ref
+                """
+            ),
+            {"nome": safe_nome, "username": safe_username or None, "perfil": safe_perfil, "updated_at": now, "usr_ref": str(usr_ref)},
+        )
+    _record_governance_audit(
+        actor_ref=actor_ref,
+        subject_ref=str(usr_ref),
+        action="governante.atualizar",
+        public_detail=f"perfil: {safe_perfil}",
+        alias_secret=alias_secret,
+        db_engine=db_engine,
+    )
+    row = _operator_public_by_usr_ref(str(usr_ref), alias_secret=alias_secret, db_engine=db_engine)
+    if not row:
+        raise ValueError("operador_indisponivel")
+    return row
+
+
+def disable_governance_operator(
+    *,
+    usr_ref: str,
+    actor_ref: str,
+    alias_secret: str,
+    protected_user_ids: set[int] | None = None,
+    db_engine: Engine = default_engine,
+) -> dict[str, object]:
+    ensure_rbac_runtime_tables(db_engine)
+    user_id = _resolve_usr_ref(usr_ref, db_engine=db_engine)
+    if not user_id:
+        raise ValueError("operador_indisponivel")
+    if protected_user_ids and int(user_id) in {int(v) for v in protected_user_ids}:
+        raise ValueError("dono_protegido")
+    now = _now_iso()
+    with db_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE eq_operadores SET habilitado=0, updated_at=:updated_at WHERE ui_ref=:usr_ref"),
+            {"updated_at": now, "usr_ref": str(usr_ref)},
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE eq_runtime_grants
+                SET habilitado=0, revoked_at=:revoked_at, updated_at=:updated_at, motivo=:motivo
+                WHERE telegram_user_id=:user_id AND habilitado=1
+                """
+            ),
+            {"revoked_at": now, "updated_at": now, "motivo": "governante removido pelo dono", "user_id": int(user_id)},
+        )
+    _record_governance_audit(
+        actor_ref=actor_ref,
+        subject_ref=str(usr_ref),
+        action="governante.desativar",
+        public_detail="governante desativado e concessões runtime revogadas",
+        alias_secret=alias_secret,
+        db_engine=db_engine,
+    )
+    return {"usr_ref": str(usr_ref), "habilitado": False}
+
+
+def list_governance_audit_public(*, alias_secret: str, limit: int = 30, db_engine: Engine = default_engine) -> dict[str, object]:
+    ensure_rbac_runtime_tables(db_engine)
+    with db_engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT event_ref, actor_ref, subject_ref, action, public_detail, created_at
+                FROM eq_governance_audit
+                ORDER BY id DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": max(1, min(int(limit or 30), 100))},
+        ).mappings().all()
+    return {
+        "eventos": [
+            {
+                "event_ref": str(row["event_ref"]),
+                "ator": str(row["actor_ref"] or ""),
+                "alvo": str(row["subject_ref"] or ""),
+                "acao": str(row["action"] or ""),
+                "detalhe": str(row["public_detail"] or ""),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
     }
 
 
@@ -341,4 +529,5 @@ def rbac_runtime_catalogo_publico(*, alias_secret: str, db_engine: Engine = defa
             for canal in CANAL_DEFINITIONS
         ],
         **list_runtime_grants_public(alias_secret=alias_secret, db_engine=db_engine),
+        "auditoria_governanca": list_governance_audit_public(alias_secret=alias_secret, db_engine=db_engine),
     }

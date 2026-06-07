@@ -20,6 +20,7 @@ import json
 import os
 import shutil
 import sqlite3
+import tempfile
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -68,11 +69,35 @@ class LegacyImportReport:
     dry_run: bool
     tables_requested: list[str]
     backup_path: str = ""
+    same_file_noop: bool = False
+    target_existing_tables: dict[str, int | None] = field(default_factory=dict)
     tables: list[TableReport] = field(default_factory=list)
 
 
-def resolve_sqlite_path(value: str | None, default: str = "data/app.db") -> Path:
+def _path_is_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(prefix=".tr4_import_probe_", dir=str(path), delete=True) as handle:
+            handle.write(b"ok")
+        return True
+    except Exception:
+        return False
+
+
+def _default_target_path() -> Path:
+    volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    if volume:
+        return Path(volume).expanduser().resolve() / "app.db"
+    data_dir = Path("/data")
+    if _path_is_writable_dir(data_dir):
+        return data_dir.resolve() / "app.db"
+    return Path("data/app.db").expanduser().resolve()
+
+
+def resolve_sqlite_path(value: str | None, default: str | None = None) -> Path:
     raw = value or os.getenv("TR3_DATABASE_URL") or os.getenv("DATABASE_URL") or default
+    if not raw:
+        return _default_target_path()
     if raw.startswith("sqlite+aiosqlite:///"):
         raw = raw[len("sqlite+aiosqlite:///") - 1 :]
     elif raw.startswith("sqlite:///"):
@@ -118,6 +143,19 @@ def ensure_audit_table(conn: sqlite3.Connection) -> None:
         """
     )
 
+
+
+def count_existing_tables(conn: sqlite3.Connection, tables: list[str]) -> dict[str, int | None]:
+    counts: dict[str, int | None] = {}
+    for table in tables:
+        if not table_exists(conn, table):
+            counts[table] = None
+            continue
+        try:
+            counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {quote_ident(table)}").fetchone()[0])
+        except sqlite3.DatabaseError:
+            counts[table] = None
+    return counts
 
 def backup_target(target: Path) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -178,11 +216,22 @@ def import_table(src: sqlite3.Connection, dst: sqlite3.Connection, table: str, *
     return report
 
 
-def run_import(source: Path, target: Path, *, dry_run: bool, tables: list[str]) -> LegacyImportReport:
+def run_import(source: Path, target: Path, *, dry_run: bool, tables: list[str], allow_same_file: bool = False) -> LegacyImportReport:
     requested = [table for table in tables if table in SAFE_TABLES]
     report = LegacyImportReport(str(source), str(target), dry_run=dry_run, tables_requested=requested)
     if source == target:
-        raise RuntimeError("source e target são o mesmo arquivo. Não importe o banco nele mesmo.")
+        if not allow_same_file:
+            raise RuntimeError("source e target são o mesmo arquivo. Use --allow-same-file apenas para auditar banco já consolidado.")
+        conn = connect(target)
+        try:
+            report.same_file_noop = True
+            report.target_existing_tables = count_existing_tables(conn, requested)
+            for table in requested:
+                count = report.target_existing_tables.get(table)
+                report.tables.append(TableReport(table=table, source_rows=int(count or 0), target_rows_before=int(count or 0), target_rows_after=int(count or 0), skipped_existing=int(count or 0)))
+        finally:
+            conn.close()
+        return report
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
         sqlite3.connect(str(target)).close()
@@ -195,6 +244,7 @@ def run_import(source: Path, target: Path, *, dry_run: bool, tables: list[str]) 
         ensure_audit_table(dst)
         for table in requested:
             report.tables.append(import_table(src, dst, table, dry_run=dry_run))
+        report.target_existing_tables = count_existing_tables(dst, requested)
         if not dry_run:
             dst.execute(
                 """
@@ -213,7 +263,8 @@ def run_import(source: Path, target: Path, *, dry_run: bool, tables: list[str]) 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Importa tabelas legadas TR3 para o banco TR4 com dry-run, backup e idempotência.")
     parser.add_argument("--source", required=True, help="Banco SQLite antigo recuperado, ex.: ./app.db")
-    parser.add_argument("--target", default=None, help="Banco SQLite atual. Default: TR3_DATABASE_URL, DATABASE_URL ou data/app.db")
+    parser.add_argument("--target", default=None, help="Banco SQLite atual. Default: TR3_DATABASE_URL, DATABASE_URL, RAILWAY_VOLUME_MOUNT_PATH/app.db, /data/app.db ou data/app.db")
+    parser.add_argument("--allow-same-file", action="store_true", help="Audita source==target como banco já consolidado, sem escrita.")
     parser.add_argument("--apply", action="store_true", help="Executa escrita. Sem isso, roda dry-run.")
     parser.add_argument("--tables", default=",".join(SAFE_TABLES), help="Lista separada por vírgula; padrão: tabelas seguras conhecidas")
     return parser
@@ -225,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     target = resolve_sqlite_path(args.target)
     tables = [part.strip() for part in str(args.tables or "").split(",") if part.strip()]
     try:
-        report = run_import(source, target, dry_run=not args.apply, tables=tables)
+        report = run_import(source, target, dry_run=not args.apply, tables=tables, allow_same_file=bool(args.allow_same_file))
     except Exception as exc:
         print(f"ERRO: {exc}", file=sys.stderr)
         return 2

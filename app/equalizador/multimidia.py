@@ -15,7 +15,7 @@ class MultimediaError(RuntimeError):
     """Raised when a native Telegram multimedia flow cannot continue."""
 
 
-ALLOWED_KINDS = {"text", "photo", "video", "document", "audio", "voice"}
+ALLOWED_KINDS = {"text", "photo", "video", "document", "audio", "voice", "animation"}
 
 
 def _now_iso() -> str:
@@ -76,11 +76,39 @@ def _session_ref(*, palco_ref: str, ator_ref: str, user_id: int, alias_secret: s
     return "mm_" + make_ui_ref("grp", seed, alias_secret).split("_", 1)[1]
 
 
+def _status_public_label(status: str) -> str:
+    return {
+        "awaiting": "Aguardando conteúdo",
+        "ready": "Pronto para publicar",
+        "publishing": "Publicando",
+        "published": "Publicado",
+        "failed": "Falhou",
+        "conflict": "Conflito",
+        "cancelled": "Cancelado",
+    }.get(str(status or ""), str(status or "sessão"))
+
+
+def _tipo_public_label(kind: str) -> str:
+    return {
+        "text": "texto",
+        "photo": "foto",
+        "video": "vídeo",
+        "document": "documento",
+        "audio": "áudio",
+        "voice": "voz",
+        "animation": "animação",
+    }.get(str(kind or ""), str(kind or "conteúdo"))
+
+
 def public_multimedia_session(row: dict[str, Any]) -> dict[str, object]:
+    status = str(row.get("status") or "awaiting")
+    kind = str(row.get("media_kind") or ("text" if row.get("texto") else ""))
     return {
         "session_ref": str(row.get("session_ref") or ""),
-        "status": str(row.get("status") or "awaiting"),
-        "tipo": str(row.get("media_kind") or ("text" if row.get("texto") else "")),
+        "status": status,
+        "estado": _status_public_label(status),
+        "tipo": kind,
+        "tipo_label": _tipo_public_label(kind),
         "resumo": _safe_text(row.get("texto"), fallback=_safe_text(row.get("file_name"), fallback="Aguardando conteúdo"))[:160],
         "arquivo": _safe_text(row.get("file_name"), fallback=""),
         "mime": _safe_text(row.get("mime_type"), fallback=""),
@@ -223,6 +251,8 @@ def _method_for_kind(kind: str) -> tuple[str, str, str | None]:
         return "sendVoice", "voice", None
     if kind == "document":
         return "sendDocument", "document", "can_send_documents"
+    if kind == "animation":
+        return "sendAnimation", "animation", "can_send_documents"
     return "sendMessage", "text", None
 
 
@@ -230,37 +260,55 @@ async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str,
     session = get_multimedia_session(session_ref=session_ref, db_engine=db_engine)
     if str(session.get("palco_ref")) != str(palco["ui_ref"]):
         raise MultimediaError("Sessão fora do grupo selecionado.")
-    if str(session.get("status")) != "ready":
+    status = str(session.get("status") or "awaiting")
+    if status == "published":
+        raise MultimediaError("Sessão já publicada. Atualize a lista antes de tentar novamente.")
+    if status == "publishing":
+        raise MultimediaError("Sessão já está publicando. Aguarde a conclusão.")
+    if status != "ready":
         raise MultimediaError("Envie a mídia ou texto no privado do bot antes de publicar.")
+    now = _now_iso()
+    with db_engine.begin() as conn:
+        result_update = conn.execute(
+            text("""
+                UPDATE eq_multimedia_sessions
+                SET status='publishing', error_public=NULL, updated_at=:updated_at
+                WHERE session_ref=:ref AND status='ready'
+            """),
+            {"updated_at": now, "ref": str(session_ref)},
+        )
+        if getattr(result_update, "rowcount", 0) != 1:
+            raise MultimediaError("Sessão mudou de estado. Atualize a lista antes de publicar.")
     kind = str(session.get("media_kind") or "text")
     method, field_name, required_right = _method_for_kind(kind)
     chat_id = int(palco["telegram_chat_id"])
-    await ensure_bot_right(bot_token=bot_token, chat_id=chat_id, required_right=required_right)
-    texto = str(session.get("texto") or "")
-    if kind == "text":
-        if not texto.strip():
-            raise MultimediaError("Mensagem vazia.")
-        payload: dict[str, Any] = {"chat_id": chat_id, "text": texto[:4096], "disable_web_page_preview": True}
-    else:
-        file_id = str(session.get("file_id") or "")
-        if not file_id:
-            raise MultimediaError("Arquivo da sessão indisponível.")
-        payload = {"chat_id": chat_id, field_name: file_id, "caption": texto[:1024] if texto else None}
     try:
+        await ensure_bot_right(bot_token=bot_token, chat_id=chat_id, required_right=required_right)
+        texto = str(session.get("texto") or "")
+        if kind == "text":
+            if not texto.strip():
+                raise MultimediaError("Mensagem vazia.")
+            payload: dict[str, Any] = {"chat_id": chat_id, "text": texto[:4096], "disable_web_page_preview": True}
+        else:
+            file_id = str(session.get("file_id") or "")
+            if not file_id:
+                raise MultimediaError("Arquivo da sessão indisponível.")
+            payload = {"chat_id": chat_id, field_name: file_id, "caption": texto[:1024] if texto else None}
         result = await telegram_api_call(bot_token, method, payload)
-    except MesaError as exc:
+        if not isinstance(result, dict) or not result.get("message_id"):
+            raise MultimediaError("Telegram não retornou a mensagem publicada.")
+    except (MesaError, MultimediaError) as exc:
+        public_error = _safe_text(exc, fallback="Publicação multimídia não concluída.")[:180]
         with db_engine.begin() as conn:
             conn.execute(
                 text("UPDATE eq_multimedia_sessions SET status='failed', error_public=:error, updated_at=:updated_at WHERE session_ref=:ref"),
-                {"error": _safe_text(exc, fallback="Telegram recusou a publicação."), "updated_at": _now_iso(), "ref": str(session_ref)},
+                {"error": public_error, "updated_at": _now_iso(), "ref": str(session_ref)},
             )
         raise
-    if not isinstance(result, dict) or not result.get("message_id"):
-        raise MultimediaError("Telegram não retornou a mensagem publicada.")
     msg_ref = register_mensagem_ref(
         chat_id=chat_id,
         message_id=int(result["message_id"]),
-        resumo_publico=_safe_text(texto, fallback="Publicação multimídia"),
+        resumo_publico=_safe_text(str(session.get("texto") or ""), fallback="Publicação multimídia"),
         alias_secret=alias_secret,
         message_unix_time=int(result.get("date") or 0) or None,
         db_engine=db_engine,
@@ -268,7 +316,7 @@ async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str,
     now = _now_iso()
     with db_engine.begin() as conn:
         conn.execute(
-            text("UPDATE eq_multimedia_sessions SET status='published', msg_ref=:msg_ref, updated_at=:updated_at WHERE session_ref=:ref"),
+            text("UPDATE eq_multimedia_sessions SET status='published', msg_ref=:msg_ref, error_public=NULL, updated_at=:updated_at WHERE session_ref=:ref"),
             {"msg_ref": msg_ref, "updated_at": now, "ref": str(session_ref)},
         )
     historico = record_historico(
