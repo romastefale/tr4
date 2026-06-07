@@ -5761,9 +5761,7 @@ async def equalizador_bot_resumo(authorization: str | None = Header(default=None
     return await _bot_public_summary(is_maestro=_is_maestro(identity))
 
 
-@router.get("/api/bot/foto")
-async def equalizador_bot_foto(authorization: str | None = Header(default=None)) -> Response:
-    _require_identity(authorization, rate_kind="read")
+async def _telegram_bot_photo_response() -> Response:
     if not settings.TELEGRAM_BOT_TOKEN:
         raise HTTPException(status_code=404, detail="Foto indisponível.")
     try:
@@ -5801,11 +5799,26 @@ async def equalizador_bot_foto(authorization: str | None = Header(default=None))
             image_res = await client.get(f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{file_path}")
             if not image_res.is_success:
                 raise HTTPException(status_code=404, detail="Foto indisponível.")
-            return Response(content=image_res.content, media_type=image_res.headers.get("content-type") or "image/jpeg")
+            return Response(
+                content=image_res.content,
+                media_type=image_res.headers.get("content-type") or "image/jpeg",
+                headers={"Cache-Control": "public, max-age=600"},
+            )
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=404, detail="Foto indisponível.") from exc
+
+
+@router.get("/api/bot/foto")
+async def equalizador_bot_foto(authorization: str | None = Header(default=None)) -> Response:
+    _require_identity(authorization, rate_kind="read")
+    return await _telegram_bot_photo_response()
+
+
+@router.get("/api/public/bot/foto")
+async def public_bot_foto() -> Response:
+    return await _telegram_bot_photo_response()
 
 
 @router.get("/api/palcos")
@@ -7654,12 +7667,14 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     body { padding: calc(14px + env(safe-area-inset-top)) 16px calc(84px + env(safe-area-inset-bottom)); font-size: 15px; }
     main { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 16px; }
     button, input { font: inherit; }
-    .hero { position: relative; display: grid; justify-items: center; gap: 8px; padding: 18px 56px 12px; text-align: center; }
+    .hero { display: grid; justify-items: center; gap: 8px; padding: 18px 12px 12px; text-align: center; }
     .bot-avatar { width: 82px; height: 82px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,.2); box-shadow: 0 16px 44px rgba(0,0,0,.45); background: #242c36; }
+    #botPhotoFallback { display: grid; place-items: center; color: #45e0a5; font-size: 30px; font-weight: 900; }
     .brand { font-size: clamp(30px, 8vw, 44px); font-weight: 900; font-style: italic; letter-spacing: -.04em; line-height: .95; }
     .username { color: #ee88c8; font-weight: 700; font-size: 16px; }
     .stats { color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-    .mod-link { position: absolute; right: 0; top: 12px; color: var(--link); text-decoration: none; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); padding: 7px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+    .mod-footer { display: flex; justify-content: center; padding: 2px 0 8px; }
+    .mod-link { color: var(--link); text-decoration: none; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); padding: 11px 22px; border-radius: 999px; font-weight: 800; font-size: 15px; min-width: 132px; text-align: center; }
     .hidden { display: none !important; }
     .search { display: flex; align-items: center; gap: 12px; min-height: 58px; border-radius: 18px; background: var(--section-2); color: var(--muted); padding: 0 18px; border: 1px solid rgba(255,255,255,.06); }
     .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 18px; min-width: 0; }
@@ -7693,8 +7708,8 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     .tip { color: var(--muted); font-size: 13px; line-height: 1.45; padding: 0 4px; }
     @media (max-width: 520px) {
       body { padding-left: 12px; padding-right: 12px; }
-      .hero { padding-left: 46px; padding-right: 46px; }
-      .mod-link { top: 8px; }
+      .hero { padding-left: 12px; padding-right: 12px; }
+      .mod-link { width: min(220px, 72vw); }
       .track { grid-template-columns: 76px 1fr; gap: 13px; }
       .cover { width: 76px; height: 76px; border-radius: 16px; }
       .actions { grid-template-columns: 1fr; }
@@ -7706,12 +7721,11 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
 <body>
 <main>
   <section class="hero" aria-label="Mini App público do tigraoRADIO">
-    <a id="modBtn" class="mod-link hidden" href="/equalizador">Painel</a>
     <img id="botPhoto" class="bot-avatar hidden" alt="Foto do bot" />
-    <div id="botPhotoFallback" class="bot-avatar" aria-hidden="true"></div>
+    <div id="botPhotoFallback" class="bot-avatar" aria-hidden="true">♪</div>
     <div class="brand">tigraoRADIO</div>
     <div class="username" id="botUser">@tigraoRADIObot</div>
-    <div class="stats" id="stats">música atual • publicação</div>
+    <div class="stats" id="stats">música atual</div>
   </section>
 
   <label class="search" aria-label="Busca de grupos e ações">⌕ <input id="search" autocomplete="off" placeholder="Buscar grupo ou ação" /></label>
@@ -7742,7 +7756,10 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     </div>
   </section>
 
-  <p class="tip">A publicação usa o fluxo já existente do bot, equivalente ao comando /nowp. O botão de moderação só aparece para operadores autorizados.</p>
+  <div class="mod-footer">
+    <a id="modBtn" class="mod-link hidden" href="/equalizador">Painel</a>
+  </div>
+
 </main>
 <script>
 (function(){
@@ -7762,6 +7779,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   let currentGroups = [];
   let trackAvailable = false;
   function $(id){ return document.getElementById(id); }
+  function showBotFallback(){ $("botPhoto").classList.add("hidden"); $("botPhotoFallback").classList.remove("hidden"); }
   function text(value){ return String(value == null ? "" : value); }
   function status(message, kind){ const el=$("status"); el.textContent=message; el.className="status"+(kind?" "+kind:""); }
   function updatePublishState(){ $("publishBtn").disabled = !(initData && selectedGroup && trackAvailable); }
@@ -7775,7 +7793,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       row.innerHTML = '<div><div class="group-title"></div><div class="group-meta"></div></div><div class="chev">›</div>';
       row.querySelector(".group-title").textContent = g.title || "Grupo";
       row.querySelector(".group-meta").textContent = meta;
-      row.onclick = () => { selectedGroup = g.ref; selectedTitle = g.title || "grupo"; $("selectedGroup").innerHTML = "Grupo: <strong></strong>"; $("selectedGroup").querySelector("strong").textContent = selectedTitle; status("Grupo selecionado. A prévia será publicada pelo bot.", "ok"); renderGroups(currentGroups); updatePublishState(); };
+      row.onclick = () => { selectedGroup = g.ref; selectedTitle = g.title || "grupo"; $("selectedGroup").innerHTML = "Grupo: <strong></strong>"; $("selectedGroup").querySelector("strong").textContent = selectedTitle; status("Grupo selecionado.", "ok"); renderGroups(currentGroups); updatePublishState(); };
       root.appendChild(row);
     });
     if (!root.children.length) root.innerHTML = '<div class="status">Nenhum grupo encontrado.</div>';
@@ -7792,7 +7810,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       else { $("cover").classList.add("hidden"); $("coverFallback").classList.remove("hidden"); }
     } else {
       $("trackTitle").textContent = "Nada tocando";
-      $("trackArtist").textContent = "Conecte Last.fm ou Spotify e tente novamente.";
+      $("trackArtist").textContent = track && track.message ? track.message : "Conecte Last.fm ou Spotify e tente novamente.";
       $("plays").textContent = "0";
     }
     updatePublishState();
@@ -7802,15 +7820,15 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     try {
       const me = await api("/equalizador/api/public/me");
       $("botUser").textContent = me.bot_username || "@tigraoRADIObot";
-      if (me.bot_photo_url) { $("botPhoto").src = me.bot_photo_url; $("botPhoto").classList.remove("hidden"); $("botPhotoFallback").classList.add("hidden"); }
+      if (me.bot_photo_url) { $("botPhoto").onerror = showBotFallback; $("botPhoto").src = me.bot_photo_url; $("botPhoto").classList.remove("hidden"); $("botPhotoFallback").classList.add("hidden"); } else { showBotFallback(); }
       if (me.can_open_equalizador) $("modBtn").classList.remove("hidden"); else $("modBtn").classList.add("hidden");
       const data = await api("/equalizador/api/public/home");
       setTrack(data.track || {});
       currentGroups = data.groups || [];
-      $("stats").textContent = (currentGroups.length || 0) + " grupos • publicação via /nowp";
+      $("stats").textContent = (currentGroups.length || 0) + " grupos em comum";
       renderGroups(currentGroups);
       status(trackAvailable ? "Prévia pronta. Escolha o grupo e publique." : "Sem música atual para publicar.", trackAvailable ? "ok" : "");
-    } catch (e) { status((e && (e.detail || e.public_detail)) || "Não foi possível carregar.", "bad"); }
+    } catch (e) { status((e && (e.detail || e.public_detail)) || "Não foi possível carregar.", "bad"); showBotFallback(); }
   }
   $("search").addEventListener("input", () => renderGroups(currentGroups));
   $("refreshBtn").onclick = load;
@@ -7920,9 +7938,24 @@ async def _public_groups_for_user(user_id: int) -> list[dict[str, object]]:
 
 
 async def _public_track_for_user(user_id: int) -> dict[str, object]:
-    track = await music_service.get_current_or_last_played(int(user_id))
+    try:
+        from app.services.connection_check import connect_hint_for, is_user_connected
+        if not is_user_connected(int(user_id)):
+            return {
+                "available": False,
+                "code": "music_account_not_connected",
+                "message": connect_hint_for("private"),
+            }
+    except Exception:
+        # Não derruba o player público: continua tentando a mesma fonte usada por /playing e /nowp.
+        pass
+    try:
+        track = await music_service.get_current_or_last_played(int(user_id))
+    except Exception:
+        logger.exception("PUBLIC_PLAYER_TRACK_LOOKUP_FAILED user=%s", user_id)
+        return {"available": False, "code": "track_lookup_failed", "message": "Não foi possível carregar sua música agora."}
     if not track:
-        return {"available": False}
+        return {"available": False, "code": "nothing_playing", "message": "Nada tocando agora."}
     track_name = str(track.get("track_name") or "").strip()
     artist = str(track.get("artist") or "").strip()
     track_id = str(track.get("track_id") or "").strip()
@@ -7957,7 +7990,7 @@ def public_music_status() -> dict[str, object]:
         "player": {
             "rota": "/equalizador/player",
             "implantado": True,
-            "layout": "musica_publica_sem_curtidas",
+            "layout": "musica_publica_sem_curtidas_sem_texto_tecnico",
             "publicacao": "nowp",
         },
         "seguranca": {
@@ -7986,7 +8019,7 @@ async def public_music_me(authorization: str | None = Header(default=None)) -> d
         "user": {"name": html.escape(str(identity.user.get("first_name") or identity.user.get("username") or "Usuário"))[:80]},
         "bot_username": bot_username,
         "can_open_equalizador": settings.equalizador_user_is_allowed(identity.user_id),
-        "bot_photo_url": "/equalizador/api/bot/foto",
+        "bot_photo_url": "/equalizador/api/public/bot/foto",
     }
 
 
