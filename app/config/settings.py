@@ -265,25 +265,30 @@ def _path_is_writable_dir(path: Path) -> bool:
 
 
 def _data_dir() -> Path:
-    """Return the runtime data directory, with Railway volume as hard preference.
+    """Return the runtime data directory, with /data as production truth.
 
-    Deploy regression seen in the Mini App happens when SQLite silently falls
-    back to an ephemeral container directory. The order below makes persistence
-    explicit and stable:
-    1. TR3_DATA_DIR/DATA_DIR override;
-    2. Railway's RAILWAY_VOLUME_MOUNT_PATH;
-    3. /data when it is a writable mounted volume;
-    4. /app/data only as local/container fallback.
+    Railway mounts the persistent volume at /data for this service. Earlier
+    deployments could still carry DATA_DIR=/app/data or a host-like
+    RAILWAY_VOLUME_MOUNT_PATH value, causing SQLite to use the ephemeral
+    container directory. The production rule is therefore explicit:
+
+    * if /data is writable, use /data;
+    * an explicit TR3_DATA_DIR/DATA_DIR is honored only when /data is not
+      writable or the explicit path itself points under /data;
+    * /app/data remains a local-development fallback only.
     """
     explicit = _env("TR3_DATA_DIR", "", legacy=("DATA_DIR",)).strip()
+    data_path = Path("/data")
+    data_writable = _path_is_writable_dir(data_path)
+    if data_writable:
+        if explicit and str(Path(explicit)).startswith("/data"):
+            return Path(explicit)
+        return data_path
     if explicit:
         return Path(explicit)
     railway_volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
-    if railway_volume:
+    if railway_volume and _path_is_writable_dir(Path(railway_volume)):
         return Path(railway_volume)
-    data_path = Path("/data")
-    if _path_is_writable_dir(data_path):
-        return data_path
     return Path("/app/data")
 
 

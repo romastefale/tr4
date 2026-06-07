@@ -98,6 +98,8 @@ from app.equalizador.multimidia import (
     create_multimedia_session,
     list_multimedia_sessions,
     publish_multimedia_session,
+    public_multimedia_session,
+    get_multimedia_session,
 )
 from app.equalizador.maestro import (
     MaestroConfirmationError,
@@ -4117,7 +4119,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const row = ref ? multimediaSessionsPorRef.get(ref) : null;
         const publicar = document.getElementById("multimidia_publicar");
         if (!row) { box.textContent = "Crie uma sessão e envie o conteúdo no privado do bot."; if (publicar) publicar.disabled = true; return; }
-        box.textContent = `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${row.erro ? " · " + row.erro : ""}`;
+        const aguardando = row.status === "awaiting" ? " · falta enviar conteúdo no privado" : "";
+        box.textContent = `${row.estado || row.status || "sessão"} · ${row.tipo_label || row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${aguardando}${row.erro ? " · " + row.erro : ""}`;
         if (publicar) publicar.disabled = row.status !== "ready";
       }
       async function reloadMultimediaSessions() {
@@ -4150,7 +4153,17 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         markButton(button, "working");
         const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/multimidia/sessoes/" + encodeURIComponent(ref) + "/publicar", { method: "POST", headers: apiHeaders });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { toast(res.status === 409 ? "Sessão em conflito. Atualizei a lista para você conferir o estado real." : detailPublico(data.detail || data), res.status === 409 ? "warn" : "bad"); markButton(button, "error"); setTimeout(() => restoreButton(button), 1600); await reloadMultimediaSessions(); return; }
+        if (!res.ok) {
+          const detail = data.detail || data;
+          if (res.status === 409 && detail && detail.sessao && detail.sessao.session_ref) {
+            multimediaSessionsPorRef.set(detail.sessao.session_ref, detail.sessao);
+            renderMultimediaSessions(Array.from(multimediaSessionsPorRef.values()));
+          }
+          const msg = res.status === 409 ? (detail && (detail.mensagem || detail.message) ? (detail.mensagem || detail.message) : "Sessão em conflito. Atualizei a lista para você conferir o estado real.") : detailPublico(detail);
+          toast(msg, res.status === 409 ? "warn" : "bad");
+          markButton(button, "error"); setTimeout(() => restoreButton(button), 1600);
+          await reloadMultimediaSessions(); return;
+        }
         markButton(button, "success"); setTimeout(() => restoreButton(button), 1300);
         toast("Publicação multimídia enviada.", "ok");
         await reloadMultimediaSessions();
@@ -5651,6 +5664,13 @@ async def _refresh_palcos_public_metadata(*, palco_ids: set[int]) -> None:
                 continue
 
 
+
+@router.get("/favicon.ico", include_in_schema=False)
+def equalizador_favicon() -> Response:
+    # Pequeno favicon SVG embutido para remover ruído 404 dos logs.
+    svg = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='#161b20'/><path d='M18 35h28M22 25h20M26 45h12' stroke='#66aaff' stroke-width='5' stroke-linecap='round'/></svg>"""
+    return Response(content=svg, media_type="image/svg+xml")
+
 @router.post("/api/client-error")
 async def equalizador_client_error(request: Request) -> dict[str, object]:
     try:
@@ -5668,8 +5688,9 @@ async def equalizador_client_error(request: Request) -> dict[str, object]:
     source = clean(payload.get("source"), 120)
     user_agent = clean(payload.get("user_agent"), 180)
     logger = __import__("logging").getLogger(__name__)
-    logger.warning(
-        "EQUALIZADOR_CLIENT_ERROR | tipo=%s | mensagem=%s | origem=%s | linha=%s | coluna=%s | ua=%s",
+    log_method = logger.info if kind in {"initdata_ausente", "initdata_ausente_usando_sessao"} else logger.warning
+    log_method(
+        "EQUALIZADOR_CLIENT_EVENT | tipo=%s | mensagem=%s | origem=%s | linha=%s | coluna=%s | ua=%s",
         kind,
         message or "-",
         source or "-",
@@ -6497,7 +6518,17 @@ async def equalizador_multimidia_sessao_publicar(
     except EqualizadorMesaBusyError as exc:
         raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
     except (MultimediaError, MesaError) as exc:
-        raise HTTPException(status_code=409, detail=str(exc)[:180] or "Publicação multimídia não concluída.") from exc
+        sessao_publica = None
+        try:
+            sessao_publica = public_multimedia_session(get_multimedia_session(session_ref=session_ref))
+        except Exception:
+            sessao_publica = None
+        detail = {
+            "mensagem": str(exc)[:180] or "Publicação multimídia não concluída.",
+            "codigo": "multimidia_conflito_estado",
+            "sessao": sessao_publica,
+        }
+        raise HTTPException(status_code=409, detail=detail) from exc
 
 @router.get("/api/palcos/{grp_ref}/radio/rascunhos")
 def equalizador_radio_rascunhos(

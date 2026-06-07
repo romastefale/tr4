@@ -7,6 +7,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.config import settings
+from app.db.database import DATABASE_URL
+from sqlalchemy.engine import make_url
 from app.db.database import engine as default_engine
 
 logger = logging.getLogger(__name__)
@@ -52,7 +54,17 @@ def ensure_persistence_state(db_engine: Engine = default_engine) -> dict[str, ob
     if it survives deploys, the active DB is persistent.
     """
     data_dir = str(getattr(settings, "DATA_DIR", ""))
-    under_volume = data_dir == "/data" or data_dir.startswith("/data/")
+    db_path = ""
+    try:
+        db_path = str(make_url(DATABASE_URL).database or "")
+    except Exception:
+        db_path = ""
+    under_volume = (
+        data_dir == "/data"
+        or data_dir.startswith("/data/")
+        or db_path == "/data/app.db"
+        or db_path.startswith("/data/")
+    )
     with db_engine.begin() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS eq_persistence_state (
