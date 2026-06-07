@@ -15,6 +15,9 @@ from aiogram.types import (
     MessageReactionUpdated,
     ChatJoinRequest,
     ReactionTypeEmoji,
+    ForceReply,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
 )
 
 from app.bot.intent import detect_intent
@@ -51,6 +54,11 @@ from app.equalizador.maestro import (
 )
 from app.equalizador.permissions import canal_is_allowed
 from app.equalizador.hardening import mesa_operation_lock
+from app.equalizador.multimidia import (
+    MultimediaError,
+    attach_telegram_message_to_session,
+    mark_session_waiting,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -700,6 +708,36 @@ async def _send_playing(message: Message) -> None:
     await _react_to_own_card(sent.bot, sent.chat.id, sent.message_id, card_emoji)
 
 
+
+def _multimedia_message_payload(message: Message) -> dict[str, object] | None:
+    caption = getattr(message, "caption", None) or ""
+    text_value = getattr(message, "text", None) or caption or ""
+    if getattr(message, "photo", None):
+        photo = message.photo[-1]
+        return {"media_kind": "photo", "file_id": photo.file_id, "file_unique_id": photo.file_unique_id, "texto": caption}
+    if getattr(message, "video", None):
+        video = message.video
+        return {"media_kind": "video", "file_id": video.file_id, "file_unique_id": video.file_unique_id, "file_name": getattr(video, "file_name", "") or "video", "mime_type": getattr(video, "mime_type", "") or "video/mp4", "texto": caption}
+    if getattr(message, "document", None):
+        document = message.document
+        return {"media_kind": "document", "file_id": document.file_id, "file_unique_id": document.file_unique_id, "file_name": getattr(document, "file_name", "") or "documento", "mime_type": getattr(document, "mime_type", "") or "application/octet-stream", "texto": caption}
+    if getattr(message, "audio", None):
+        audio = message.audio
+        return {"media_kind": "audio", "file_id": audio.file_id, "file_unique_id": audio.file_unique_id, "file_name": getattr(audio, "file_name", "") or "audio", "mime_type": getattr(audio, "mime_type", "") or "audio/mpeg", "texto": caption}
+    if getattr(message, "voice", None):
+        voice = message.voice
+        return {"media_kind": "voice", "file_id": voice.file_id, "file_unique_id": voice.file_unique_id, "mime_type": getattr(voice, "mime_type", "") or "audio/ogg", "texto": caption}
+    if text_value.strip():
+        return {"media_kind": "text", "texto": text_value.strip()}
+    return None
+
+
+def _multimedia_return_keyboard() -> InlineKeyboardMarkup | None:
+    base_url = getattr(settings, "BASE_URL", "").rstrip("/")
+    if not base_url or "localhost" in base_url:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Voltar ao painel", url=f"{base_url}/equalizador")]])
+
 def _register_handlers(dp: Dispatcher) -> None:
     if not getattr(dp, "_equalizador_capture_middleware_registered", False):
         dp.message.outer_middleware(EqualizadorCaptureMiddleware())
@@ -718,6 +756,18 @@ def _register_handlers(dp: Dispatcher) -> None:
         # (limite do próprio start_parameter do Telegram).
         parts = (message.text or "").split(maxsplit=1)
         payload = parts[1].strip() if len(parts) >= 2 else ""
+
+        if payload.startswith("mm_") and message.from_user:
+            try:
+                sessao = mark_session_waiting(session_ref=payload, telegram_user_id=int(message.from_user.id))
+                await message.answer(
+                    "Envie aqui no privado o texto, foto, vídeo, áudio ou documento. Depois volte ao Web App e confirme a publicação.",
+                    reply_markup=ForceReply(selective=True),
+                )
+                return
+            except MultimediaError:
+                await message.answer("Sessão multimídia indisponível ou pertencente a outro usuário.")
+                return
 
         if payload.startswith("lastfm_") and message.from_user:
             raw_username = payload[len("lastfm_"):]
@@ -926,6 +976,7 @@ def _register_handlers(dp: Dispatcher) -> None:
     @dp.message(Command("mesa_silencio_off"))
     async def equalizador_hidden_silencio_off(message: Message) -> None:
         await _hidden_silencio_command(message, "silencio.desativar", "Uso: /mesa_silencio_off <palco> CONFIRMAR AJUSTE")
+
 
     @dp.message(Command("help"))
     async def help_command(message: Message) -> None:
@@ -1207,6 +1258,51 @@ def _register_handlers(dp: Dispatcher) -> None:
                 )
             )
         await query.answer(results, cache_time=5, is_personal=True)
+
+
+    @dp.message(
+        StateFilter(None),
+        F.chat.type == "private",
+        (F.photo | F.video | F.document | F.audio | F.voice),
+    )
+    async def equalizador_multimedia_private_media(message: Message) -> None:
+        if not message.from_user:
+            return
+        payload_data = _multimedia_message_payload(message)
+        if not payload_data:
+            return
+        try:
+            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data)
+        except MultimediaError as exc:
+            await message.answer(str(exc)[:160] or "Conteúdo multimídia não aceito.")
+            return
+        if not sessao:
+            return
+        keyboard = _multimedia_return_keyboard()
+        await message.answer("Conteúdo recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
+
+    @dp.message(
+        StateFilter(None),
+        F.chat.type == "private",
+        F.reply_to_message,
+        F.text,
+        ~F.text.startswith("/"),
+    )
+    async def equalizador_multimedia_private_text_reply(message: Message) -> None:
+        if not message.from_user:
+            return
+        payload_data = _multimedia_message_payload(message)
+        if not payload_data:
+            return
+        try:
+            sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data)
+        except MultimediaError as exc:
+            await message.answer(str(exc)[:160] or "Texto não aceito.")
+            return
+        if not sessao:
+            return
+        keyboard = _multimedia_return_keyboard()
+        await message.answer("Texto recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
 
     # IMPORTANTE: o filtro `~F.text.startswith("/")` impede que este handler
     # consuma comandos. Sem isso, qualquer texto começando com "/" (ex.:

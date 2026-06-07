@@ -91,6 +91,12 @@ from app.equalizador.radio import (
     run_due_radio_schedules,
     salvar_radio_quiet_policy,
 )
+from app.equalizador.multimidia import (
+    MultimediaError,
+    create_multimedia_session,
+    list_multimedia_sessions,
+    publish_multimedia_session,
+)
 from app.equalizador.maestro import (
     MaestroConfirmationError,
     MaestroError,
@@ -1382,6 +1388,20 @@ _EQUALIZADOR_HTML = """<!doctype html>
               <div id="radio_resultado" class="empty small">Nenhum rascunho criado nesta sessão.</div>
             </div>
             <div class="panel">
+              <h3>Postagem multimídia nativa</h3>
+              <p class="muted small">Abra o privado do bot, envie texto, foto, vídeo, áudio ou documento pela própria interface do Telegram e confirme a publicação aqui.</p>
+              <div class="toolbar">
+                <button id="multimidia_iniciar" class="action" type="button">Abrir privado do bot</button>
+                <button id="multimidia_atualizar" class="action secondary" type="button">Atualizar sessões</button>
+              </div>
+              <select id="multimidia_session_select"></select>
+              <div id="multimidia_preview" class="empty small">Nenhuma sessão multimídia criada nesta tela.</div>
+              <div class="toolbar">
+                <button id="multimidia_publicar" class="action" type="button">Publicar sessão</button>
+              </div>
+              <div id="multimidia_sessions" class="list muted">Nenhuma sessão carregada.</div>
+            </div>
+            <div class="panel">
               <h3>Prévia e confirmação</h3>
               <select id="radio_draft_select"></select>
               <div id="radio_preview" class="empty small">Escolha um rascunho para revisar antes de publicar.</div>
@@ -1960,6 +1980,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       let mensagensPorRef = new Map();
       let mensagensSelecionadas = new Set();
       let radioDraftsPorRef = new Map();
+      let multimediaSessionsPorRef = new Map();
+      let botUsernameAtual = "";
       let radioTemplatesPorRef = new Map();
       let radioHistoryRows = [];
       let radioSchedulesPorRef = new Map();
@@ -3219,6 +3241,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         document.getElementById("bot_nome").textContent = bot.nome || "Bot";
         const botUsuario = document.getElementById("bot_usuario");
         const username = safeUsername(bot.username);
+        botUsernameAtual = username || botUsernameAtual || "";
         botUsuario.innerHTML = username ? `<a class="person-link" href="https://t.me/${username}" target="_blank" rel="noopener"><strong>@${username}</strong></a>` : "sem username público";
         const metricas = document.getElementById("bot_metricas");
         metricas.replaceChildren();
@@ -3929,6 +3952,69 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         await reloadRadioTemplates();
       }
 
+      function renderMultimediaSessions(rows) {
+        multimediaSessionsPorRef = new Map();
+        const select = document.getElementById("multimidia_session_select");
+        const list = document.getElementById("multimidia_sessions");
+        if (select) select.replaceChildren(option("", rows && rows.length ? "Escolha uma sessão" : "Nenhuma sessão"));
+        const items = (rows || []).map((row) => {
+          if (row && row.session_ref) multimediaSessionsPorRef.set(row.session_ref, row);
+          if (select) select.appendChild(option(row.session_ref, `${row.status || "sessão"} · ${row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}`));
+          const item = document.createElement("div");
+          item.className = "item-line";
+          item.textContent = `${row.status || "sessão"} · ${row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}`;
+          item.addEventListener("click", () => { if (select) { select.value = row.session_ref; updateMultimediaPreview(); } });
+          return item;
+        });
+        if (list) list.replaceChildren(...(items.length ? items : [document.createTextNode("Nenhuma sessão multimídia carregada.")]));
+        updateMultimediaPreview();
+      }
+      function updateMultimediaPreview() {
+        const select = document.getElementById("multimidia_session_select");
+        const box = document.getElementById("multimidia_preview");
+        if (!box) return;
+        const ref = select ? select.value : "";
+        const row = ref ? multimediaSessionsPorRef.get(ref) : null;
+        if (!row) { box.textContent = "Crie uma sessão e envie o conteúdo no privado do bot."; return; }
+        box.textContent = `${row.status || "sessão"} · ${row.tipo || "conteúdo"} · ${row.resumo || "sem prévia"}${row.erro ? " · " + row.erro : ""}`;
+      }
+      async function reloadMultimediaSessions() {
+        if (!currentPalco) return;
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/multimidia/sessoes");
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) renderMultimediaSessions(data.sessoes || []);
+      }
+      async function iniciarMultimediaNativa() {
+        if (!currentPalco) { toast("Escolha um grupo antes de iniciar postagem.", "warn"); return; }
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/multimidia/sessoes", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), "bad"); return; }
+        await reloadMultimediaSessions();
+        const payload = data.start_payload || (data.sessao && data.sessao.session_ref ? "mm_" + String(data.sessao.session_ref).replace(/^mm_/, "") : "");
+        const user = botUsernameAtual || safeUsername((document.getElementById("bot_usuario") || {}).textContent || "");
+        if (!user || !payload) { toast("Sessão criada. Abra o privado do bot para enviar a mídia.", "ok"); return; }
+        window.open(`https://t.me/${user}?start=${encodeURIComponent(payload)}`, "_blank");
+        toast("Sessão criada. Envie texto ou mídia no privado do bot e volte para confirmar.", "ok");
+      }
+      async function publicarMultimediaSessao() {
+        if (!currentPalco) return;
+        const select = document.getElementById("multimidia_session_select");
+        const ref = select ? select.value : "";
+        const row = ref ? multimediaSessionsPorRef.get(ref) : null;
+        if (!ref || !row) { toast("Escolha uma sessão multimídia.", "warn"); return; }
+        if (row.status !== "ready") { toast("Envie o conteúdo no privado do bot antes de publicar.", "warn"); return; }
+        const button = document.getElementById("multimidia_publicar");
+        if (button && button.getAttribute("aria-busy") === "true") return;
+        markButton(button, "working");
+        const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/multimidia/sessoes/" + encodeURIComponent(ref) + "/publicar", { method: "POST", headers: apiHeaders });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(detailPublico(data.detail || data), res.status === 409 ? "warn" : "bad"); markButton(button, "error"); setTimeout(() => restoreButton(button), 1600); await reloadMultimediaSessions(); return; }
+        markButton(button, "success"); setTimeout(() => restoreButton(button), 1300);
+        toast("Publicação multimídia enviada.", "ok");
+        await reloadMultimediaSessions();
+        await reloadRadioHistory();
+      }
+
       async function reloadRadioDrafts() {
         if (!currentPalco) return;
         const res = await api("/equalizador/api/palcos/" + encodeURIComponent(currentPalco.grp_ref) + "/radio/rascunhos");
@@ -4359,6 +4445,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         renderGovernanca("governantes_palco", governantesRes, { palcoRef: currentPalco && currentPalco.grp_ref, onlyActive: true });
         renderMesaMembrosResumo(painelRes, (alvosRes && alvosRes.alvos) || []);
         renderRadioDrafts((radioRes && radioRes.rascunhos) || []);
+        await reloadMultimediaSessions();
         renderRadioTemplates((radioTemplatesRes && radioTemplatesRes.templates) || []);
         renderRadioHistory((radioHistoryRes && radioHistoryRes.historico) || []);
         renderRadioSchedules((radioSchedulesRes && radioSchedulesRes.agendamentos) || []);
@@ -4848,6 +4935,10 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       });
       document.getElementById("radio_draft_select").addEventListener("change", updateRadioPreview);
       document.getElementById("radio_criar_rascunho").addEventListener("click", criarRadioRascunho);
+      document.getElementById("multimidia_iniciar").addEventListener("click", iniciarMultimediaNativa);
+      document.getElementById("multimidia_atualizar").addEventListener("click", reloadMultimediaSessions);
+      document.getElementById("multimidia_session_select").addEventListener("change", updateMultimediaPreview);
+      document.getElementById("multimidia_publicar").addEventListener("click", publicarMultimediaSessao);
       document.getElementById("radio_publicar").addEventListener("click", publicarRadioRascunho);
       document.getElementById("radio_cancelar").addEventListener("click", cancelarRadioRascunho);
       document.getElementById("radio_template_salvar").addEventListener("click", salvarRadioTemplate);
@@ -6107,6 +6198,65 @@ async def equalizador_ddx_cancelar(
     except DDXError as exc:
         raise HTTPException(status_code=409, detail=ddx_error_public_detail(exc)) from exc
 
+
+
+
+@router.get("/api/palcos/{grp_ref}/multimidia/sessoes")
+def equalizador_multimidia_sessoes(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    return {"sessoes": list_multimedia_sessions(palco_ref=str(palco["ui_ref"]))}
+
+
+@router.post("/api/palcos/{grp_ref}/multimidia/sessoes")
+def equalizador_multimidia_sessao_criar(
+    grp_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    sessao = create_multimedia_session(
+        palco=palco,
+        ator_ref=_operator_ref(identity),
+        telegram_user_id=int(identity.user_id),
+        alias_secret=settings.equalizador_alias_secret(),
+    )
+    return {"ok": True, "sessao": sessao, "start_payload": "mm_" + str(sessao.get("session_ref", "")).replace("mm_", "", 1)}
+
+
+@router.post("/api/palcos/{grp_ref}/multimidia/sessoes/{session_ref}/publicar")
+async def equalizador_multimidia_sessao_publicar(
+    grp_ref: str,
+    session_ref: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _require_identity(authorization)
+    palco = get_palco_internal_by_ref(grp_ref=grp_ref)
+    if not palco:
+        raise HTTPException(status_code=404, detail="Grupo indisponível.")
+    _require_canal_for_palco(identity, palco_id=int(palco["telegram_chat_id"]), canal_codigo="mensagens.enviar")
+    try:
+        async with mesa_operation_lock(f"{palco['ui_ref']}:multimidia.publicar"):
+            return await publish_multimedia_session(
+                palco=palco,
+                ator_ref=_operator_ref(identity),
+                session_ref=session_ref,
+                bot_token=settings.TELEGRAM_BOT_TOKEN,
+                alias_secret=settings.equalizador_alias_secret(),
+            )
+    except EqualizadorMesaBusyError as exc:
+        raise HTTPException(status_code=423, detail="Mesa ocupada.") from exc
+    except (MultimediaError, MesaError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)[:180] or "Publicação multimídia não concluída.") from exc
 
 @router.get("/api/palcos/{grp_ref}/radio/rascunhos")
 def equalizador_radio_rascunhos(
