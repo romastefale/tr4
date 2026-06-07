@@ -7955,43 +7955,61 @@ async def _public_groups_for_user(user_id: int) -> list[dict[str, object]]:
 
 
 async def _public_track_for_user(user_id: int) -> dict[str, object]:
-    # Fase 122: não bloqueia o player público antes de consultar a mesma
-    # fonte usada por /playing e /nowp. O helper de conexão pode falhar quando
-    # o banco legado ainda não foi importado/cacheado, então ele fica só como
-    # mensagem de fallback depois da tentativa real.
+    """Resolve a música do player público pela mesma fonte de /playing e /nowp.
+
+    Fase 123: a consulta real vem primeiro. A checagem de conexão só entra como
+    diagnóstico quando a fonte musical não devolve faixa. Isso evita falso
+    negativo quando a base Last.fm/Spotify existe mas o helper de conexão está
+    desatualizado após importação/deploy.
+    """
     try:
         track = await music_service.get_current_or_last_played(int(user_id))
     except Exception:
         logger.exception("PUBLIC_PLAYER_TRACK_LOOKUP_FAILED user=%s", user_id)
-        return {"available": False, "code": "track_lookup_failed", "message": "Não foi possível carregar sua música agora."}
-    if not track:
-        try:
-            from app.services.connection_check import connect_hint_for, is_user_connected
-            if not is_user_connected(int(user_id)):
-                return {"available": False, "code": "music_account_not_connected", "message": connect_hint_for("private")}
-        except Exception:
-            pass
-        return {"available": False, "code": "nothing_playing", "message": "Nada tocando agora."}
-    track_name = str(track.get("track_name") or "").strip()
-    artist = str(track.get("artist") or "").strip()
-    track_id = str(track.get("track_id") or "").strip()
-    user_plays = 0
-    try:
-        from app.services.lastfm import lastfm_service
-        count = await lastfm_service.get_user_track_playcount(int(user_id), artist, track_name)
-        user_plays = int(count or 0)
-    except Exception:
-        user_plays = 0
-    return {
-        "available": bool(track_id and track_name),
-        "track_name": track_name[:120],
-        "artist": artist[:120],
-        "album": str(track.get("album_name") or "")[:120],
-        "cover_url": str(track.get("album_image_url") or track.get("cover_url") or "")[:500],
-        "spotify_url": str(track.get("spotify_url") or "")[:500],
-        "user_plays": user_plays,
-    }
+        track = None
 
+    if track:
+        track_name = str(track.get("track_name") or "").strip()
+        artist = str(track.get("artist") or "").strip()
+        track_id = str(track.get("track_id") or "").strip()
+        if track_name and artist and track_id:
+            user_plays = 0
+            try:
+                from app.services.lastfm import lastfm_service
+                count = await lastfm_service.get_user_track_playcount(int(user_id), artist, track_name)
+                user_plays = int(count or 0)
+            except Exception:
+                user_plays = 0
+            return {
+                "available": True,
+                "source": str(track.get("source") or "music_service")[:80],
+                "track_name": track_name[:120],
+                "artist": artist[:120],
+                "album": str(track.get("album_name") or track.get("album") or "")[:120],
+                "cover_url": str(track.get("album_image_url") or track.get("cover_url") or "")[:500],
+                "spotify_url": str(track.get("spotify_url") or track.get("track_url") or "")[:500],
+                "user_plays": user_plays,
+            }
+
+    # Só depois da tentativa real informamos falta de vínculo.
+    try:
+        from app.services.connection_check import connect_hint_for, is_user_connected
+        if not is_user_connected(int(user_id)):
+            return {
+                "available": False,
+                "code": "music_account_not_connected",
+                "message": connect_hint_for("private"),
+                "diagnostic": "music_service_sem_faixa_e_sem_vinculo_detectado",
+            }
+    except Exception:
+        pass
+
+    return {
+        "available": False,
+        "code": "nothing_playing",
+        "message": "Nada tocando agora.",
+        "diagnostic": "music_service_sem_faixa",
+    }
 
 @router.get("/api/public/status")
 def public_music_status() -> dict[str, object]:
