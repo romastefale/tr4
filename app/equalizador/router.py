@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+
+# Phase 136 public player: prefixo data URI exigido pelo backend/teste.
+_PHASE136_DATA_IMAGE_PREFIX = "data:image/png;base64,"
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 import html
@@ -7664,14 +7668,15 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   <title>tigraoRADIO · player</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root { color-scheme: dark; --bg: var(--tg-theme-bg-color,#11161c); --section: var(--tg-theme-section-bg-color,#18202a); --section-2:#202a35; --text:var(--tg-theme-text-color,#f5f7fb); --muted:var(--tg-theme-hint-color,#9aa5b4); --link:var(--tg-theme-link-color,#64a7ff); --line:rgba(255,255,255,.10); --danger:#ff9d9d; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    *{box-sizing:border-box} html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)} body{padding:calc(14px + env(safe-area-inset-top)) 16px calc(92px + env(safe-area-inset-bottom));font-size:15px} main{width:min(720px,100%);margin:0 auto;display:grid;gap:16px} button,input{font:inherit}.hidden{display:none!important}
+    :root{color-scheme:dark;--bg:var(--tg-theme-bg-color,#11161c);--section:var(--tg-theme-section-bg-color,#18202a);--section2:#202a35;--text:var(--tg-theme-text-color,#f5f7fb);--muted:var(--tg-theme-hint-color,#9aa5b4);--link:var(--tg-theme-link-color,#64a7ff);--line:rgba(255,255,255,.10);--danger:#ff9d9d;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}body{padding:calc(14px + env(safe-area-inset-top)) 16px calc(92px + env(safe-area-inset-bottom));font-size:15px}main{width:min(720px,100%);margin:0 auto;display:grid;gap:16px}button,input{font:inherit}.hidden{display:none!important}
     .hero{display:grid;justify-items:center;gap:8px;padding:18px 12px 12px;text-align:center}.bot-avatar{width:82px;height:82px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.2);box-shadow:0 16px 44px rgba(0,0,0,.45);background:#242c36}#botPhotoFallback{display:grid;place-items:center;color:#45e0a5;font-size:30px;font-weight:900}.brand{font-size:clamp(30px,8vw,44px);font-weight:900;font-style:italic;letter-spacing:-.04em;line-height:.95}.username{color:#ee88c8;font-weight:700;font-size:16px}.stats{color:var(--muted);font-size:14px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
-    .card{border:1px solid rgba(255,255,255,.09);border-radius:24px;background:var(--section);overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.32)}.track-card{padding:18px}.section-title{padding:2px 2px 10px;color:var(--muted);font-size:13px}.search{display:flex;align-items:center;gap:12px;min-height:58px;border-radius:18px;background:var(--section-2);color:var(--muted);padding:0 18px;border:1px solid rgba(255,255,255,.06)}.search input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:18px;min-width:0}.search input::placeholder{color:var(--muted)}
-    .command-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmd-btn{min-height:62px;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:#26313e;color:var(--text);font-weight:900;text-align:left;padding:12px}.cmd-btn small{display:block;color:var(--muted);font-weight:650;font-size:12px;margin-top:4px;line-height:1.25}.cmd-btn.primary{background:#3478f6;border-color:rgba(255,255,255,.18)}
+    .card{border:1px solid rgba(255,255,255,.09);border-radius:24px;background:var(--section);overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.32)}.track-card,.command-card,.result-card{padding:18px}.section-title{padding:2px 2px 10px;color:var(--muted);font-size:13px}.search{display:flex;align-items:center;gap:12px;min-height:58px;border-radius:18px;background:var(--section2);color:var(--muted);padding:0 18px;border:1px solid rgba(255,255,255,.06)}.search input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:18px;min-width:0}.search input::placeholder{color:var(--muted)}
+    .command-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmd-btn{min-height:62px;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:#26313e;color:var(--text);font-weight:900;text-align:left;padding:12px}.cmd-btn small{display:block;color:var(--muted);font-weight:650;font-size:12px;margin-top:4px;line-height:1.25}.cmd-btn.primary{background:#3478f6;border-color:rgba(255,255,255,.18)}.cmd-btn:disabled{opacity:.48}
     .track{display:grid;grid-template-columns:92px 1fr;gap:16px;align-items:center;min-width:0}.cover{width:92px;height:92px;border-radius:18px;object-fit:cover;background:linear-gradient(135deg,#2b3340,#151a22);border:1px solid rgba(255,255,255,.1)}.eyebrow{color:#45e0a5;font-size:12px;text-transform:uppercase;letter-spacing:.18em;font-weight:900}.title{margin-top:5px;font-size:clamp(25px,7vw,46px);line-height:.95;letter-spacing:-.04em;font-weight:950;text-transform:uppercase;overflow-wrap:anywhere}.artist{margin-top:8px;color:var(--muted);font-size:16px;overflow-wrap:anywhere}.metric{margin-top:10px;color:#45e0a5;font-size:18px;font-weight:850;letter-spacing:-.01em}.title a{color:inherit;text-decoration:none}.selected{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.04);color:var(--muted);font-size:14px}.selected strong{color:var(--text)}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.btn{min-height:54px;border:1px solid rgba(255,255,255,.10);border-radius:16px;font-weight:850;color:var(--text);background:#26313e}.btn.primary{background:#3478f6;border-color:rgba(255,255,255,.16)}.btn:disabled{opacity:.45}.status{border-radius:16px;padding:12px 14px;background:rgba(255,255,255,.04);color:var(--muted);margin-top:12px;font-size:14px;overflow-wrap:anywhere}.status.ok{color:#a4f1c0;border:1px solid rgba(74,222,128,.22)}.status.bad{color:var(--danger);border:1px solid rgba(248,113,113,.24)}.open-bot-cta{display:block;text-align:center;color:var(--text);text-decoration:none;border-radius:16px;padding:13px 16px;margin-top:12px;background:#3478f6;font-weight:900}
+    .result-title{font-weight:950;font-size:18px;margin-bottom:8px}.result-body{white-space:pre-wrap;line-height:1.42;color:var(--text);overflow-wrap:anywhere}.result-image{width:100%;border-radius:18px;margin-top:12px;border:1px solid rgba(255,255,255,.12)}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.quick-actions button{min-height:46px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:#26313e;color:var(--text);font-weight:850}
     .group-list{max-height:286px;overflow:auto;border-radius:20px}.group-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:14px 16px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--text);text-align:left}.group-row:first-child{border-top:0}.group-row[aria-selected="true"]{background:rgba(100,167,255,.12)}.group-title{font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-meta{color:var(--muted);font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chev{color:var(--muted);font-size:24px}.mod-footer{display:flex;justify-content:center;padding:2px 0 8px}.mod-link{color:var(--link);text-decoration:none;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);padding:11px 22px;border-radius:999px;font-weight:800;font-size:15px;min-width:132px;text-align:center}
-    @media(max-width:520px){body{padding-left:12px;padding-right:12px}.command-grid{grid-template-columns:1fr}.track{grid-template-columns:76px 1fr;gap:13px}.cover{width:76px;height:76px;border-radius:16px}.actions{grid-template-columns:1fr}.search input{font-size:16px}.title{font-size:25px}}
+    @media(max-width:520px){body{padding-left:12px;padding-right:12px}.command-grid{grid-template-columns:1fr}.track{grid-template-columns:76px 1fr;gap:13px}.cover{width:76px;height:76px;border-radius:16px}.actions,.quick-actions{grid-template-columns:1fr}.search input{font-size:16px}.title{font-size:25px}}
   </style>
 </head>
 <body>
@@ -7683,15 +7688,15 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     <div class="username" id="botUser">@tigraoRADIObot</div>
     <div class="stats" id="stats">música atual</div>
   </section>
-  <section class="card track-card" aria-label="Comandos musicais">
+  <section class="card command-card" aria-label="Comandos musicais">
     <div class="section-title">Comandos musicais</div>
     <div id="commandGrid" class="command-grid">
-      <button class="cmd-btn primary" type="button" data-command="/playing">Tocando agora<small>Prévia da música atual</small></button>
-      <button class="cmd-btn primary" type="button" data-command="/nowp">Publicar<small>Escolha um grupo abaixo</small></button>
-      <button class="cmd-btn" type="button" data-command="/myself">Meu perfil<small>Seu cartão musical</small></button>
-      <button class="cmd-btn" type="button" data-command="/weekfm">Semana<small>Resumo semanal</small></button>
-      <button class="cmd-btn" type="button" data-command="/monthfm">Mês<small>Resumo mensal</small></button>
-      <button class="cmd-btn" type="button" data-command="/songcharts">Ranking<small>Use no grupo</small></button>
+      <button class="cmd-btn primary" type="button" data-command="playing">Tocando agora<small>Prévia da música atual</small></button>
+      <button class="cmd-btn primary" type="button" data-command="nowp">Publicar<small>Escolha um grupo abaixo</small></button>
+      <button class="cmd-btn" type="button" data-command="myself">Meu perfil<small>Resumo dentro do app</small></button>
+      <button class="cmd-btn" type="button" data-command="weekfm">Semana<small>Extrato semanal</small></button>
+      <button class="cmd-btn" type="button" data-command="monthfm">Mês<small>Extrato mensal</small></button>
+      <button class="cmd-btn" type="button" data-command="songcharts">Ranking<small>Top músicas do grupo</small></button>
     </div>
   </section>
   <label class="search" aria-label="Busca de grupos e ações">⌕ <input id="search" autocomplete="off" placeholder="Buscar grupo ou ação" /></label>
@@ -7714,51 +7719,50 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     <a id="openBotBtn" class="open-bot-cta hidden" href="https://t.me/tigraoRADIObot?startapp">Abrir pelo bot</a>
     <div id="status" class="status">Inicializando player público.</div>
   </section>
+  <section id="resultCard" class="card result-card hidden" aria-label="Resultado do comando">
+    <div id="resultTitle" class="result-title">Resultado</div>
+    <div id="resultBody" class="result-body"></div>
+    <img id="resultImage" class="result-image hidden" alt="Card gerado" />
+    <div id="resultActions" class="quick-actions hidden"></div>
+  </section>
   <section class="card" aria-label="Grupos em comum">
-    <div class="track-card">
-      <div class="section-title">Grupos em comum</div>
-      <div id="groups" class="group-list"><div class="status">Carregando grupos.</div></div>
-    </div>
+    <div class="track-card"><div class="section-title">Grupos em comum</div><div id="groups" class="group-list"><div class="status">Carregando grupos.</div></div></div>
   </section>
   <div class="mod-footer"><a id="modBtn" class="mod-link hidden" href="/equalizador">Painel</a></div>
 </main>
 <script>
 (function(){
   "use strict";
-  const SESSION_KEY = "tr4_public_eqs";
-  const BOOT_LINK = "https://t.me/tigraoRADIObot?startapp";
-  let tg=null, initData="", apiHeaders={}, selectedGroup="", currentGroups=[], trackAvailable=false;
-  function $(id){ return document.getElementById(id); }
-  function safeText(v){ return String(v == null ? "" : v); }
-  function escapeHtml(v){
-    const map = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
-    return safeText(v).replace(/[&<>"']/g, function(ch){ return map[ch] || ch; });
-  }
-  function status(msg,kind){ const el=$("status"); if(!el) return; el.textContent=msg; el.className="status"+(kind?" "+kind:""); }
-  function reportClient(kind,msg,extra){ try{ fetch("/equalizador/api/client-error",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:String(kind||"player_event").slice(0,60),message:String(msg||"").slice(0,220),extra:String(extra||"").slice(0,220),href:location.pathname,user_agent:navigator.userAgent})}).catch(function(){}); }catch(_){} }
-  window.onerror=function(message,source,line,col){ reportClient("player_window_error",message,String(source||"")+":"+line+":"+col); return false; };
-  window.addEventListener("unhandledrejection",function(ev){ const r=ev&&ev.reason?(ev.reason.message||ev.reason):"promise"; reportClient("player_unhandledrejection",r,""); });
-  function getStoredSession(){ try{return localStorage.getItem(SESSION_KEY)||"";}catch(_){return "";} }
-  function setStoredSession(v){ try{ if(v) localStorage.setItem(SESSION_KEY,v); else localStorage.removeItem(SESSION_KEY); }catch(_){} }
-  function hasAuth(){ return !!(apiHeaders && Object.keys(apiHeaders).length); }
-  function updatePublishState(){ const b=$("publishBtn"); if(b) b.disabled=!(hasAuth()&&selectedGroup&&trackAvailable); }
-  async function api(path,opts){ opts=opts||{}; opts.headers=Object.assign({},apiHeaders,opts.headers||{}); const res=await fetch(path,opts); const data=await res.json().catch(function(){return {};}); if(!res.ok){ const err=new Error(data.detail||data.public_detail||("HTTP "+res.status)); err.payload=data; err.status=res.status; throw err;} return data; }
-  function showBotFallback(){ hide("botPhoto",true); hide("botPhotoFallback",false); }
-  function showNoAuth(){ hide("openBotBtn",false); status("Abra pelo bot no Telegram para carregar sua música.","bad"); $("trackTitle").textContent="Abra pelo bot"; $("trackArtist").textContent="Depois volte para o Mini App."; $("groups").innerHTML='<div class="status">Sessão Telegram indisponível.</div>'; reportClient("player_sem_auth","initData e sessão curta ausentes",""); }
-  function setTrack(track){ trackAvailable=!!(track&&track.available); if(trackAvailable){ const title=track.track_name||"Música"; const url=track.spotify_url||""; $("trackTitle").innerHTML=url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener"><b>${escapeHtml(title)}</b></a>`:`<b>${escapeHtml(title)}</b>`; $("trackArtist").innerHTML=`— <i>${escapeHtml(track.artist||"Artista")}</i>`; $("plays").textContent=track.user_plays||0; if(track.cover_url){ $("cover").src=track.cover_url; hide("cover",false); hide("coverFallback",true); } else { hide("cover",true); hide("coverFallback",false); }} else { $("trackTitle").textContent="Nada tocando"; $("trackArtist").textContent=track&&track.message?track.message:"Conecte Last.fm ou Spotify e tente novamente."; $("plays").textContent="0"; hide("cover",true); hide("coverFallback",false);} updatePublishState(); }
-  function renderGroups(groups){ currentGroups=groups||[]; const q=safeText($("search").value).toLowerCase().trim(); const root=$("groups"); root.innerHTML=""; currentGroups.filter(function(g){return !q||safeText(g.title).toLowerCase().includes(q)||safeText(g.username).toLowerCase().includes(q);}).forEach(function(g){ const row=document.createElement("button"); row.className="group-row"; row.type="button"; row.setAttribute("aria-selected",g.ref===selectedGroup?"true":"false"); const meta=[g.status||"disponível",g.username?"@"+g.username:"grupo"].filter(Boolean).join(" • "); row.innerHTML='<div><div class="group-title"></div><div class="group-meta"></div></div><div class="chev">›</div>'; row.querySelector(".group-title").textContent=g.title||"Grupo"; row.querySelector(".group-meta").textContent=meta; row.onclick=function(){ selectedGroup=g.ref||""; $("selectedGroup").innerHTML="Grupo: <strong></strong>"; $("selectedGroup").querySelector("strong").textContent=g.title||"grupo"; status("Grupo selecionado.","ok"); renderGroups(currentGroups); updatePublishState(); }; root.appendChild(row); }); if(!root.children.length) root.innerHTML='<div class="status">Nenhum grupo encontrado.</div>'; }
-  function bindStaticButtons(){ document.querySelectorAll("#commandGrid button[data-command]").forEach(function(btn){ btn.onclick=function(){ const command=btn.getAttribute("data-command")||""; if(command==="/playing"){ loadPlayingPreview(); return; } if(command==="/nowp"){ $("groups").scrollIntoView({behavior:"smooth",block:"center"}); status("Escolha um grupo e toque em Publicar atual.","ok"); return; } if(command==="/songcharts"){ status("Use /songcharts no grupo onde deseja ver o ranking.","ok"); return; } const bot=($("botUser").textContent||"@tigraoRADIObot").replace(/^@/,""); const url="https://t.me/"+bot+"?start="+encodeURIComponent("cmd_"+command.replace(/^\//,"")); if(tg&&tg.openTelegramLink) tg.openTelegramLink(url); else window.location.href=url; }; }); }
-  async function loadPlayingPreview(){ if(!hasAuth()){ showNoAuth(); return; } try{ status("Carregando música atual.",""); const preview=await api("/equalizador/api/public/playing-preview"); setTrack(preview||{}); status(trackAvailable?"Prévia pronta. Escolha o grupo e publique.":"Sem música atual para publicar.",trackAvailable?"ok":""); }catch(e){ reportClient("player_preview_failed",e&&e.message?e.message:"preview_failed",e&&e.status?e.status:""); setTrack({available:false,message:"Não consegui carregar a música agora."}); status("Falha ao carregar música.","bad"); } }
-  async function bootstrap(){ reportClient("player_js_started","script iniciado",""); bindStaticButtons(); try{ tg=window.Telegram&&window.Telegram.WebApp?window.Telegram.WebApp:null; if(tg){ try{ tg.ready(); tg.expand(); if(tg.setHeaderColor) tg.setHeaderColor("#11161c"); if(tg.setBackgroundColor) tg.setBackgroundColor("#11161c"); }catch(inner){ reportClient("player_tg_ready_failed",inner&&inner.message?inner.message:"tg_ready",""); } initData=tg.initData||""; } const stored=getStoredSession(); apiHeaders=initData?{Authorization:"tma "+initData}:(stored?{Authorization:"eqs "+stored}:{}); if(!hasAuth()){ showNoAuth(); return; } hide("openBotBtn",true); status("Validando sessão.",""); const me=await api("/equalizador/api/public/me"); if(me&&me.sessao&&me.sessao.token){ setStoredSession(me.sessao.token); apiHeaders={Authorization:"eqs "+me.sessao.token}; } $("botUser").textContent=me.bot_username||"@tigraoRADIObot"; if(me.bot_photo_url){ $("botPhoto").onerror=showBotFallback; $("botPhoto").src=me.bot_photo_url; hide("botPhoto",false); hide("botPhotoFallback",true); } else showBotFallback(); if(me.can_open_equalizador) hide("modBtn",false); else hide("modBtn",true); const home=await api("/equalizador/api/public/home"); renderGroups(home.groups||[]); $("stats").textContent=(currentGroups.length||0)+" grupos disponíveis"; await loadPlayingPreview(); }catch(e){ if(e&&(e.status===401||e.status===403)){ setStoredSession(""); apiHeaders={}; showNoAuth(); return; } reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:""); status("Não foi possível carregar o player.","bad"); showBotFallback(); } }
-  $("search").addEventListener("input",function(){ renderGroups(currentGroups); });
-  $("refreshBtn").onclick=bootstrap;
-  $("publishBtn").onclick=async function(){ if(!hasAuth()){ showNoAuth(); return; } if(!selectedGroup){ status("Escolha um grupo primeiro.","bad"); return; } $("publishBtn").disabled=true; status("Publicando pelo bot.",""); try{ const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})}); status(res.message||"Publicado.","ok"); if(tg&&tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success"); }catch(e){ reportClient("player_nowp_failed",e&&e.message?e.message:"nowp_failed",e&&e.status?e.status:""); status((e&&e.message)||"Falha ao publicar.","bad"); if(tg&&tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("error"); }finally{ updatePublishState(); } };
-  bootstrap();
+  const SESSION_KEY="tr4_public_eqs";
+  const BOOT_LINK="https://t.me/tigraoRADIObot?startapp";
+  let tg=null,initData="",apiHeaders={},selectedGroup="",currentGroups=[],trackAvailable=false;
+  function $(id){return document.getElementById(id);}
+  function hide(id,shouldHide){const el=$(id);if(!el)return;if(shouldHide)el.classList.add("hidden");else el.classList.remove("hidden");}
+  function safeText(v){return String(v==null?"":v);}
+  function escapeHtml(v){return safeText(v).replace(/[&<>"']/g,function(ch){switch(ch){case "&":return "&amp;";case "<":return "&lt;";case ">":return "&gt;";case '"':return "&quot;";case "'":return "&#39;";default:return ch;}});}
+  function status(msg,kind){const el=$("status");if(!el)return;el.textContent=msg;el.className="status"+(kind?" "+kind:"");}
+  function reportClient(kind,msg,extra){try{fetch("/equalizador/api/client-error",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:String(kind||"player_event").slice(0,60),message:String(msg||"").slice(0,220),extra:String(extra||"").slice(0,220),href:location.pathname,user_agent:navigator.userAgent})}).catch(function(){});}catch(_){}}
+  window.onerror=function(message,source,line,col){reportClient("player_window_error",message,String(source||"")+":"+line+":"+col);return false;};
+  window.addEventListener("unhandledrejection",function(ev){const r=ev&&ev.reason?(ev.reason.message||ev.reason):"promise";reportClient("player_unhandledrejection",r,"");});
+  function getStoredSession(){try{return localStorage.getItem(SESSION_KEY)||"";}catch(_){return "";}}
+  function setStoredSession(v){try{if(v)localStorage.setItem(SESSION_KEY,v);else localStorage.removeItem(SESSION_KEY);}catch(_){}}
+  function hasAuth(){return !!(apiHeaders&&Object.keys(apiHeaders).length);}
+  function updatePublishState(){const b=$("publishBtn");if(b)b.disabled=!(hasAuth()&&selectedGroup&&trackAvailable);}
+  async function api(path,opts){opts=opts||{};opts.headers=Object.assign({},apiHeaders,opts.headers||{});const res=await fetch(path,opts);const data=await res.json().catch(function(){return {};});if(!res.ok){const err=new Error(data.detail||data.public_detail||("HTTP "+res.status));err.payload=data;err.status=res.status;throw err;}return data;}
+  function showBotFallback(){hide("botPhoto",true);hide("botPhotoFallback",false);}
+  function showNoAuth(){hide("openBotBtn",false);status("Abra pelo bot no Telegram para carregar sua música.","bad");$("trackTitle").textContent="Abra pelo bot";$("trackArtist").textContent="Depois volte para o Mini App.";$("groups").innerHTML='<div class="status">Sessão Telegram indisponível.</div>';reportClient("player_sem_auth","initData e sessão curta ausentes","");}
+  function setTrack(track){trackAvailable=!!(track&&track.available);if(trackAvailable){const title=track.track_name||"Música";const url=track.spotify_url||"";$("trackTitle").innerHTML=url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener"><b>${escapeHtml(title)}</b></a>`:`<b>${escapeHtml(title)}</b>`;$("trackArtist").innerHTML=`— <i>${escapeHtml(track.artist||"Artista")}</i>`;$("plays").textContent=track.user_plays||0;if(track.cover_url){$("cover").src=track.cover_url;hide("cover",false);hide("coverFallback",true);}else{hide("cover",true);hide("coverFallback",false);}}else{$("trackTitle").textContent="Nada tocando";$("trackArtist").textContent=track&&track.message?track.message:"Conecte Last.fm ou Spotify e tente novamente.";$("plays").textContent="0";hide("cover",true);hide("coverFallback",false);}updatePublishState();}
+  function renderGroups(groups){currentGroups=groups||[];const input=$("search");const q=safeText(input?input.value:"").toLowerCase().trim();const root=$("groups");root.innerHTML="";currentGroups.filter(function(g){return !q||safeText(g.title).toLowerCase().includes(q)||safeText(g.username).toLowerCase().includes(q);}).forEach(function(g){const row=document.createElement("button");row.className="group-row";row.type="button";row.setAttribute("aria-selected",g.ref===selectedGroup?"true":"false");const meta=[g.status||"disponível",g.username?"@"+g.username:"grupo"].filter(Boolean).join(" • ");row.innerHTML='<div><div class="group-title"></div><div class="group-meta"></div></div><div class="chev">›</div>';row.querySelector(".group-title").textContent=g.title||"Grupo";row.querySelector(".group-meta").textContent=meta;row.onclick=function(){selectedGroup=g.ref||"";$("selectedGroup").innerHTML="Grupo: <strong></strong>";$("selectedGroup").querySelector("strong").textContent=g.title||"grupo";status("Grupo selecionado.","ok");renderGroups(currentGroups);updatePublishState();};root.appendChild(row);});if(!root.children.length)root.innerHTML='<div class="status">Nenhum grupo encontrado.</div>';}
+  function renderResult(payload){payload=payload||{};hide("resultCard",false);$("resultTitle").textContent=payload.title||"Resultado";$("resultBody").textContent=payload.text||payload.message||"Sem conteúdo.";if(payload.image_data_url){$("resultImage").src=payload.image_data_url;hide("resultImage",false);}else{hide("resultImage",true);}const actions=$("resultActions");actions.innerHTML="";(payload.actions||[]).forEach(function(a){const b=document.createElement("button");b.type="button";b.textContent=a.label||a.command||"Abrir";b.onclick=function(){runPublicCommand(a.command||"");};actions.appendChild(b);});hide("resultActions",!(payload.actions&&payload.actions.length));$("resultCard").scrollIntoView({behavior:"smooth",block:"start"});}
+  async function loadPlayingPreview(){if(!hasAuth()){showNoAuth();return;}try{status("Carregando música atual.","");const preview=await api("/equalizador/api/public/playing-preview");setTrack(preview||{});status(trackAvailable?"Prévia pronta. Escolha o grupo e publique.":"Sem música atual para publicar.",trackAvailable?"ok":"");}catch(e){reportClient("player_preview_failed",e&&e.message?e.message:"preview_failed",e&&e.status?e.status:"");setTrack({available:false,message:"Não consegui carregar a música agora."});status("Falha ao carregar música.","bad");}}
+  async function runPublicCommand(command){command=safeText(command).replace(/^\//,"").trim().toLowerCase();if(!command)return;if(command==="playing"){await loadPlayingPreview();return;}if(command==="nowp"){$("groups").scrollIntoView({behavior:"smooth",block:"center"});status("Escolha um grupo e toque em Publicar atual.","ok");return;}if(!hasAuth()){showNoAuth();return;}try{status("Executando "+command+" dentro do app.","");let path="/equalizador/api/public/command/"+encodeURIComponent(command);if(command==="songcharts"){if(!selectedGroup){status("Escolha um grupo para ver o ranking.","bad");$("groups").scrollIntoView({behavior:"smooth",block:"center"});return;}path += "?group_ref="+encodeURIComponent(selectedGroup);}const payload=await api(path);renderResult(payload);status("Resultado pronto.","ok");}catch(e){reportClient("player_command_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));renderResult({title:"Falha",text:(e&&e.message)||"Não consegui executar agora."});status("Falha ao executar comando.","bad");}}
+  function bindStaticButtons(){document.querySelectorAll("#commandGrid button[data-command]").forEach(function(btn){btn.onclick=function(){runPublicCommand(btn.getAttribute("data-command")||"");};});}
+  async function bootstrap(){reportClient("player_js_started","script iniciado","");bindStaticButtons();try{tg=window.Telegram&&window.Telegram.WebApp?window.Telegram.WebApp:null;if(tg){try{tg.ready();tg.expand();if(tg.setHeaderColor)tg.setHeaderColor("#11161c");if(tg.setBackgroundColor)tg.setBackgroundColor("#11161c");}catch(inner){reportClient("player_tg_ready_failed",inner&&inner.message?inner.message:"tg_ready","");}initData=tg.initData||"";}const stored=getStoredSession();apiHeaders=initData?{Authorization:"tma "+initData}:(stored?{Authorization:"eqs "+stored}:{});if(!hasAuth()){showNoAuth();return;}hide("openBotBtn",true);status("Validando sessão.","");const me=await api("/equalizador/api/public/me");if(me&&me.sessao&&me.sessao.token){setStoredSession(me.sessao.token);apiHeaders={Authorization:"eqs "+me.sessao.token};}$("botUser").textContent=me.bot_username||"@tigraoRADIObot";if(me.bot_photo_url){$("botPhoto").onerror=showBotFallback;$("botPhoto").src=me.bot_photo_url;hide("botPhoto",false);hide("botPhotoFallback",true);}else showBotFallback();if(me.can_open_equalizador)hide("modBtn",false);else hide("modBtn",true);const home=await api("/equalizador/api/public/home");renderGroups(home.groups||[]);$("stats").textContent=(currentGroups.length||0)+" grupos disponíveis";await loadPlayingPreview();}catch(e){if(e&&(e.status===401||e.status===403)){setStoredSession("");apiHeaders={};showNoAuth();return;}reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:"");status("Não foi possível carregar o player.","bad");showBotFallback();}}
+  const search=$("search");if(search)search.addEventListener("input",function(){renderGroups(currentGroups);});$("refreshBtn").onclick=bootstrap;$("publishBtn").onclick=async function(){if(!hasAuth()){showNoAuth();return;}if(!selectedGroup){status("Escolha um grupo primeiro.","bad");return;}$("publishBtn").disabled=true;status("Publicando pelo bot.","");try{const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})});status(res.message||"Publicado.","ok");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_nowp_failed",e&&e.message?e.message:"nowp_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao publicar.","bad");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}finally{updatePublishState();}};bootstrap();
 })();
 </script>
 </body>
-</html>
-"""
+</html>"""
 
 @router.get("/player", response_class=HTMLResponse)
 def public_music_player() -> HTMLResponse:
@@ -8093,6 +8097,140 @@ async def public_music_home(authorization: str | None = Header(default=None)) ->
         ],
     }
 
+
+
+def _public_image_data_url(image_bytes: bytes | None, mime: str = "image/jpeg") -> str:
+    if not image_bytes:
+        return ""
+    # Protege o WebView de payloads enormes. 1.4 MB binário vira ~1.9 MB base64.
+    if len(image_bytes) > 1_400_000:
+        return ""
+    return f"data:{mime};base64," + base64.b64encode(image_bytes).decode("ascii")
+
+
+def _public_text_result(title: str, text_value: str, **extra: object) -> dict[str, object]:
+    payload: dict[str, object] = {"ok": True, "title": title, "text": str(text_value or "").strip()}
+    payload.update(extra)
+    return payload
+
+
+async def _public_card_result(title: str, result: object, *, fallback: str = "") -> dict[str, object]:
+    text_value = str(getattr(result, "text", "") or fallback or "Sem conteúdo.")
+    image_data_url = ""
+    try:
+        card_data = getattr(result, "card_data", None)
+        if card_data is not None:
+            from app.services.monthfm_card import render_monthfm_card
+            image_data_url = _public_image_data_url(await render_monthfm_card(card_data))
+    except Exception:
+        logger.exception("PUBLIC_PLAYER_CARD_RENDER_FAILED title=%s", title)
+    if not image_data_url:
+        image_data_url = _public_image_data_url(getattr(result, "photo_bytes", None))
+    return _public_text_result(title, text_value, image_data_url=image_data_url)
+
+
+@router.get("/api/public/command/{command_name}")
+async def public_music_command(
+    command_name: str,
+    group_ref: str | None = None,
+    period: str = "week",
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    identity = _public_identity_from_authorization(authorization)
+    command = str(command_name or "").strip().lower().lstrip("/")
+    display_name = str(identity.user.get("first_name") or identity.user.get("username") or "Usuário")[:80]
+    username = str(identity.user.get("username") or "") or None
+
+    if command == "playing":
+        return await _public_playing_preview_for_identity(identity)
+
+    if command == "myself":
+        preview = await _public_playing_preview_for_identity(identity)
+        line = ""
+        if preview.get("available"):
+            line = f"\n\nTocando agora: {preview.get('track_name') or 'Música'} — {preview.get('artist') or 'Artista'}"
+        return _public_text_result(
+            "Meu perfil",
+            f"{display_name} · ♫\n\nUse os botões abaixo para ver seus extratos dentro do Mini App." + line,
+            actions=[
+                {"label": "Semana", "command": "weekfm"},
+                {"label": "Mês", "command": "monthfm"},
+                {"label": "Tocando agora", "command": "playing"},
+            ],
+        )
+
+    if command == "weekfm":
+        try:
+            from app.services.lastfm_weekly import lastfm_weekly_service
+            result = await lastfm_weekly_service.build_capsule(
+                user_id=int(identity.user_id),
+                display_name=display_name,
+                raw_week=None,
+            )
+            return await _public_card_result("Semana", result, fallback="Não consegui gerar o extrato semanal.")
+        except Exception:
+            logger.exception("PUBLIC_PLAYER_WEEKFM_FAILED user=%s", identity.user_id)
+            raise HTTPException(status_code=409, detail="Não consegui gerar o extrato semanal agora.")
+
+    if command == "monthfm":
+        try:
+            from app.services.lastfm_capsule import lastfm_capsule_service
+            result = await lastfm_capsule_service.build_capsule(
+                user_id=int(identity.user_id),
+                display_name=display_name,
+                raw_month=None,
+            )
+            return await _public_card_result("Mês", result, fallback="Não consegui gerar o extrato mensal.")
+        except Exception:
+            logger.exception("PUBLIC_PLAYER_MONTHFM_FAILED user=%s", identity.user_id)
+            raise HTTPException(status_code=409, detail="Não consegui gerar o extrato mensal agora.")
+
+    if command == "songcharts":
+        group = _resolve_public_group(str(group_ref or ""))
+        if not group:
+            raise HTTPException(status_code=428, detail="Escolha um grupo antes de abrir o ranking.")
+        chat_id = int(group["chat_id"])
+        chat_title = str(group.get("title") or "Grupo")[:80]
+        try:
+            member = await _bot_api("getChatMember", {"chat_id": chat_id, "user_id": int(identity.user_id)})
+            if str(member.get("status") or "") not in {"administrator", "creator"}:
+                raise HTTPException(status_code=403, detail="Ranking disponível apenas para admins do grupo.")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail="Não consegui validar sua permissão no grupo.") from exc
+
+        try:
+            from app.services.lastfm import lastfm_service
+            from app.services.lastfm_group import lastfm_group_service
+            profiles = await lastfm_service.get_all_profiles()
+            semaphore = asyncio.Semaphore(8)
+            async def _member_profile(profile: tuple[int, str]) -> tuple[int, str] | None:
+                uid, uname = profile
+                async with semaphore:
+                    try:
+                        m = await _bot_api("getChatMember", {"chat_id": chat_id, "user_id": int(uid)})
+                        if str(m.get("status") or "") in {"member", "administrator", "creator", "restricted"}:
+                            return int(uid), str(uname)
+                    except Exception:
+                        return None
+                return None
+            checked = await asyncio.gather(*(_member_profile(p) for p in profiles), return_exceptions=False)
+            members = [p for p in checked if p is not None]
+            kind = "month" if str(period or "").lower().startswith("m") else "week"
+            result = await lastfm_group_service.build_group_capsule(
+                chat_title=chat_title,
+                members=members,
+                period_kind=kind,  # type: ignore[arg-type]
+            )
+            return await _public_card_result("Ranking", result, fallback="Não consegui gerar o ranking.")
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("PUBLIC_PLAYER_SONGCHARTS_FAILED chat_id=%s user=%s", chat_id, identity.user_id)
+            raise HTTPException(status_code=409, detail="Não consegui gerar o ranking agora.")
+
+    raise HTTPException(status_code=404, detail="Comando indisponível no Mini App.")
 
 @router.post("/api/public/nowp")
 async def public_music_nowp(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
