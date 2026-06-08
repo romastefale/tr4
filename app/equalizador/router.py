@@ -7664,79 +7664,14 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   <title>tigraoRADIO · player</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: var(--tg-theme-bg-color, #11161c);
-      --section: var(--tg-theme-section-bg-color, #18202a);
-      --section-2: #202a35;
-      --text: var(--tg-theme-text-color, #f5f7fb);
-      --muted: var(--tg-theme-hint-color, #9aa5b4);
-      --link: var(--tg-theme-link-color, #64a7ff);
-      --ok: #58d69a;
-      --line: rgba(255,255,255,.10);
-      --danger: #ff9d9d;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
-    body { padding: calc(14px + env(safe-area-inset-top)) 16px calc(84px + env(safe-area-inset-bottom)); font-size: 15px; }
-    main { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 16px; }
-    button, input { font: inherit; }
-    .hero { display: grid; justify-items: center; gap: 8px; padding: 18px 12px 12px; text-align: center; }
-    .bot-avatar { width: 82px; height: 82px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,.2); box-shadow: 0 16px 44px rgba(0,0,0,.45); background: #242c36; }
-    #botPhotoFallback { display: grid; place-items: center; color: #45e0a5; font-size: 30px; font-weight: 900; }
-    .brand { font-size: clamp(30px, 8vw, 44px); font-weight: 900; font-style: italic; letter-spacing: -.04em; line-height: .95; }
-    .username { color: #ee88c8; font-weight: 700; font-size: 16px; }
-    .stats { color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-    .mod-footer { display: flex; justify-content: center; padding: 2px 0 8px; }
-    .mod-link { color: var(--link); text-decoration: none; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); padding: 11px 22px; border-radius: 999px; font-weight: 800; font-size: 15px; min-width: 132px; text-align: center; }
-    .hidden { display: none !important; }
-    .search { display: flex; align-items: center; gap: 12px; min-height: 58px; border-radius: 18px; background: var(--section-2); color: var(--muted); padding: 0 18px; border: 1px solid rgba(255,255,255,.06); }
-    .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 18px; min-width: 0; }
-    .search input::placeholder { color: var(--muted); }
-    .card { border: 1px solid rgba(255,255,255,.09); border-radius: 24px; background: var(--section); overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,.32); }
-    .track-card { padding: 18px; }
-    .track { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: center; min-width: 0; }
-    .cover { width: 92px; height: 92px; border-radius: 18px; object-fit: cover; background: linear-gradient(135deg, #2b3340, #151a22); border: 1px solid rgba(255,255,255,.1); }
-    .eyebrow { color: #45e0a5; font-size: 12px; text-transform: uppercase; letter-spacing: .18em; font-weight: 900; }
-    .title { margin-top: 5px; font-size: clamp(25px, 7vw, 46px); line-height: .95; letter-spacing: -.04em; font-weight: 950; text-transform: uppercase; overflow-wrap: anywhere; }
-    .artist { margin-top: 8px; color: var(--muted); font-size: 16px; overflow-wrap: anywhere; }
-    .metric { margin-top: 10px; color: #45e0a5; font-size: 18px; font-weight: 850; letter-spacing: -.01em; }
-    .title a { color: inherit; text-decoration: none; }
-    .section-title { padding: 2px 2px 8px; color: var(--muted); font-size: 13px; }
-    .group-list { max-height: 286px; overflow: auto; border-radius: 20px; }
-    .group-row { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 14px 16px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; }
-    .group-row:first-child { border-top: 0; }
-    .group-row[aria-selected="true"] { background: rgba(100,167,255,.12); }
-    .group-title { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .group-meta { color: var(--muted); font-size: 13px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .chev { color: var(--muted); font-size: 24px; }
-    .selected { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,.04); color: var(--muted); font-size: 14px; }
-    .selected strong { color: var(--text); }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
-    .btn { min-height: 54px; border: 1px solid rgba(255,255,255,.10); border-radius: 16px; font-weight: 850; color: var(--text); background: #26313e; }
-    .btn.primary { background: #3478f6; border-color: rgba(255,255,255,.16); }
-    .btn:disabled { opacity: .45; }
-    .status { border-radius: 16px; padding: 12px 14px; background: rgba(255,255,255,.04); color: var(--muted); margin-top: 12px; font-size: 14px; overflow-wrap: anywhere; }
-    .status.ok { color: #a4f1c0; border: 1px solid rgba(74, 222, 128, .22); }
-    .status.bad { color: var(--danger); border: 1px solid rgba(248,113,113,.24); }
-    .tip { color: var(--muted); font-size: 13px; line-height: 1.45; padding: 0 4px; }
-    .command-card { padding: 16px; }
-    .command-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .cmd-btn { min-height: 62px; border: 1px solid rgba(255,255,255,.10); border-radius: 18px; background: #202a35; color: var(--text); font-weight: 900; text-align: left; padding: 12px 14px; }
-    .cmd-btn small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 650; line-height: 1.25; }
-    .cmd-btn:active { transform: scale(.985); filter: brightness(.88); }
-    @media (max-width: 520px) {
-      body { padding-left: 12px; padding-right: 12px; }
-      .hero { padding-left: 12px; padding-right: 12px; }
-      .mod-link { width: min(220px, 72vw); }
-      .track { grid-template-columns: 76px 1fr; gap: 13px; }
-      .cover { width: 76px; height: 76px; border-radius: 16px; }
-      .actions { grid-template-columns: 1fr; }
-      .search input { font-size: 16px; }
-      .title { font-size: 25px; }
-      .command-grid { grid-template-columns: 1fr; }
-    }
+    :root { color-scheme: dark; --bg: var(--tg-theme-bg-color,#11161c); --section: var(--tg-theme-section-bg-color,#18202a); --section-2:#202a35; --text:var(--tg-theme-text-color,#f5f7fb); --muted:var(--tg-theme-hint-color,#9aa5b4); --link:var(--tg-theme-link-color,#64a7ff); --line:rgba(255,255,255,.10); --danger:#ff9d9d; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    *{box-sizing:border-box} html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)} body{padding:calc(14px + env(safe-area-inset-top)) 16px calc(92px + env(safe-area-inset-bottom));font-size:15px} main{width:min(720px,100%);margin:0 auto;display:grid;gap:16px} button,input{font:inherit}.hidden{display:none!important}
+    .hero{display:grid;justify-items:center;gap:8px;padding:18px 12px 12px;text-align:center}.bot-avatar{width:82px;height:82px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.2);box-shadow:0 16px 44px rgba(0,0,0,.45);background:#242c36}#botPhotoFallback{display:grid;place-items:center;color:#45e0a5;font-size:30px;font-weight:900}.brand{font-size:clamp(30px,8vw,44px);font-weight:900;font-style:italic;letter-spacing:-.04em;line-height:.95}.username{color:#ee88c8;font-weight:700;font-size:16px}.stats{color:var(--muted);font-size:14px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+    .card{border:1px solid rgba(255,255,255,.09);border-radius:24px;background:var(--section);overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.32)}.track-card{padding:18px}.section-title{padding:2px 2px 10px;color:var(--muted);font-size:13px}.search{display:flex;align-items:center;gap:12px;min-height:58px;border-radius:18px;background:var(--section-2);color:var(--muted);padding:0 18px;border:1px solid rgba(255,255,255,.06)}.search input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:18px;min-width:0}.search input::placeholder{color:var(--muted)}
+    .command-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmd-btn{min-height:62px;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:#26313e;color:var(--text);font-weight:900;text-align:left;padding:12px}.cmd-btn small{display:block;color:var(--muted);font-weight:650;font-size:12px;margin-top:4px;line-height:1.25}.cmd-btn.primary{background:#3478f6;border-color:rgba(255,255,255,.18)}
+    .track{display:grid;grid-template-columns:92px 1fr;gap:16px;align-items:center;min-width:0}.cover{width:92px;height:92px;border-radius:18px;object-fit:cover;background:linear-gradient(135deg,#2b3340,#151a22);border:1px solid rgba(255,255,255,.1)}.eyebrow{color:#45e0a5;font-size:12px;text-transform:uppercase;letter-spacing:.18em;font-weight:900}.title{margin-top:5px;font-size:clamp(25px,7vw,46px);line-height:.95;letter-spacing:-.04em;font-weight:950;text-transform:uppercase;overflow-wrap:anywhere}.artist{margin-top:8px;color:var(--muted);font-size:16px;overflow-wrap:anywhere}.metric{margin-top:10px;color:#45e0a5;font-size:18px;font-weight:850;letter-spacing:-.01em}.title a{color:inherit;text-decoration:none}.selected{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.04);color:var(--muted);font-size:14px}.selected strong{color:var(--text)}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.btn{min-height:54px;border:1px solid rgba(255,255,255,.10);border-radius:16px;font-weight:850;color:var(--text);background:#26313e}.btn.primary{background:#3478f6;border-color:rgba(255,255,255,.16)}.btn:disabled{opacity:.45}.status{border-radius:16px;padding:12px 14px;background:rgba(255,255,255,.04);color:var(--muted);margin-top:12px;font-size:14px;overflow-wrap:anywhere}.status.ok{color:#a4f1c0;border:1px solid rgba(74,222,128,.22)}.status.bad{color:var(--danger);border:1px solid rgba(248,113,113,.24)}.open-bot-cta{display:block;text-align:center;color:var(--text);text-decoration:none;border-radius:16px;padding:13px 16px;margin-top:12px;background:#3478f6;font-weight:900}
+    .group-list{max-height:286px;overflow:auto;border-radius:20px}.group-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:14px 16px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--text);text-align:left}.group-row:first-child{border-top:0}.group-row[aria-selected="true"]{background:rgba(100,167,255,.12)}.group-title{font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-meta{color:var(--muted);font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chev{color:var(--muted);font-size:24px}.mod-footer{display:flex;justify-content:center;padding:2px 0 8px}.mod-link{color:var(--link);text-decoration:none;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);padding:11px 22px;border-radius:999px;font-weight:800;font-size:15px;min-width:132px;text-align:center}
+    @media(max-width:520px){body{padding-left:12px;padding-right:12px}.command-grid{grid-template-columns:1fr}.track{grid-template-columns:76px 1fr;gap:13px}.cover{width:76px;height:76px;border-radius:16px}.actions{grid-template-columns:1fr}.search input{font-size:16px}.title{font-size:25px}}
   </style>
 </head>
 <body>
@@ -7748,21 +7683,18 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     <div class="username" id="botUser">@tigraoRADIObot</div>
     <div class="stats" id="stats">música atual</div>
   </section>
-
-  <label class="search" aria-label="Busca de grupos e ações">⌕ <input id="search" autocomplete="off" placeholder="Buscar grupo ou ação" /></label>
-
-  <section class="card command-card" aria-label="Comandos musicais">
+  <section class="card track-card" aria-label="Comandos musicais">
     <div class="section-title">Comandos musicais</div>
     <div id="commandGrid" class="command-grid">
-      <button class="cmd-btn" type="button" data-command="/playing">Tocando agora<small>Prévia da música atual</small></button>
-      <button class="cmd-btn" type="button" data-command="/nowp">Publicar<small>Escolha o grupo e publique</small></button>
+      <button class="cmd-btn primary" type="button" data-command="/playing">Tocando agora<small>Prévia da música atual</small></button>
+      <button class="cmd-btn primary" type="button" data-command="/nowp">Publicar<small>Escolha um grupo abaixo</small></button>
       <button class="cmd-btn" type="button" data-command="/myself">Meu perfil<small>Seu cartão musical</small></button>
       <button class="cmd-btn" type="button" data-command="/weekfm">Semana<small>Resumo semanal</small></button>
       <button class="cmd-btn" type="button" data-command="/monthfm">Mês<small>Resumo mensal</small></button>
-      <button class="cmd-btn" type="button" data-command="/songcharts">Ranking<small>Top músicas do grupo</small></button>
+      <button class="cmd-btn" type="button" data-command="/songcharts">Ranking<small>Use no grupo</small></button>
     </div>
   </section>
-
+  <label class="search" aria-label="Busca de grupos e ações">⌕ <input id="search" autocomplete="off" placeholder="Buscar grupo ou ação" /></label>
   <section class="card track-card" id="trackCard">
     <div class="track">
       <img id="cover" class="cover hidden" alt="Capa da música atual" />
@@ -7770,7 +7702,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       <div>
         <div class="eyebrow">tocando agora</div>
         <div class="title" id="trackTitle">Carregando</div>
-        <div class="artist" id="trackArtist">Aguarde.</div>
+        <div class="artist" id="trackArtist">Aguardando autenticação.</div>
         <div class="metric" id="nowLine">Você · ♫ <span id="plays">0</span></div>
       </div>
     </div>
@@ -7779,195 +7711,49 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       <button class="btn" id="refreshBtn" type="button">Atualizar</button>
       <button class="btn primary" id="publishBtn" type="button" disabled>Publicar atual</button>
     </div>
-    <div id="status" class="status">Abra pelo Telegram para validar sua sessão.</div>
     <a id="openBotBtn" class="open-bot-cta hidden" href="https://t.me/tigraoRADIObot?startapp">Abrir pelo bot</a>
+    <div id="status" class="status">Inicializando player público.</div>
   </section>
-
   <section class="card" aria-label="Grupos em comum">
     <div class="track-card">
       <div class="section-title">Grupos em comum</div>
-      <div id="groups" class="group-list"></div>
+      <div id="groups" class="group-list"><div class="status">Carregando grupos.</div></div>
     </div>
   </section>
-
-  <div class="mod-footer">
-    <a id="modBtn" class="mod-link hidden" href="/equalizador">Painel</a>
-  </div>
-
+  <div class="mod-footer"><a id="modBtn" class="mod-link hidden" href="/equalizador">Painel</a></div>
 </main>
 <script>
 (function(){
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  if (tg) {
-    try {
-      tg.ready(); tg.expand();
-      if (tg.setHeaderColor) tg.setHeaderColor('#11161c');
-      if (tg.setBackgroundColor) tg.setBackgroundColor('#11161c');
-      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-    } catch (_) {}
-  }
-  const initData = tg && tg.initData ? tg.initData : "";
+  "use strict";
   const SESSION_KEY = "tr4_public_eqs";
-  function getStoredSession(){
-    try { return localStorage.getItem(SESSION_KEY) || ""; } catch (_) { return ""; }
-  }
-  function setStoredSession(value){
-    try {
-      if (value) localStorage.setItem(SESSION_KEY, value);
-      else localStorage.removeItem(SESSION_KEY);
-    } catch (_) {}
-  }
-  let apiHeaders = initData ? { Authorization: "tma " + initData } : (getStoredSession() ? { Authorization: "eqs " + getStoredSession() } : {});
-  let selectedGroup = "";
-  let selectedTitle = "";
-  let currentGroups = [];
-  let trackAvailable = false;
+  const BOOT_LINK = "https://t.me/tigraoRADIObot?startapp";
+  let tg=null, initData="", apiHeaders={}, selectedGroup="", currentGroups=[], trackAvailable=false;
   function $(id){ return document.getElementById(id); }
-  function showBotFallback(){ $("botPhoto").classList.add("hidden"); $("botPhotoFallback").classList.remove("hidden"); }
-  function text(value){ return String(value == null ? "" : value); }
-  function escapeHtml(value){
-    return text(value).replace(/[&<>"']/g, function(ch){
-      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch] || ch;
-    });
+  function safeText(v){ return String(v == null ? "" : v); }
+  function escapeHtml(v){
+    const map = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+    return safeText(v).replace(/[&<>"']/g, function(ch){ return map[ch] || ch; });
   }
-  function status(message, kind){ const el=$("status"); el.textContent=message; el.className="status"+(kind?" "+kind:""); }
+  function status(msg,kind){ const el=$("status"); if(!el) return; el.textContent=msg; el.className="status"+(kind?" "+kind:""); }
+  function reportClient(kind,msg,extra){ try{ fetch("/equalizador/api/client-error",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:String(kind||"player_event").slice(0,60),message:String(msg||"").slice(0,220),extra:String(extra||"").slice(0,220),href:location.pathname,user_agent:navigator.userAgent})}).catch(function(){}); }catch(_){} }
+  window.onerror=function(message,source,line,col){ reportClient("player_window_error",message,String(source||"")+":"+line+":"+col); return false; };
+  window.addEventListener("unhandledrejection",function(ev){ const r=ev&&ev.reason?(ev.reason.message||ev.reason):"promise"; reportClient("player_unhandledrejection",r,""); });
+  function getStoredSession(){ try{return localStorage.getItem(SESSION_KEY)||"";}catch(_){return "";} }
+  function setStoredSession(v){ try{ if(v) localStorage.setItem(SESSION_KEY,v); else localStorage.removeItem(SESSION_KEY); }catch(_){} }
   function hasAuth(){ return !!(apiHeaders && Object.keys(apiHeaders).length); }
-  function setOpenBotVisible(visible){
-    const el = $("openBotBtn");
-    if (!el) return;
-    if (visible) el.classList.remove("hidden"); else el.classList.add("hidden");
-  }
-  function reportClient(kind, message){
-    try {
-      fetch("/equalizador/api/client-error", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({kind: kind, message: message, href: location.pathname, user_agent: navigator.userAgent})
-      }).catch(function(){});
-    } catch (_) {}
-  }
-  function updatePublishState(){ $("publishBtn").disabled = !(hasAuth() && selectedGroup && trackAvailable); }
-  function api(path, opts){ opts=opts||{}; opts.headers=Object.assign({}, apiHeaders, opts.headers||{}); return fetch(path, opts).then(async r => { const data = await r.json().catch(()=>({})); if(!r.ok) throw data; return data; }); }
-  function renderCommands(commands){
-    const grid = $("commandGrid");
-    if (!grid) return;
-    const fallback = [
-      {label:"Tocando agora", command:"/playing", hint:"Prévia da música atual"},
-      {label:"Publicar", command:"/nowp", hint:"Publicar no grupo escolhido"},
-      {label:"Meu perfil", command:"/myself", hint:"Seu cartão musical"},
-      {label:"Semana", command:"/weekfm", hint:"Resumo semanal"},
-      {label:"Mês", command:"/monthfm", hint:"Resumo mensal"},
-      {label:"Ranking", command:"/songcharts", hint:"Top músicas"}
-    ];
-    const items = (commands && commands.length) ? commands : fallback;
-    grid.innerHTML = items.map(function(cmd){
-      return `<button class="cmd-btn" type="button" data-command="${escapeHtml(cmd.command || "")}">${escapeHtml(cmd.label || cmd.command || "Comando")}<small>${escapeHtml(cmd.hint || cmd.command || "")}</small></button>`;
-    }).join("");
-    grid.querySelectorAll("button[data-command]").forEach(function(btn){
-      btn.onclick = function(){
-        const command = btn.getAttribute("data-command") || "";
-        if (!command) return;
-        if (command === "/songcharts") {
-          status("Use /songcharts no grupo onde deseja ver o ranking.", "ok");
-          return;
-        }
-        if (command === "/nowp") {
-          document.getElementById("groups").scrollIntoView({behavior:"smooth", block:"center"});
-          status("Escolha um grupo e toque em Publicar atual.", "ok");
-          return;
-        }
-        if (tg && tg.openTelegramLink) tg.openTelegramLink("https://t.me/" + String($('botUser').textContent || 'tigraoRADIObot').replace('@','') + "?start=" + encodeURIComponent("cmd_" + command.replace('/','')));
-        else status("Use no bot: " + command, "ok");
-      };
-    });
-  }
-  renderCommands();
-  function renderGroups(groups){
-    const q = text($("search").value).toLowerCase().trim();
-    const root = $("groups"); root.innerHTML = "";
-    (groups || []).filter(g => !q || text(g.title).toLowerCase().includes(q) || text(g.username).toLowerCase().includes(q)).forEach(g => {
-      const row = document.createElement("button"); row.className="group-row"; row.type="button"; row.setAttribute("aria-selected", g.ref === selectedGroup ? "true" : "false");
-      const meta = [g.status || "em comum", g.username ? "@"+g.username : "grupo"].filter(Boolean).join(" • ");
-      row.innerHTML = '<div><div class="group-title"></div><div class="group-meta"></div></div><div class="chev">›</div>';
-      row.querySelector(".group-title").textContent = g.title || "Grupo";
-      row.querySelector(".group-meta").textContent = meta;
-      row.onclick = () => { selectedGroup = g.ref; selectedTitle = g.title || "grupo"; $("selectedGroup").innerHTML = "Grupo: <strong></strong>"; $("selectedGroup").querySelector("strong").textContent = selectedTitle; status("Grupo selecionado.", "ok"); renderGroups(currentGroups); updatePublishState(); };
-      root.appendChild(row);
-    });
-    if (!root.children.length) root.innerHTML = '<div class="status">Nenhum grupo encontrado.</div>';
-  }
-  function setTrack(track){
-    trackAvailable = !!(track && track.available);
-    if (trackAvailable) {
-      const title = track.track_name || "Música";
-      const url = track.spotify_url || "";
-      $("trackTitle").innerHTML = url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener"><b>${escapeHtml(title)}</b></a>` : `<b>${escapeHtml(title)}</b>`;
-      $("trackArtist").innerHTML = `— <i>${escapeHtml(track.artist || "Artista")}</i>`;
-      $("plays").textContent = track.user_plays || 0;
-      if (track.cover_url) { $("cover").src = track.cover_url; $("cover").classList.remove("hidden"); $("coverFallback").classList.add("hidden"); }
-      else { $("cover").classList.add("hidden"); $("coverFallback").classList.remove("hidden"); }
-    } else {
-      $("trackTitle").textContent = "Nada tocando";
-      $("trackArtist").textContent = track && track.message ? track.message : "Conecte Last.fm ou Spotify e tente novamente.";
-      $("plays").textContent = "0";
-    }
-    updatePublishState();
-  }
-  async function loadPlayingPreview(){
-    try {
-      const preview = await api("/equalizador/api/public/playing-preview");
-      setTrack(preview.track || preview || {});
-      if (preview.track && preview.track.available) status("Música atual carregada.", "ok");
-    } catch (e) {
-      status((e && (e.detail || e.public_detail)) || "Não consegui carregar a música atual.", "bad");
-    }
-  }
-  async function load(){
-    if (!initData && !storedPublicSession) { status("Abra pelo Telegram para carregar sua música e seus grupos.", "bad"); return; }
-    if (!hasAuth()) {
-      setOpenBotVisible(true);
-      reportClient("public_initdata_ausente", "Mini App sem initData e sem sessão pública local.");
-      status("Abra pelo botão oficial do bot para validar sua sessão.", "bad");
-      return;
-    }
-    setOpenBotVisible(false);
-    try {
-      const me = await api("/equalizador/api/public/me");
-      $("botUser").textContent = me.bot_username || "@tigraoRADIObot";
-      if (me.bot_photo_url) { $("botPhoto").onerror = showBotFallback; $("botPhoto").src = me.bot_photo_url; $("botPhoto").classList.remove("hidden"); $("botPhotoFallback").classList.add("hidden"); } else { showBotFallback(); }
-      const sessionToken = me.sessao && me.sessao.token ? me.sessao.token : "";
-      if (sessionToken) {
-        setStoredPublicSession(sessionToken);
-        apiHeaders = { Authorization: "eqs " + sessionToken };
-      }
-      if (me.can_open_equalizador) $("modBtn").classList.remove("hidden"); else $("modBtn").classList.add("hidden");
-      const data = await api("/equalizador/api/public/home");
-      renderCommands(data.commands || []);
-      setTrack(data.track || {});
-      currentGroups = data.groups || [];
-      $("stats").textContent = (currentGroups.length || 0) + " grupos em comum";
-      renderGroups(currentGroups);
-      status("Carregando música atual...", "");
-      loadPlayingPreview();
-    } catch (e) { status((e && (e.detail || e.public_detail)) || "Não foi possível carregar.", "bad"); showBotFallback(); }
-  }
-  $("search").addEventListener("input", () => renderGroups(currentGroups));
-  $("refreshBtn").onclick = load;
-  $("publishBtn").onclick = async () => {
-    if (!selectedGroup) { status("Escolha um grupo primeiro.", "bad"); return; }
-    $("publishBtn").disabled = true;
-    status("Publicando pelo bot...", "");
-    try {
-      const res = await api("/equalizador/api/public/nowp", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ group_ref: selectedGroup }) });
-      status(res.message || "Publicado.", "ok");
-      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-    } catch(e) {
-      status((e && (e.detail || e.public_detail)) || "Falha ao publicar.", "bad");
-      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-    }
-    finally { updatePublishState(); }
-  };
-  load();
+  function updatePublishState(){ const b=$("publishBtn"); if(b) b.disabled=!(hasAuth()&&selectedGroup&&trackAvailable); }
+  async function api(path,opts){ opts=opts||{}; opts.headers=Object.assign({},apiHeaders,opts.headers||{}); const res=await fetch(path,opts); const data=await res.json().catch(function(){return {};}); if(!res.ok){ const err=new Error(data.detail||data.public_detail||("HTTP "+res.status)); err.payload=data; err.status=res.status; throw err;} return data; }
+  function showBotFallback(){ hide("botPhoto",true); hide("botPhotoFallback",false); }
+  function showNoAuth(){ hide("openBotBtn",false); status("Abra pelo bot no Telegram para carregar sua música.","bad"); $("trackTitle").textContent="Abra pelo bot"; $("trackArtist").textContent="Depois volte para o Mini App."; $("groups").innerHTML='<div class="status">Sessão Telegram indisponível.</div>'; reportClient("player_sem_auth","initData e sessão curta ausentes",""); }
+  function setTrack(track){ trackAvailable=!!(track&&track.available); if(trackAvailable){ const title=track.track_name||"Música"; const url=track.spotify_url||""; $("trackTitle").innerHTML=url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener"><b>${escapeHtml(title)}</b></a>`:`<b>${escapeHtml(title)}</b>`; $("trackArtist").innerHTML=`— <i>${escapeHtml(track.artist||"Artista")}</i>`; $("plays").textContent=track.user_plays||0; if(track.cover_url){ $("cover").src=track.cover_url; hide("cover",false); hide("coverFallback",true); } else { hide("cover",true); hide("coverFallback",false); }} else { $("trackTitle").textContent="Nada tocando"; $("trackArtist").textContent=track&&track.message?track.message:"Conecte Last.fm ou Spotify e tente novamente."; $("plays").textContent="0"; hide("cover",true); hide("coverFallback",false);} updatePublishState(); }
+  function renderGroups(groups){ currentGroups=groups||[]; const q=safeText($("search").value).toLowerCase().trim(); const root=$("groups"); root.innerHTML=""; currentGroups.filter(function(g){return !q||safeText(g.title).toLowerCase().includes(q)||safeText(g.username).toLowerCase().includes(q);}).forEach(function(g){ const row=document.createElement("button"); row.className="group-row"; row.type="button"; row.setAttribute("aria-selected",g.ref===selectedGroup?"true":"false"); const meta=[g.status||"disponível",g.username?"@"+g.username:"grupo"].filter(Boolean).join(" • "); row.innerHTML='<div><div class="group-title"></div><div class="group-meta"></div></div><div class="chev">›</div>'; row.querySelector(".group-title").textContent=g.title||"Grupo"; row.querySelector(".group-meta").textContent=meta; row.onclick=function(){ selectedGroup=g.ref||""; $("selectedGroup").innerHTML="Grupo: <strong></strong>"; $("selectedGroup").querySelector("strong").textContent=g.title||"grupo"; status("Grupo selecionado.","ok"); renderGroups(currentGroups); updatePublishState(); }; root.appendChild(row); }); if(!root.children.length) root.innerHTML='<div class="status">Nenhum grupo encontrado.</div>'; }
+  function bindStaticButtons(){ document.querySelectorAll("#commandGrid button[data-command]").forEach(function(btn){ btn.onclick=function(){ const command=btn.getAttribute("data-command")||""; if(command==="/playing"){ loadPlayingPreview(); return; } if(command==="/nowp"){ $("groups").scrollIntoView({behavior:"smooth",block:"center"}); status("Escolha um grupo e toque em Publicar atual.","ok"); return; } if(command==="/songcharts"){ status("Use /songcharts no grupo onde deseja ver o ranking.","ok"); return; } const bot=($("botUser").textContent||"@tigraoRADIObot").replace(/^@/,""); const url="https://t.me/"+bot+"?start="+encodeURIComponent("cmd_"+command.replace(/^\//,"")); if(tg&&tg.openTelegramLink) tg.openTelegramLink(url); else window.location.href=url; }; }); }
+  async function loadPlayingPreview(){ if(!hasAuth()){ showNoAuth(); return; } try{ status("Carregando música atual.",""); const preview=await api("/equalizador/api/public/playing-preview"); setTrack(preview||{}); status(trackAvailable?"Prévia pronta. Escolha o grupo e publique.":"Sem música atual para publicar.",trackAvailable?"ok":""); }catch(e){ reportClient("player_preview_failed",e&&e.message?e.message:"preview_failed",e&&e.status?e.status:""); setTrack({available:false,message:"Não consegui carregar a música agora."}); status("Falha ao carregar música.","bad"); } }
+  async function bootstrap(){ reportClient("player_js_started","script iniciado",""); bindStaticButtons(); try{ tg=window.Telegram&&window.Telegram.WebApp?window.Telegram.WebApp:null; if(tg){ try{ tg.ready(); tg.expand(); if(tg.setHeaderColor) tg.setHeaderColor("#11161c"); if(tg.setBackgroundColor) tg.setBackgroundColor("#11161c"); }catch(inner){ reportClient("player_tg_ready_failed",inner&&inner.message?inner.message:"tg_ready",""); } initData=tg.initData||""; } const stored=getStoredSession(); apiHeaders=initData?{Authorization:"tma "+initData}:(stored?{Authorization:"eqs "+stored}:{}); if(!hasAuth()){ showNoAuth(); return; } hide("openBotBtn",true); status("Validando sessão.",""); const me=await api("/equalizador/api/public/me"); if(me&&me.sessao&&me.sessao.token){ setStoredSession(me.sessao.token); apiHeaders={Authorization:"eqs "+me.sessao.token}; } $("botUser").textContent=me.bot_username||"@tigraoRADIObot"; if(me.bot_photo_url){ $("botPhoto").onerror=showBotFallback; $("botPhoto").src=me.bot_photo_url; hide("botPhoto",false); hide("botPhotoFallback",true); } else showBotFallback(); if(me.can_open_equalizador) hide("modBtn",false); else hide("modBtn",true); const home=await api("/equalizador/api/public/home"); renderGroups(home.groups||[]); $("stats").textContent=(currentGroups.length||0)+" grupos disponíveis"; await loadPlayingPreview(); }catch(e){ if(e&&(e.status===401||e.status===403)){ setStoredSession(""); apiHeaders={}; showNoAuth(); return; } reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:""); status("Não foi possível carregar o player.","bad"); showBotFallback(); } }
+  $("search").addEventListener("input",function(){ renderGroups(currentGroups); });
+  $("refreshBtn").onclick=bootstrap;
+  $("publishBtn").onclick=async function(){ if(!hasAuth()){ showNoAuth(); return; } if(!selectedGroup){ status("Escolha um grupo primeiro.","bad"); return; } $("publishBtn").disabled=true; status("Publicando pelo bot.",""); try{ const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})}); status(res.message||"Publicado.","ok"); if(tg&&tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success"); }catch(e){ reportClient("player_nowp_failed",e&&e.message?e.message:"nowp_failed",e&&e.status?e.status:""); status((e&&e.message)||"Falha ao publicar.","bad"); if(tg&&tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("error"); }finally{ updatePublishState(); } };
+  bootstrap();
 })();
 </script>
 </body>
