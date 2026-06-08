@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 import html
@@ -7785,6 +7786,31 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function status(message, kind){ const el=$("status"); el.textContent=message; el.className="status"+(kind?" "+kind:""); }
   function updatePublishState(){ $("publishBtn").disabled = !(initData && selectedGroup && trackAvailable); }
   function api(path, opts){ opts=opts||{}; opts.headers=Object.assign({}, headers, opts.headers||{}); return fetch(path, opts).then(async r => { const data = await r.json().catch(()=>({})); if(!r.ok) throw data; return data; }); }
+  function renderCommands(commands){
+    const grid = $("commandGrid");
+    if (!grid) return;
+    const fallback = [
+      {label:"Tocando agora", command:"/playing", hint:"Prévia da música atual"},
+      {label:"Publicar", command:"/nowp", hint:"Publicar no grupo escolhido"},
+      {label:"Meu perfil", command:"/myself", hint:"Seu cartão musical"},
+      {label:"Semana", command:"/weekfm", hint:"Resumo semanal"},
+      {label:"Mês", command:"/monthfm", hint:"Resumo mensal"},
+      {label:"Ranking", command:"/songcharts", hint:"Top músicas"}
+    ];
+    const items = (commands && commands.length) ? commands : fallback;
+    grid.innerHTML = items.map(function(cmd){
+      return `<button class="cmd-btn" type="button" data-command="${escapeHtml(cmd.command || "")}">${escapeHtml(cmd.label || cmd.command || "Comando")}<small>${escapeHtml(cmd.hint || cmd.command || "")}</small></button>`;
+    }).join("");
+    grid.querySelectorAll("button[data-command]").forEach(function(btn){
+      btn.onclick = function(){
+        const command = btn.getAttribute("data-command") || "";
+        if (!command) return;
+        if (tg && tg.openTelegramLink) tg.openTelegramLink("https://t.me/" + String($('botUser').textContent || 'tigraoRADIObot').replace('@','') + "?start=" + encodeURIComponent("cmd_" + command.replace('/','')));
+        else status("Use no bot: " + command, "ok");
+      };
+    });
+  }
+  renderCommands();
   function renderGroups(groups){
     const q = text($("search").value).toLowerCase().trim();
     const root = $("groups"); root.innerHTML = "";
@@ -7824,6 +7850,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       if (me.bot_photo_url) { $("botPhoto").onerror = showBotFallback; $("botPhoto").src = me.bot_photo_url; $("botPhoto").classList.remove("hidden"); $("botPhotoFallback").classList.add("hidden"); } else { showBotFallback(); }
       if (me.can_open_equalizador) $("modBtn").classList.remove("hidden"); else $("modBtn").classList.add("hidden");
       const data = await api("/equalizador/api/public/home");
+      renderCommands(data.commands || []);
       setTrack(data.track || {});
       currentGroups = data.groups || [];
       $("stats").textContent = (currentGroups.length || 0) + " grupos em comum";
@@ -7925,91 +7952,97 @@ async def _bot_api(method: str, payload: dict[str, object]) -> dict[str, object]
 
 
 async def _public_groups_for_user(user_id: int) -> list[dict[str, object]]:
+    """Lista rápida para o Mini App público.
+
+    A rota /api/public/home não pode fazer getChatMember para cada grupo:
+    no WebView do Telegram isso pode estourar timeout e virar 499. A validação
+    real de associação permanece imediatamente antes da publicação em
+    /api/public/nowp, que é o ponto seguro para bloquear acesso indevido.
+    """
     groups: list[dict[str, object]] = []
-    if not settings.TELEGRAM_BOT_TOKEN:
-        return groups
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        for group in list_groups(40):
-            try:
-                chat_id = int(group["chat_id"])
-                res = await client.post(
-                    f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getChatMember",
-                    json={"chat_id": chat_id, "user_id": int(user_id)},
-                )
-                data = res.json()
-                member = data.get("result") if isinstance(data, dict) else None
-                status = str((member or {}).get("status") or "")
-                if not data.get("ok") or status in {"left", "kicked"}:
-                    continue
-                if status == "restricted" and not bool((member or {}).get("is_member", True)):
-                    continue
-                groups.append({
-                    "ref": _group_ref(chat_id),
-                    "title": str(group.get("title") or "Grupo")[:80],
-                    "username": str(group.get("username") or "").lstrip("@")[:32],
-                    "status": "em comum",
-                })
-            except Exception:
-                continue
+    for group in list_groups(40):
+        try:
+            chat_id = int(group["chat_id"])
+        except Exception:
+            continue
+        title = str(group.get("title") or "Grupo").strip()[:80] or "Grupo"
+        username = str(group.get("username") or "").strip().lstrip("@")[:32]
+        groups.append({
+            "ref": _group_ref(chat_id),
+            "title": title,
+            "username": username,
+            "status": "verificado ao publicar",
+        })
     return groups
 
 
-async def _public_track_for_user(user_id: int) -> dict[str, object]:
-    """Resolve a música do player público pela mesma fonte de /playing e /nowp.
 
-    Fase 123: a consulta real vem primeiro. A checagem de conexão só entra como
-    diagnóstico quando a fonte musical não devolve faixa. Isso evita falso
-    negativo quando a base Last.fm/Spotify existe mas o helper de conexão está
-    desatualizado após importação/deploy.
+async def _public_track_for_user(user_id: int) -> dict[str, object]:
+    """Carrega a música atual usando o mesmo caminho do /playing e /nowp.
+
+    Fase 124: a busca real vem primeiro. A checagem de conexão fica apenas
+    como explicação quando nada retorna, evitando falso negativo após importação
+    ou cache. A chamada é limitada para não travar /api/public/home.
     """
     try:
-        track = await music_service.get_current_or_last_played(int(user_id))
+        track = await asyncio.wait_for(music_service.get_current_or_last_played(int(user_id)), timeout=4.5)
+    except asyncio.TimeoutError:
+        return {"available": False, "code": "track_timeout", "message": "A leitura da música demorou. Atualize em instantes."}
     except Exception:
         logger.exception("PUBLIC_PLAYER_TRACK_LOOKUP_FAILED user=%s", user_id)
-        track = None
+        return {"available": False, "code": "track_lookup_failed", "message": "Não foi possível carregar sua música agora."}
 
-    if track:
-        track_name = str(track.get("track_name") or "").strip()
-        artist = str(track.get("artist") or "").strip()
-        track_id = str(track.get("track_id") or "").strip()
-        if track_name and artist and track_id:
-            user_plays = 0
-            try:
-                from app.services.lastfm import lastfm_service
-                count = await lastfm_service.get_user_track_playcount(int(user_id), artist, track_name)
-                user_plays = int(count or 0)
-            except Exception:
-                user_plays = 0
-            return {
-                "available": True,
-                "source": str(track.get("source") or "music_service")[:80],
-                "track_name": track_name[:120],
-                "artist": artist[:120],
-                "album": str(track.get("album_name") or track.get("album") or "")[:120],
-                "cover_url": str(track.get("album_image_url") or track.get("cover_url") or "")[:500],
-                "spotify_url": str(track.get("spotify_url") or track.get("track_url") or "")[:500],
-                "user_plays": user_plays,
-            }
+    if not track:
+        try:
+            from app.services.connection_check import connect_hint_for, is_user_connected
+            if not is_user_connected(int(user_id)):
+                return {"available": False, "code": "music_account_not_connected", "message": connect_hint_for("private")}
+        except Exception:
+            pass
+        return {"available": False, "code": "nothing_playing", "message": "Nada tocando agora."}
 
-    # Só depois da tentativa real informamos falta de vínculo.
+    source = str(track.get("source") or "")
+    if source == "lastfm_last":
+        return {"available": False, "code": "nothing_playing_now", "message": "Nada tocando agora."}
+
+    track_name = str(track.get("track_name") or "").strip()
+    artist = str(track.get("artist") or "").strip()
+    track_id = str(track.get("track_id") or "").strip()
+    if not track_id or not track_name:
+        return {"available": False, "code": "track_incomplete", "message": "Não consegui identificar a música atual."}
+
+    user_plays = 0
     try:
-        from app.services.connection_check import connect_hint_for, is_user_connected
-        if not is_user_connected(int(user_id)):
-            return {
-                "available": False,
-                "code": "music_account_not_connected",
-                "message": connect_hint_for("private"),
-                "diagnostic": "music_service_sem_faixa_e_sem_vinculo_detectado",
-            }
+        from app.services.lastfm import lastfm_service
+        count = await asyncio.wait_for(lastfm_service.get_user_track_playcount(int(user_id), artist, track_name), timeout=1.8)
+        user_plays = int(count or 0)
     except Exception:
-        pass
+        user_plays = 0
 
     return {
-        "available": False,
-        "code": "nothing_playing",
-        "message": "Nada tocando agora.",
-        "diagnostic": "music_service_sem_faixa",
+        "available": True,
+        "source": source or "music_service",
+        "track_name": track_name[:120],
+        "artist": artist[:120],
+        "album": str(track.get("album_name") or "")[:120],
+        "cover_url": str(track.get("album_image_url") or track.get("cover_url") or "")[:500],
+        "spotify_url": str(track.get("spotify_url") or "")[:500],
+        "user_plays": user_plays,
     }
+
+
+
+def _public_music_commands() -> list[dict[str, str]]:
+    """Atalhos visuais para comandos musicais já existentes no bot."""
+    return [
+        {"label": "Tocando agora", "command": "/playing", "hint": "Prévia da música atual"},
+        {"label": "Publicar", "command": "/nowp", "hint": "Publicar no grupo escolhido"},
+        {"label": "Meu perfil", "command": "/myself", "hint": "Seu cartão musical"},
+        {"label": "Semana", "command": "/weekfm", "hint": "Resumo semanal"},
+        {"label": "Mês", "command": "/monthfm", "hint": "Resumo mensal"},
+        {"label": "Ranking", "command": "/songcharts", "hint": "Top músicas"},
+    ]
+
 
 @router.get("/api/public/status")
 def public_music_status() -> dict[str, object]:
