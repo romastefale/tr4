@@ -29,6 +29,7 @@ PERSISTENCE_CRITICAL_TABLES: tuple[str, ...] = (
     "eq_multimedia_sessions",
     "eq_ddx_events",
     "tr3_legacy_import_runs",
+    "import_markers",
 )
 
 

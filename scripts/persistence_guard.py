@@ -30,6 +30,7 @@ IMPORTANT_TABLES = (
     "eq_ddx_events",
     "eq_persistence_state",
     "tr3_legacy_import_runs",
+    "import_markers",
 )
 
 
