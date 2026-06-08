@@ -7722,6 +7722,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       .actions { grid-template-columns: 1fr; }
       .search input { font-size: 16px; }
       .title { font-size: 25px; }
+      .command-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -7766,6 +7767,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       <button class="btn primary" id="publishBtn" type="button" disabled>Publicar atual</button>
     </div>
     <div id="status" class="status">Abra pelo Telegram para validar sua sessão.</div>
+    <a id="openBotBtn" class="open-bot-cta hidden" href="https://t.me/tigraoRADIObot?startapp">Abrir pelo bot</a>
   </section>
 
   <section class="card" aria-label="Grupos em comum">
@@ -7792,7 +7794,17 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     } catch (_) {}
   }
   const initData = tg && tg.initData ? tg.initData : "";
-  const headers = initData ? { Authorization: "tma " + initData } : {};
+  const SESSION_KEY = "tr4_public_eqs";
+  function getStoredSession(){
+    try { return localStorage.getItem(SESSION_KEY) || ""; } catch (_) { return ""; }
+  }
+  function setStoredSession(value){
+    try {
+      if (value) localStorage.setItem(SESSION_KEY, value);
+      else localStorage.removeItem(SESSION_KEY);
+    } catch (_) {}
+  }
+  let apiHeaders = initData ? { Authorization: "tma " + initData } : (getStoredSession() ? { Authorization: "eqs " + getStoredSession() } : {});
   let selectedGroup = "";
   let selectedTitle = "";
   let currentGroups = [];
@@ -7800,9 +7812,29 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function $(id){ return document.getElementById(id); }
   function showBotFallback(){ $("botPhoto").classList.add("hidden"); $("botPhotoFallback").classList.remove("hidden"); }
   function text(value){ return String(value == null ? "" : value); }
+  function escapeHtml(value){
+    return text(value).replace(/[&<>"']/g, function(ch){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch] || ch;
+    });
+  }
   function status(message, kind){ const el=$("status"); el.textContent=message; el.className="status"+(kind?" "+kind:""); }
-  function updatePublishState(){ $("publishBtn").disabled = !(initData && selectedGroup && trackAvailable); }
-  function api(path, opts){ opts=opts||{}; opts.headers=Object.assign({}, headers, opts.headers||{}); return fetch(path, opts).then(async r => { const data = await r.json().catch(()=>({})); if(!r.ok) throw data; return data; }); }
+  function hasAuth(){ return !!(apiHeaders && Object.keys(apiHeaders).length); }
+  function setOpenBotVisible(visible){
+    const el = $("openBotBtn");
+    if (!el) return;
+    if (visible) el.classList.remove("hidden"); else el.classList.add("hidden");
+  }
+  function reportClient(kind, message){
+    try {
+      fetch("/equalizador/api/client-error", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({kind: kind, message: message, href: location.pathname, user_agent: navigator.userAgent})
+      }).catch(function(){});
+    } catch (_) {}
+  }
+  function updatePublishState(){ $("publishBtn").disabled = !(hasAuth() && selectedGroup && trackAvailable); }
+  function api(path, opts){ opts=opts||{}; opts.headers=Object.assign({}, apiHeaders, opts.headers||{}); return fetch(path, opts).then(async r => { const data = await r.json().catch(()=>({})); if(!r.ok) throw data; return data; }); }
   function renderCommands(commands){
     const grid = $("commandGrid");
     if (!grid) return;
@@ -7874,7 +7906,13 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     }
   }
   async function load(){
-    if (!initData) { status("Abra pelo Telegram para carregar sua música e seus grupos.", "bad"); return; }
+    if (!hasAuth()) {
+      setOpenBotVisible(true);
+      reportClient("public_initdata_ausente", "Mini App sem initData e sem sessão pública local.");
+      status("Abra pelo botão oficial do bot para validar sua sessão.", "bad");
+      return;
+    }
+    setOpenBotVisible(false);
     try {
       const me = await api("/equalizador/api/public/me");
       $("botUser").textContent = me.bot_username || "@tigraoRADIObot";
@@ -8171,6 +8209,10 @@ async def public_music_me(authorization: str | None = Header(default=None)) -> d
         "bot_username": bot_username,
         "can_open_equalizador": settings.equalizador_user_is_allowed(identity.user_id),
         "bot_photo_url": "/equalizador/api/public/bot/foto",
+        "sessao": create_equalizador_session(
+            identity=identity,
+            ttl_seconds=settings.TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
+        ),
     }
 
 
