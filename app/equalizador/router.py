@@ -2110,8 +2110,8 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
     } catch (_) {}
   }
   const storedPublicSession = getStoredPublicSession();
-  let apiHeaders = initData ? { Authorization: "tma " + initData } : (storedPublicSession ? { Authorization: "eqs " + storedPublicSession } : {});
-  const headers = apiHeaders;
+  let publicApiHeaders = initData ? { Authorization: "tma " + initData } : (storedPublicSession ? { Authorization: "eqs " + storedPublicSession } : {});
+  const headers = publicApiHeaders;
       const SESSION_KEY = "tr4_equalizador_eqs";
       const reportClient = (kind, message, extra) => {
         try { if (window.__eqClientError) window.__eqClientError(kind, message, "equalizador", 0, 0, extra || ""); } catch (_) {}
@@ -7668,97 +7668,101 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   <title>tigraoRADIO · player</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root{color-scheme:dark;--bg:var(--tg-theme-bg-color,#11161c);--section:var(--tg-theme-section-bg-color,#18202a);--section2:#202a35;--text:var(--tg-theme-text-color,#f5f7fb);--muted:var(--tg-theme-hint-color,#9aa5b4);--link:var(--tg-theme-link-color,#64a7ff);--line:rgba(255,255,255,.10);--danger:#ff9d9d;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}body{padding:calc(14px + env(safe-area-inset-top)) 16px calc(92px + env(safe-area-inset-bottom));font-size:15px}main{width:min(720px,100%);margin:0 auto;display:grid;gap:16px}button,input{font:inherit}.hidden{display:none!important}
-    .hero{display:grid;justify-items:center;gap:8px;padding:18px 12px 12px;text-align:center}.bot-avatar{width:82px;height:82px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.2);box-shadow:0 16px 44px rgba(0,0,0,.45);background:#242c36}#botPhotoFallback{display:grid;place-items:center;color:#45e0a5;font-size:30px;font-weight:900}.brand{font-size:clamp(30px,8vw,44px);font-weight:900;font-style:italic;letter-spacing:-.04em;line-height:.95}.username{color:#ee88c8;font-weight:700;font-size:16px}.stats{color:var(--muted);font-size:14px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
-    .card{border:1px solid rgba(255,255,255,.09);border-radius:24px;background:var(--section);overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.32)}.track-card,.command-card,.result-card{padding:18px}.section-title{padding:2px 2px 10px;color:var(--muted);font-size:13px}.search{display:flex;align-items:center;gap:12px;min-height:58px;border-radius:18px;background:var(--section2);color:var(--muted);padding:0 18px;border:1px solid rgba(255,255,255,.06)}.search input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:18px;min-width:0}.search input::placeholder{color:var(--muted)}
-    .command-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmd-btn{min-height:62px;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:#26313e;color:var(--text);font-weight:900;text-align:left;padding:12px}.cmd-btn small{display:block;color:var(--muted);font-weight:650;font-size:12px;margin-top:4px;line-height:1.25}.cmd-btn.primary{background:#3478f6;border-color:rgba(255,255,255,.18)}.cmd-btn:disabled{opacity:.48}
-    .track{display:grid;grid-template-columns:92px 1fr;gap:16px;align-items:center;min-width:0}.cover{width:92px;height:92px;border-radius:18px;object-fit:cover;background:linear-gradient(135deg,#2b3340,#151a22);border:1px solid rgba(255,255,255,.1)}.eyebrow{color:#45e0a5;font-size:12px;text-transform:uppercase;letter-spacing:.18em;font-weight:900}.title{margin-top:5px;font-size:clamp(25px,7vw,46px);line-height:.95;letter-spacing:-.04em;font-weight:950;text-transform:uppercase;overflow-wrap:anywhere}.artist{margin-top:8px;color:var(--muted);font-size:16px;overflow-wrap:anywhere}.metric{margin-top:10px;color:#45e0a5;font-size:18px;font-weight:850;letter-spacing:-.01em}.title a{color:inherit;text-decoration:none}.selected{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.04);color:var(--muted);font-size:14px}.selected strong{color:var(--text)}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.btn{min-height:54px;border:1px solid rgba(255,255,255,.10);border-radius:16px;font-weight:850;color:var(--text);background:#26313e}.btn.primary{background:#3478f6;border-color:rgba(255,255,255,.16)}.btn:disabled{opacity:.45}.status{border-radius:16px;padding:12px 14px;background:rgba(255,255,255,.04);color:var(--muted);margin-top:12px;font-size:14px;overflow-wrap:anywhere}.status.ok{color:#a4f1c0;border:1px solid rgba(74,222,128,.22)}.status.bad{color:var(--danger);border:1px solid rgba(248,113,113,.24)}.open-bot-cta{display:block;text-align:center;color:var(--text);text-decoration:none;border-radius:16px;padding:13px 16px;margin-top:12px;background:#3478f6;font-weight:900}
-    .result-title{font-weight:950;font-size:18px;margin-bottom:8px}.result-body{white-space:pre-wrap;line-height:1.42;color:var(--text);overflow-wrap:anywhere}.result-image{width:100%;border-radius:18px;margin-top:12px;border:1px solid rgba(255,255,255,.12)}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.quick-actions button{min-height:46px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:#26313e;color:var(--text);font-weight:850}
-    .group-list{max-height:286px;overflow:auto;border-radius:20px}.group-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:14px 16px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--text);text-align:left}.group-row:first-child{border-top:0}.group-row[aria-selected="true"]{background:rgba(100,167,255,.12)}.group-title{font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-meta{color:var(--muted);font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chev{color:var(--muted);font-size:24px}.mod-footer{display:flex;justify-content:center;padding:2px 0 8px}.mod-link{color:var(--link);text-decoration:none;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);padding:11px 22px;border-radius:999px;font-weight:800;font-size:15px;min-width:132px;text-align:center}
-    @media(max-width:520px){body{padding-left:12px;padding-right:12px}.command-grid{grid-template-columns:1fr}.track{grid-template-columns:76px 1fr;gap:13px}.cover{width:76px;height:76px;border-radius:16px}.actions,.quick-actions{grid-template-columns:1fr}.search input{font-size:16px}.title{font-size:25px}}
+    :root{color-scheme:dark;--bg:var(--tg-theme-bg-color,#0d1217);--surface:rgba(18,18,18,.62);--surface2:#22313f;--line:rgba(255,255,255,.10);--text:var(--tg-theme-text-color,#f6f7fb);--muted:var(--tg-theme-hint-color,rgba(246,247,251,.62));--green:#45e0a5;--blue:var(--tg-theme-button-color,#3478f6);--danger:#ff9d9d;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%}body{display:flex;justify-content:center;background:radial-gradient(circle at 22% 0%,rgba(52,120,246,.18),transparent 34%),radial-gradient(circle at 90% 7%,rgba(69,224,165,.12),transparent 32%),var(--bg);color:var(--text)}button,input{font:inherit}.hidden{display:none!important}.phone{width:min(100%,430px);min-height:100vh;padding:calc(12px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 220px),#101417;display:block}
+    .now-hero{position:relative;min-height:345px;border-radius:30px;overflow:hidden;background:#101010;border:1px solid var(--line);box-shadow:0 24px 70px rgba(0,0,0,.42);margin-bottom:14px}.now-hero__cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(1.02);opacity:1}.now-hero__cover.hidden{display:block!important;opacity:0}.now-hero__shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.08) 0%,rgba(0,0,0,.30) 44%,rgba(0,0,0,.90) 100%),radial-gradient(circle at 18% 22%,rgba(69,224,165,.25),transparent 34%),radial-gradient(circle at 88% 0%,rgba(52,120,246,.20),transparent 38%)}.brand{position:absolute;top:14px;right:14px;z-index:2;display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border-radius:999px;background:rgba(9,14,18,.58);border:1px solid rgba(255,255,255,.10);box-shadow:0 14px 32px rgba(0,0,0,.25);backdrop-filter:blur(16px);color:#eafff6;font-size:14px;font-weight:950;letter-spacing:-.03em}.brand span{color:var(--green)}.now-hero__body{position:absolute;left:20px;right:20px;bottom:20px;z-index:2}.eyebrow{margin:0 0 8px;color:var(--green);font-size:12px;font-weight:950;letter-spacing:.20em}.track-title{margin:0;color:#fff;font-size:clamp(48px,17vw,78px);line-height:.86;letter-spacing:-.075em;text-transform:uppercase;text-shadow:0 12px 30px rgba(0,0,0,.42);overflow-wrap:anywhere}.track-title a{color:inherit;text-decoration:none}.track-artist{margin:10px 0 0;color:rgba(255,255,255,.76);font-size:21px;font-weight:520;line-height:1.2;overflow-wrap:anywhere}.now-user{margin:16px 0 0;color:var(--green);font-size:22px;line-height:1.1;font-weight:950}
+    .command-area,.publish-panel,.result-card{padding:14px;border-radius:26px;background:rgba(18,18,18,.60);border:1px solid rgba(255,255,255,.08);margin-bottom:12px}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 11px}.section-title h2,.publish-panel h2{margin:0;font-size:15px;color:rgba(255,255,255,.92);letter-spacing:-.02em}.section-title span{color:var(--muted);font-size:12px}.command-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.cmd{appearance:none;min-height:64px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:#22313f;color:#fff;display:grid;place-items:center;text-align:center;padding:10px;font-weight:950;font-size:14px;letter-spacing:-.02em;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);cursor:pointer}.cmd.primary{background:var(--blue)}.cmd:disabled{opacity:.48}.panel-button{display:block;min-width:140px;min-height:44px;margin:13px auto 0;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.10);color:#fff;font-weight:950;text-decoration:none;text-align:center;padding:11px 20px}.publish-panel h2{margin-bottom:10px}.group-compact{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:10px;border-radius:19px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075)}.group-compact strong{display:block;font-size:13px;line-height:1.1}.group-compact span{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.2}.select-group,.choice{min-height:42px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;padding:0 14px;font-weight:850}.choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.choice{min-height:48px;border-radius:16px;background:#22313f;font-weight:900}.choice.primary{background:var(--blue)}.group-list{max-height:260px;overflow:auto;border-radius:18px;margin-top:10px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.035)}.group-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:0;border-top:1px solid var(--line);background:transparent;color:#fff;text-align:left}.group-row:first-child{border-top:0}.group-row[aria-selected="true"]{background:rgba(52,120,246,.18)}.group-title{font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-meta{color:var(--muted);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.result{min-height:54px;padding:14px 15px;border-radius:19px;border:1px solid rgba(69,224,165,.25);background:rgba(69,224,165,.055);color:#bff7df;font-size:14px;line-height:1.35;margin-bottom:12px;overflow-wrap:anywhere}.result strong{display:block;color:#eafff6;font-size:15px;margin-bottom:4px}.result.bad{color:var(--danger);border-color:rgba(248,113,113,.24);background:rgba(248,113,113,.065)}.result-card h2{margin:0 0 8px;font-size:22px;letter-spacing:-.04em}.result-card p{margin:6px 0;color:rgba(255,255,255,.80);line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}.result-card img{display:block;width:100%;max-height:230px;object-fit:cover;margin-top:10px;border-radius:18px;border:1px solid rgba(255,255,255,.08)}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.quick-actions button{min-height:46px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:#22313f;color:#fff;font-weight:850}
+    @media(max-width:370px){.phone{padding-left:10px;padding-right:10px}.now-hero{min-height:320px;border-radius:26px}.now-hero__body{left:17px;right:17px;bottom:17px}.track-artist{font-size:19px}.now-user{font-size:20px}.cmd{min-height:58px;font-size:13px;border-radius:16px}.command-grid{gap:7px}}
   </style>
 </head>
 <body>
-<main>
-  <section class="hero" aria-label="Mini App público do tigraoRADIO">
-    <img id="botPhoto" class="bot-avatar hidden" alt="Foto do bot" />
-    <div id="botPhotoFallback" class="bot-avatar" aria-hidden="true">♪</div>
-    <div class="brand">tigraoRADIO</div>
-    <div class="username" id="botUser">@tigraoRADIObot</div>
-    <div class="stats" id="stats">música atual</div>
-  </section>
-  <section class="card command-card" aria-label="Comandos musicais">
-    <div class="section-title">Comandos musicais</div>
-    <div id="commandGrid" class="command-grid">
-      <button class="cmd-btn primary" type="button" data-command="playing">Tocando agora<small>Prévia da música atual</small></button>
-      <button class="cmd-btn primary" type="button" data-command="nowp">Publicar<small>Escolha um grupo abaixo</small></button>
-      <button class="cmd-btn" type="button" data-command="myself">Meu perfil<small>Resumo dentro do app</small></button>
-      <button class="cmd-btn" type="button" data-command="weekfm">Semana<small>Extrato semanal</small></button>
-      <button class="cmd-btn" type="button" data-command="monthfm">Mês<small>Extrato mensal</small></button>
-      <button class="cmd-btn" type="button" data-command="songcharts">Ranking<small>Top músicas do grupo</small></button>
-    </div>
-  </section>
-  <label class="search" aria-label="Busca de grupos e ações">⌕ <input id="search" autocomplete="off" placeholder="Buscar grupo ou ação" /></label>
-  <section class="card track-card" id="trackCard">
-    <div class="track">
-      <img id="cover" class="cover hidden" alt="Capa da música atual" />
-      <div id="coverFallback" class="cover" aria-hidden="true"></div>
-      <div>
-        <div class="eyebrow">tocando agora</div>
-        <div class="title" id="trackTitle">Carregando</div>
-        <div class="artist" id="trackArtist">Aguardando autenticação.</div>
-        <div class="metric" id="nowLine">Você · ♫ <span id="plays">0</span></div>
+  <main class="phone">
+    <section class="now-hero" aria-label="Tocando agora">
+      <img id="cover" class="now-hero__cover hidden" alt="Capa do álbum" />
+      <div class="now-hero__shade"></div>
+      <div class="brand"><span>♫</span><strong>tigraoRADIO</strong></div>
+      <div class="now-hero__body">
+        <p class="eyebrow">TOCANDO AGORA</p>
+        <h1 class="track-title" id="trackTitle">Carregando</h1>
+        <p class="track-artist" id="trackArtist">Aguardando autenticação.</p>
+        <p class="now-user" id="nowLine">Você · ♫ <span id="plays">0</span></p>
       </div>
-    </div>
-    <div class="selected" id="selectedGroup">Grupo: <strong>selecione abaixo</strong></div>
-    <div class="actions">
-      <button class="btn" id="refreshBtn" type="button">Atualizar</button>
-      <button class="btn primary" id="publishBtn" type="button" disabled>Publicar atual</button>
-    </div>
-    <a id="openBotBtn" class="open-bot-cta hidden" href="https://t.me/tigraoRADIObot?startapp">Abrir pelo bot</a>
-    <div id="status" class="status">Inicializando player público.</div>
-  </section>
-  <section id="resultCard" class="card result-card hidden" aria-label="Resultado do comando">
-    <div id="resultTitle" class="result-title">Resultado</div>
-    <div id="resultBody" class="result-body"></div>
-    <img id="resultImage" class="result-image hidden" alt="Card gerado" />
-    <div id="resultActions" class="quick-actions hidden"></div>
-  </section>
-  <section class="card" aria-label="Grupos em comum">
-    <div class="track-card"><div class="section-title">Grupos em comum</div><div id="groups" class="group-list"><div class="status">Carregando grupos.</div></div></div>
-  </section>
-  <div class="mod-footer"><a id="modBtn" class="mod-link hidden" href="/equalizador">Painel</a></div>
-</main>
+    </section>
+
+    <section class="command-area" aria-label="Comandos musicais">
+      <div class="section-title"><h2>Comandos musicais</h2><span>3×3</span></div>
+      <div id="commandGrid" class="command-grid">
+        <button class="cmd" type="button" data-command="playing">Tocando</button>
+        <button class="cmd primary" type="button" data-command="nowp">Publicar</button>
+        <button class="cmd" type="button" data-command="weekfm">Semana</button>
+        <button class="cmd" type="button" data-command="monthfm">Mês</button>
+        <button class="cmd" type="button" data-command="songcharts">Ranking</button>
+        <button class="cmd" type="button" data-command="tcanvas">Canvas</button>
+        <button class="cmd" type="button" data-command="tstory">Story</button>
+        <button class="cmd" type="button" data-command="tly">Letra</button>
+        <button class="cmd" type="button" data-command="tnow">Mosaico</button>
+      </div>
+      <a id="modBtn" class="panel-button hidden" href="/equalizador">Painel</a>
+    </section>
+
+    <section id="publishPanel" class="publish-panel hidden" aria-label="Publicação em grupo">
+      <h2>Grupo para publicação</h2>
+      <div class="group-compact">
+        <div><strong id="selectedGroupTitle">Escolha um grupo</strong><span id="selectedGroupHint">Usado apenas quando a função postar no grupo.</span></div>
+        <button id="toggleGroupsBtn" class="select-group" type="button">Trocar</button>
+      </div>
+      <div id="groups" class="group-list hidden"><div class="result">Carregando grupos.</div></div>
+      <div id="publishChoices" class="choice-grid hidden">
+        <button id="publishConfirm" class="choice primary" type="button">Continuar</button>
+        <button id="publishCancel" class="choice" type="button">Cancelar</button>
+      </div>
+    </section>
+
+    <div id="status" class="result"><strong>Inicializando.</strong>O retorno dos comandos aparece aqui.</div>
+
+    <section id="resultCard" class="result-card hidden" aria-label="Resultado do comando">
+      <h2 id="resultTitle">Resultado</h2>
+      <p id="resultBody"></p>
+      <img id="resultImage" class="hidden" alt="Card gerado" />
+      <div id="resultActions" class="quick-actions hidden"></div>
+    </section>
+
+    <a id="openBotBtn" class="panel-button hidden" href="https://t.me/tigraoRADIObot?startapp">Abrir pelo bot</a>
+  </main>
 <script>
 (function(){
   "use strict";
   const SESSION_KEY="tr4_public_eqs";
   const BOOT_LINK="https://t.me/tigraoRADIObot?startapp";
-  let tg=null,initData="",apiHeaders={},selectedGroup="",currentGroups=[],trackAvailable=false;
+  const GROUP_COMMANDS={nowp:true,songcharts:true,tcanvas:true,tstory:true,tnow:true};
+  let tg=null,initData="",apiHeaders={},selectedGroup="",currentGroups=[],trackAvailable=false,pendingGroupCommand="";
   function $(id){return document.getElementById(id);}
   function hide(id,shouldHide){const el=$(id);if(!el)return;if(shouldHide)el.classList.add("hidden");else el.classList.remove("hidden");}
   function safeText(v){return String(v==null?"":v);}
   function escapeHtml(v){return safeText(v).replace(/[&<>"']/g,function(ch){switch(ch){case "&":return "&amp;";case "<":return "&lt;";case ">":return "&gt;";case '"':return "&quot;";case "'":return "&#39;";default:return ch;}});}
-  function status(msg,kind){const el=$("status");if(!el)return;el.textContent=msg;el.className="status"+(kind?" "+kind:"");}
   function reportClient(kind,msg,extra){try{fetch("/equalizador/api/client-error",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:String(kind||"player_event").slice(0,60),message:String(msg||"").slice(0,220),extra:String(extra||"").slice(0,220),href:location.pathname,user_agent:navigator.userAgent})}).catch(function(){});}catch(_){}}
   window.onerror=function(message,source,line,col){reportClient("player_window_error",message,String(source||"")+":"+line+":"+col);return false;};
-  window.addEventListener("unhandledrejection",function(ev){const r=ev&&ev.reason?(ev.reason.message||ev.reason):"promise";reportClient("player_unhandledrejection",r,"");});
-  function getStoredSession(){try{return localStorage.getItem(SESSION_KEY)||"";}catch(_){return "";}}
-  function setStoredSession(v){try{if(v)localStorage.setItem(SESSION_KEY,v);else localStorage.removeItem(SESSION_KEY);}catch(_){}}
-  function hasAuth(){return !!(apiHeaders&&Object.keys(apiHeaders).length);}
-  function updatePublishState(){const b=$("publishBtn");if(b)b.disabled=!(hasAuth()&&selectedGroup&&trackAvailable);}
-  async function api(path,opts){opts=opts||{};opts.headers=Object.assign({},apiHeaders,opts.headers||{});const res=await fetch(path,opts);const data=await res.json().catch(function(){return {};});if(!res.ok){const err=new Error(data.detail||data.public_detail||("HTTP "+res.status));err.payload=data;err.status=res.status;throw err;}return data;}
-  function showBotFallback(){hide("botPhoto",true);hide("botPhotoFallback",false);}
-  function showNoAuth(){hide("openBotBtn",false);status("Abra pelo bot no Telegram para carregar sua música.","bad");$("trackTitle").textContent="Abra pelo bot";$("trackArtist").textContent="Depois volte para o Mini App.";$("groups").innerHTML='<div class="status">Sessão Telegram indisponível.</div>';reportClient("player_sem_auth","initData e sessão curta ausentes","");}
-  function setTrack(track){trackAvailable=!!(track&&track.available);if(trackAvailable){const title=track.track_name||"Música";const url=track.spotify_url||"";$("trackTitle").innerHTML=url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener"><b>${escapeHtml(title)}</b></a>`:`<b>${escapeHtml(title)}</b>`;$("trackArtist").innerHTML=`— <i>${escapeHtml(track.artist||"Artista")}</i>`;$("plays").textContent=track.user_plays||0;if(track.cover_url){$("cover").src=track.cover_url;hide("cover",false);hide("coverFallback",true);}else{hide("cover",true);hide("coverFallback",false);}}else{$("trackTitle").textContent="Nada tocando";$("trackArtist").textContent=track&&track.message?track.message:"Conecte Last.fm ou Spotify e tente novamente.";$("plays").textContent="0";hide("cover",true);hide("coverFallback",false);}updatePublishState();}
-  function renderGroups(groups){currentGroups=groups||[];const input=$("search");const q=safeText(input?input.value:"").toLowerCase().trim();const root=$("groups");root.innerHTML="";currentGroups.filter(function(g){return !q||safeText(g.title).toLowerCase().includes(q)||safeText(g.username).toLowerCase().includes(q);}).forEach(function(g){const row=document.createElement("button");row.className="group-row";row.type="button";row.setAttribute("aria-selected",g.ref===selectedGroup?"true":"false");const meta=[g.status||"disponível",g.username?"@"+g.username:"grupo"].filter(Boolean).join(" • ");row.innerHTML='<div><div class="group-title"></div><div class="group-meta"></div></div><div class="chev">›</div>';row.querySelector(".group-title").textContent=g.title||"Grupo";row.querySelector(".group-meta").textContent=meta;row.onclick=function(){selectedGroup=g.ref||"";$("selectedGroup").innerHTML="Grupo: <strong></strong>";$("selectedGroup").querySelector("strong").textContent=g.title||"grupo";status("Grupo selecionado.","ok");renderGroups(currentGroups);updatePublishState();};root.appendChild(row);});if(!root.children.length)root.innerHTML='<div class="status">Nenhum grupo encontrado.</div>';}
-  function renderResult(payload){payload=payload||{};hide("resultCard",false);$("resultTitle").textContent=payload.title||"Resultado";$("resultBody").textContent=payload.text||payload.message||"Sem conteúdo.";if(payload.image_data_url){$("resultImage").src=payload.image_data_url;hide("resultImage",false);}else{hide("resultImage",true);}const actions=$("resultActions");actions.innerHTML="";(payload.actions||[]).forEach(function(a){const b=document.createElement("button");b.type="button";b.textContent=a.label||a.command||"Abrir";b.onclick=function(){runPublicCommand(a.command||"");};actions.appendChild(b);});hide("resultActions",!(payload.actions&&payload.actions.length));$("resultCard").scrollIntoView({behavior:"smooth",block:"start"});}
-  async function loadPlayingPreview(){if(!hasAuth()){showNoAuth();return;}try{status("Carregando música atual.","");const preview=await api("/equalizador/api/public/playing-preview");setTrack(preview||{});status(trackAvailable?"Prévia pronta. Escolha o grupo e publique.":"Sem música atual para publicar.",trackAvailable?"ok":"");}catch(e){reportClient("player_preview_failed",e&&e.message?e.message:"preview_failed",e&&e.status?e.status:"");setTrack({available:false,message:"Não consegui carregar a música agora."});status("Falha ao carregar música.","bad");}}
-  async function runPublicCommand(command){command=safeText(command).replace(/^\//,"").trim().toLowerCase();if(!command)return;if(command==="playing"){await loadPlayingPreview();return;}if(command==="nowp"){$("groups").scrollIntoView({behavior:"smooth",block:"center"});status("Escolha um grupo e toque em Publicar atual.","ok");return;}if(!hasAuth()){showNoAuth();return;}try{status("Executando "+command+" dentro do app.","");let path="/equalizador/api/public/command/"+encodeURIComponent(command);if(command==="songcharts"){if(!selectedGroup){status("Escolha um grupo para ver o ranking.","bad");$("groups").scrollIntoView({behavior:"smooth",block:"center"});return;}path += "?group_ref="+encodeURIComponent(selectedGroup);}const payload=await api(path);renderResult(payload);status("Resultado pronto.","ok");}catch(e){reportClient("player_command_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));renderResult({title:"Falha",text:(e&&e.message)||"Não consegui executar agora."});status("Falha ao executar comando.","bad");}}
-  function bindStaticButtons(){document.querySelectorAll("#commandGrid button[data-command]").forEach(function(btn){btn.onclick=function(){runPublicCommand(btn.getAttribute("data-command")||"");};});}
-  async function bootstrap(){reportClient("player_js_started","script iniciado","");bindStaticButtons();try{tg=window.Telegram&&window.Telegram.WebApp?window.Telegram.WebApp:null;if(tg){try{tg.ready();tg.expand();if(tg.setHeaderColor)tg.setHeaderColor("#11161c");if(tg.setBackgroundColor)tg.setBackgroundColor("#11161c");}catch(inner){reportClient("player_tg_ready_failed",inner&&inner.message?inner.message:"tg_ready","");}initData=tg.initData||"";}const stored=getStoredSession();apiHeaders=initData?{Authorization:"tma "+initData}:(stored?{Authorization:"eqs "+stored}:{});if(!hasAuth()){showNoAuth();return;}hide("openBotBtn",true);status("Validando sessão.","");const me=await api("/equalizador/api/public/me");if(me&&me.sessao&&me.sessao.token){setStoredSession(me.sessao.token);apiHeaders={Authorization:"eqs "+me.sessao.token};}$("botUser").textContent=me.bot_username||"@tigraoRADIObot";if(me.bot_photo_url){$("botPhoto").onerror=showBotFallback;$("botPhoto").src=me.bot_photo_url;hide("botPhoto",false);hide("botPhotoFallback",true);}else showBotFallback();if(me.can_open_equalizador)hide("modBtn",false);else hide("modBtn",true);const home=await api("/equalizador/api/public/home");renderGroups(home.groups||[]);$("stats").textContent=(currentGroups.length||0)+" grupos disponíveis";await loadPlayingPreview();}catch(e){if(e&&(e.status===401||e.status===403)){setStoredSession("");apiHeaders={};showNoAuth();return;}reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:"");status("Não foi possível carregar o player.","bad");showBotFallback();}}
-  const search=$("search");if(search)search.addEventListener("input",function(){renderGroups(currentGroups);});$("refreshBtn").onclick=bootstrap;$("publishBtn").onclick=async function(){if(!hasAuth()){showNoAuth();return;}if(!selectedGroup){status("Escolha um grupo primeiro.","bad");return;}$("publishBtn").disabled=true;status("Publicando pelo bot.","");try{const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})});status(res.message||"Publicado.","ok");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_nowp_failed",e&&e.message?e.message:"nowp_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao publicar.","bad");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}finally{updatePublishState();}};bootstrap();
+  window.addEventListener("unhandledrejection",function(ev){const r=ev&&ev.reason;reportClient("player_unhandledrejection",r&&r.message?r.message:String(r||"rejection"),r&&r.stack?r.stack:"");});
+  function setStoredSession(token){try{if(token)window.localStorage.setItem(SESSION_KEY,token);else window.localStorage.removeItem(SESSION_KEY);}catch(_){}}
+  function getStoredSession(){try{return window.localStorage.getItem(SESSION_KEY)||"";}catch(_){return "";}}
+  function configureTelegram(){tg=window.Telegram&&window.Telegram.WebApp;if(tg){try{tg.ready();tg.expand();}catch(_){}}initData=tg&&tg.initData?tg.initData:"";const stored=getStoredSession();apiHeaders=initData?{Authorization:"tma "+initData}:(stored?{Authorization:"eqs "+stored}:{});}
+  function hasAuth(){return !!(apiHeaders&&apiHeaders.Authorization);}
+  async function api(path,opts){opts=opts||{};opts.headers=Object.assign({},apiHeaders,opts.headers||{});const res=await fetch(path,opts);const data=await res.json().catch(function(){return {};});if(!res.ok){const detail=data.detail||data.public_detail||data.message||("HTTP "+res.status);const err=new Error(typeof detail==="string"?detail:(detail.public_detail||detail.code||"Falha na operação."));err.payload=data;err.status=res.status;throw err;}return data;}
+  function status(msg,kind,title){const el=$("status");if(!el)return;el.className="result"+(kind?" "+kind:"");el.innerHTML="<strong>"+escapeHtml(title||"Status")+"</strong>"+escapeHtml(msg||"");}
+  function showBotFallback(){hide("openBotBtn",false);status("Abra pelo Telegram para validar sua sessão.","bad","Sessão pública");}
+  function renderTrack(track){track=track||{};trackAvailable=!!track.available;const title=trackAvailable?(track.track_name||"Música"):(track.message||"Nada tocando agora");const artist=trackAvailable?(track.artist||"Artista"):(track.diagnostic_code||track.code||"Aguardando música");const url=track.spotify_url||"";$("trackTitle").innerHTML=url?'<a href="'+escapeHtml(url)+'" target="_blank" rel="noreferrer">'+escapeHtml(title)+"</a>":escapeHtml(title);$("trackArtist").textContent=trackAvailable?"— "+artist:artist;$("plays").textContent=String(track.user_plays||0);const cover=$("cover");if(track.cover_url){cover.src=track.cover_url;cover.classList.remove("hidden");}else{cover.removeAttribute("src");cover.classList.add("hidden");}updateCommandState();}
+  function updateCommandState(){document.querySelectorAll("[data-command]").forEach(function(btn){const cmd=btn.getAttribute("data-command")||"";btn.disabled=(!trackAvailable&&cmd!=="weekfm"&&cmd!=="monthfm"&&cmd!=="songcharts"&&cmd!=="tnow");});}
+  function setSelectedGroup(ref){selectedGroup=ref||"";let group=currentGroups.find(function(g){return g.ref===selectedGroup;});$("selectedGroupTitle").textContent=group?group.title:"Escolha um grupo";$("selectedGroupHint").textContent=group?(group.username?"@"+group.username:"Grupo selecionado para publicação."):"Usado apenas quando a função postar no grupo.";renderGroups();}
+  function renderGroups(){const box=$("groups");if(!box)return;if(!currentGroups.length){box.innerHTML='<div class="result">Nenhum grupo disponível.</div>';return;}box.innerHTML=currentGroups.map(function(g){const meta=g.username?"@"+g.username:(g.status||"disponível");return '<button class="group-row" type="button" data-group="'+escapeHtml(g.ref)+'" aria-selected="'+(g.ref===selectedGroup?'true':'false')+'"><span><span class="group-title">'+escapeHtml(g.title||"Grupo")+'</span><span class="group-meta">'+escapeHtml(meta)+'</span></span><span>›</span></button>';}).join("");box.querySelectorAll("[data-group]").forEach(function(btn){btn.onclick=function(){setSelectedGroup(btn.getAttribute("data-group")||"");hide("groups",true);hide("publishChoices",false);};});}
+  function requireGroup(command){pendingGroupCommand=command;hide("publishPanel",false);hide("publishChoices",false);status("Escolha o grupo e confirme para continuar.","","Grupo necessário");}
+  function renderResult(data){data=data||{};const card=$("resultCard"),body=$("resultBody"),img=$("resultImage"),actions=$("resultActions");$("resultTitle").textContent=data.title||"Resultado";body.textContent=data.text||data.message||"Comando concluído.";const image=data.image_data_url||data.image_url||"";if(image){img.src=image;img.classList.remove("hidden");}else{img.removeAttribute("src");img.classList.add("hidden");}actions.innerHTML="";if(Array.isArray(data.actions)&&data.actions.length){data.actions.slice(0,4).forEach(function(action){const b=document.createElement("button");b.type="button";b.textContent=action.label||"Abrir";b.onclick=function(){if(action.command)runPublicCommand(String(action.command).replace(/^[/]/,""));};actions.appendChild(b);});actions.classList.remove("hidden");}else{actions.classList.add("hidden");}card.classList.remove("hidden");status("Resultado atualizado dentro do Mini App.","ok","Resultado pronto.");}
+  async function runPublicCommand(command){command=String(command||"").replace(/^[/]/,"").toLowerCase();if(!hasAuth()){showBotFallback();return;}if(GROUP_COMMANDS[command]&&!selectedGroup){requireGroup(command);return;}try{status("Executando "+command+".","","Comando");if(command==="nowp"){const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})});renderResult({title:"Publicar",text:res.message||"Publicado."});if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}const params=new URLSearchParams();if(selectedGroup)params.set("group_ref",selectedGroup);const res=await api("/equalizador/api/public/command/"+encodeURIComponent(command)+(params.toString()?"?"+params.toString():""));if(command==="playing"){renderTrack(res);renderResult({title:"Tocando",text:(res.track_name||"Música")+" — "+(res.artist||"Artista"),image_url:res.cover_url||""});}else{renderResult(res);}if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_command_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao executar comando.","bad","Falha");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
+  async function bootstrap(){configureTelegram();reportClient("player_js_started","ok","phase137");if(!hasAuth()){showBotFallback();renderTrack({available:false,message:"Abra pelo Telegram."});return;}try{const me=await api("/equalizador/api/public/me");if(me&&me.sessao) setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:[];renderTrack(home.track||{});renderGroups();if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);status("Escolha uma função na matriz.","ok","Pronto.");}catch(e){reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:"");showBotFallback();renderTrack({available:false,message:"Não foi possível carregar o player."});}}
+  document.querySelectorAll("[data-command]").forEach(function(btn){btn.addEventListener("click",function(){runPublicCommand(btn.getAttribute("data-command")||"");});});
+  $("toggleGroupsBtn").onclick=function(){hide("groups",!$("groups").classList.contains("hidden"));};
+  $("publishConfirm").onclick=function(){if(!pendingGroupCommand){pendingGroupCommand="nowp";}const cmd=pendingGroupCommand;pendingGroupCommand="";hide("publishChoices",true);runPublicCommand(cmd);};
+  $("publishCancel").onclick=function(){pendingGroupCommand="";hide("publishChoices",true);hide("publishPanel",true);status("Publicação cancelada.","","Cancelado");};
+  bootstrap();
 })();
 </script>
 </body>
@@ -7931,12 +7935,15 @@ async def _public_track_for_user(user_id: int) -> dict[str, object]:
 def _public_music_commands() -> list[dict[str, str]]:
     """Atalhos visuais para comandos musicais já existentes no bot."""
     return [
-        {"label": "Tocando agora", "command": "/playing", "hint": "Prévia da música atual"},
+        {"label": "Tocando", "command": "/playing", "hint": "Prévia da música atual"},
         {"label": "Publicar", "command": "/nowp", "hint": "Publicar no grupo escolhido"},
-        {"label": "Meu perfil", "command": "/myself", "hint": "Seu cartão musical"},
         {"label": "Semana", "command": "/weekfm", "hint": "Resumo semanal"},
         {"label": "Mês", "command": "/monthfm", "hint": "Resumo mensal"},
-        {"label": "Ranking", "command": "/songcharts", "hint": "Top músicas"},
+        {"label": "Ranking", "command": "/songcharts", "hint": "Top músicas do grupo"},
+        {"label": "Canvas", "command": "/tcanvas", "hint": "Prévia/publicação via bot"},
+        {"label": "Story", "command": "/tstory", "hint": "Prévia/publicação via bot"},
+        {"label": "Letra", "command": "/tly", "hint": "Trecho da letra"},
+        {"label": "Mosaico", "command": "/tnow", "hint": "Mosaico do grupo"},
     ]
 
 
@@ -7981,7 +7988,7 @@ async def public_music_diagnostico(authorization: str | None = Header(default=No
         "ok": True,
         "rota": "/equalizador/player",
         "autenticacao": "telegram_initdata_ou_sessao_curta",
-        "comandos": ["/playing", "/nowp", "/myself", "/weekfm", "/monthfm", "/songcharts"],
+        "comandos": ["/playing", "/nowp", "/weekfm", "/monthfm", "/songcharts", "/tcanvas", "/tstory", "/tly", "/tnow"],
         "menu_fixo": True,
         "consulta_grupos_lenta": False,
         "musica": {"available": False, "code": "nao_testado"},
@@ -8088,12 +8095,15 @@ async def public_music_home(authorization: str | None = Header(default=None)) ->
         "track": await _public_playing_preview_for_identity(identity),
         "groups": _public_cached_groups(),
         "atalhos": [
-            {"label": "Tocando agora", "command": "/playing", "kind": "music"},
-            {"label": "Publicar atual", "command": "/nowp", "kind": "publish"},
-            {"label": "Meu extrato", "command": "/myself", "kind": "stats"},
+            {"label": "Tocando", "command": "/playing", "kind": "music"},
+            {"label": "Publicar", "command": "/nowp", "kind": "publish"},
             {"label": "Semana", "command": "/weekfm", "kind": "stats"},
             {"label": "Mês", "command": "/monthfm", "kind": "stats"},
             {"label": "Ranking", "command": "/songcharts", "kind": "stats"},
+            {"label": "Canvas", "command": "/tcanvas", "kind": "media"},
+            {"label": "Story", "command": "/tstory", "kind": "media"},
+            {"label": "Letra", "command": "/tly", "kind": "text"},
+            {"label": "Mosaico", "command": "/tnow", "kind": "media"},
         ],
     }
 
@@ -8229,6 +8239,65 @@ async def public_music_command(
         except Exception:
             logger.exception("PUBLIC_PLAYER_SONGCHARTS_FAILED chat_id=%s user=%s", chat_id, identity.user_id)
             raise HTTPException(status_code=409, detail="Não consegui gerar o ranking agora.")
+
+    if command == "tcanvas" or command == "tstory":
+        preview = await _public_playing_preview_for_identity(identity)
+        if not preview.get("available"):
+            return _public_text_result(
+                "Canvas" if command == "tcanvas" else "Story",
+                str(preview.get("message") or "Nada tocando agora."),
+            )
+        title = "Canvas" if command == "tcanvas" else "Story"
+        detail = (
+            "Prévia local do Canvas preparada no Mini App. Quando houver publicação em grupo, o backend deve enviar a mídia pelo bot."
+            if command == "tcanvas"
+            else "Prévia local do Story preparada no Mini App. Mídia pesada deve ser publicada pelo backend/Bot API."
+        )
+        track_line = f"{preview.get('track_name') or 'Música'} — {preview.get('artist') or 'Artista'}"
+        return _public_text_result(
+            title,
+            f"{track_line}\n\n{detail}",
+            image_url=str(preview.get("cover_url") or ""),
+            requires_group=True,
+            publish_via_backend=True,
+        )
+
+    if command == "tly":
+        try:
+            track = await music_service.get_current_or_last_played(int(identity.user_id))
+        except Exception:
+            track = None
+        if not track:
+            return _public_text_result("Letra", "Nada tocando agora.")
+        artist_raw = str(track.get("artist") or "").strip()
+        track_name_raw = str(track.get("track_name") or "").strip()
+        lyric_snippet = ""
+        if artist_raw and track_name_raw:
+            try:
+                from app.services.lyrics import lyrics_service
+                lyric_snippet = str(await lyrics_service.get_snippet(artist_raw, track_name_raw) or "").strip()
+            except Exception:
+                logger.exception("PUBLIC_PLAYER_TLY_LYRICS_FAILED artist=%s track=%s", artist_raw, track_name_raw)
+        text_value = f"{track_name_raw or 'Música'} — {artist_raw or 'Artista'}"
+        if lyric_snippet:
+            text_value += f"\n\n{lyric_snippet}"
+        else:
+            text_value += "\n\nNão encontrei um trecho de letra agora."
+        return _public_text_result(
+            "Letra",
+            text_value,
+            image_url=str(track.get("album_image_url") or track.get("cover_url") or "")[:500],
+        )
+
+    if command == "tnow":
+        group = _resolve_public_group(str(group_ref or "")) if group_ref else None
+        group_name = str((group or {}).get("title") or "grupo selecionado" if group_ref else "contexto do usuário")[:80]
+        return _public_text_result(
+            "Mosaico",
+            "O Mosaico reaproveita o comando tnow. Para evitar payload pesado no WebView, a publicação final deve ser feita pelo backend/Bot API no " + group_name + ".",
+            requires_group=bool(group_ref),
+            publish_via_backend=True,
+        )
 
     raise HTTPException(status_code=404, detail="Comando indisponível no Mini App.")
 
