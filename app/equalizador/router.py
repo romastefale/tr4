@@ -186,7 +186,7 @@ _EQUALIZADOR_HTML = """<!doctype html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Equalizador</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script async src="https://telegram.org/js/telegram-web-app.js" onload="window.__TR4_READY_PANEL&&window.__TR4_READY_PANEL('telegram_script_load')" onerror="window.__TR4_PANEL_MARK&&window.__TR4_PANEL_MARK('panel_telegram_script_error','falha ao carregar telegram-web-app.js','')"></script>
   <script>
     (function () {
       function report(kind, message, source, line, col, extra) {
@@ -209,6 +209,57 @@ _EQUALIZADOR_HTML = """<!doctype html>
         } catch (_) {}
       }
       window.__eqClientError = report;
+      window.__TR4_PANEL_BOOT = window.__TR4_PANEL_BOOT || { headStarted: true, bottomStarted: false, marks: [] };
+      function visible(kind, title, detail) {
+        try {
+          var boot = window.__TR4_PANEL_BOOT = window.__TR4_PANEL_BOOT || { marks: [] };
+          boot.visibleKind = kind;
+          var debug = document.getElementById("panel_boot_debug");
+          if (debug) debug.textContent = String(title || kind || "Inicialização") + (detail ? ": " + String(detail) : "");
+          var loading = document.getElementById("loading");
+          if (loading) loading.classList.remove("hidden");
+        } catch (_) {}
+      }
+      function mark(kind, message, extra) {
+        try {
+          var boot = window.__TR4_PANEL_BOOT = window.__TR4_PANEL_BOOT || { marks: [] };
+          boot.marks = boot.marks || [];
+          boot.marks.push({ kind: String(kind || "panel_mark"), message: String(message || ""), time: Date.now() });
+          report(kind, message || "ok", "equalizador_panel", 0, 0, extra || "");
+          var debug = document.getElementById("panel_boot_debug");
+          if (debug) debug.textContent = String(kind || "panel_mark") + (message ? ": " + String(message) : "");
+        } catch (_) {}
+      }
+      function readyPanel(origin) {
+        try {
+          var tg = window.Telegram && window.Telegram.WebApp;
+          if (!tg || !tg.ready) return false;
+          tg.ready();
+          if (tg.expand) tg.expand();
+          mark("panel_telegram_ready", origin || "early", "");
+          return true;
+        } catch (error) {
+          mark("panel_telegram_ready_failed", error && error.message ? error.message : "ready_failed", origin || "");
+          return false;
+        }
+      }
+      window.__TR4_PANEL_VISIBLE = visible;
+      window.__TR4_PANEL_MARK = mark;
+      window.__TR4_READY_PANEL = readyPanel;
+      mark("panel_head_js_started", "ok", "phase137_4");
+      document.addEventListener("DOMContentLoaded", function () {
+        mark("panel_dom_content_loaded", "ok", "");
+        readyPanel("dom");
+        setTimeout(function () {
+          var boot = window.__TR4_PANEL_BOOT || {};
+          if (!boot.bottomStarted) visible("panel_bottom_script_not_started", "Erro de inicialização", "O HTML abriu, mas o JavaScript principal do painel não iniciou.");
+        }, 2500);
+      });
+      setTimeout(function () { readyPanel("timer_early"); }, 150);
+      setTimeout(function () {
+        var tg = window.Telegram && window.Telegram.WebApp;
+        if (!tg) mark("panel_telegram_object_missing", "Telegram.WebApp ausente após 1.2s", "");
+      }, 1200);
       window.addEventListener("error", function (event) {
         var err = event.error || null;
         var stack = err && err.stack ? err.stack : "";
@@ -1315,10 +1366,12 @@ _EQUALIZADOR_HTML = """<!doctype html>
     <section id="loading" class="card">
       <h1>Equalizador</h1>
       <p class="muted">Carregando acesso…</p>
+      <p id="panel_boot_debug" class="muted small">Inicializando painel.</p>
     </section>
     <section id="denied" class="card hidden">
       <h1>Equalizador</h1>
       <p>Acesso indisponível.</p>
+      <p id="denied_detail" class="muted small">Abra pelo Telegram ou aguarde a recuperação da sessão local.</p>
     </section>
     <section id="app" class="card hidden">
       <div class="top">
@@ -2088,6 +2141,16 @@ frase temporária"></textarea>
   </main>
   <script>
     (function () {
+      window.__TR4_PANEL_BOOT = window.__TR4_PANEL_BOOT || {};
+      window.__TR4_PANEL_BOOT.bottomStarted = true;
+      function markPanel(kind, message, extra) {
+        try {
+          if (window.__TR4_PANEL_MARK) window.__TR4_PANEL_MARK(kind, message || "ok", extra || "");
+          else if (window.__eqClientError) window.__eqClientError(kind, message || "ok", "equalizador_panel", 0, 0, extra || "");
+        } catch (_) {}
+      }
+      markPanel("panel_js_started", "ok", "phase137_4");
+      try { if (window.__TR4_READY_PANEL) window.__TR4_READY_PANEL("bottom_start"); } catch (_) {}
 
       // Fase 54.1: Equalizador em janelas com contraste reforçado.
       // Compatibilidade de testes antigos: Afinando acesso… · Configuração do administrador principal · Assistente de configuração · Gerar Raw Editor · Raw Editor final · Ações permanecem bloqueadas até confirmação do bot · Lista de administração
@@ -2113,6 +2176,19 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
   let publicApiHeaders = initData ? { Authorization: "tma " + initData } : (storedPublicSession ? { Authorization: "eqs " + storedPublicSession } : {});
   const headers = publicApiHeaders;
       const SESSION_KEY = "tr4_equalizador_eqs";
+      const STATE_KEY = "tr4_equalizador_state_v1";
+      const PANEL_FETCH_TIMEOUT_MS = 8000;
+      const getStoredPanelState = () => {
+        try { return JSON.parse(localStorage.getItem(STATE_KEY) || "{}"); }
+        catch (_) { return {}; }
+      };
+      const rememberPanelState = (patch) => {
+        try {
+          const current = getStoredPanelState();
+          const next = Object.assign({}, current || {}, patch || {}, { updated_at: Date.now() });
+          localStorage.setItem(STATE_KEY, JSON.stringify(next));
+        } catch (_) {}
+      };
       const reportClient = (kind, message, extra) => {
         try { if (window.__eqClientError) window.__eqClientError(kind, message, "equalizador", 0, 0, extra || ""); } catch (_) {}
       };
@@ -2126,13 +2202,20 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         catch (error) { reportException(kind, error); toast("Falha na interface. Detalhe registrado no log.", "bad"); throw error; }
       };
       const getStoredSession = () => {
-        try { return String(sessionStorage.getItem(SESSION_KEY) || localStorage.getItem("tr4_public_eqs") || "").trim(); } catch (_) { return ""; }
+        try { return String(sessionStorage.getItem(SESSION_KEY) || localStorage.getItem("tr4_public_eqs") || localStorage.getItem(SESSION_KEY) || "").trim(); } catch (_) { return ""; }
       };
       const setStoredSession = (token) => {
         try {
           const value = String(token || "").trim();
-          if (value) sessionStorage.setItem(SESSION_KEY, value);
-          else sessionStorage.removeItem(SESSION_KEY);
+          if (value) {
+            sessionStorage.setItem(SESSION_KEY, value);
+            localStorage.setItem(SESSION_KEY, value);
+            localStorage.setItem("tr4_public_eqs", value);
+          } else {
+            sessionStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem("tr4_public_eqs");
+          }
         } catch (_) {}
       };
       let apiHeaders = null;
@@ -2656,17 +2739,28 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         else if (level === "warn") haptic("notification", "warning");
         setTimeout(() => el.classList.add("hidden"), 5200);
       };
+      const fetchWithTimeout = async (url, options, ms) => {
+        const timeoutMs = Number(ms || PANEL_FETCH_TIMEOUT_MS || 8000);
+        if (!window.AbortController) return fetch(url, options || {});
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetch(url, Object.assign({}, options || {}, { signal: controller.signal }));
+        } finally {
+          clearTimeout(timer);
+        }
+      };
       const api = async (url, options) => {
         const requestOptions = Object.assign({ headers: apiHeaders }, options || {});
-        let response = await fetch(url, requestOptions);
+        let response = await fetchWithTimeout(url, requestOptions);
         if (response.status === 401 && bootstrapHeaders && apiHeaders && apiHeaders.Authorization && apiHeaders.Authorization.startsWith("eqs ")) {
           try {
-            const renew = await fetch("/equalizador/api/me", { headers: bootstrapHeaders });
+            const renew = await fetchWithTimeout("/equalizador/api/me", { headers: bootstrapHeaders });
             if (renew.ok) {
               const me = await renew.json();
               const sessionToken = me.sessao && me.sessao.token ? me.sessao.token : "";
               apiHeaders = sessionToken ? { "Authorization": "eqs " + sessionToken } : bootstrapHeaders;
-              response = await fetch(url, Object.assign({}, requestOptions, { headers: Object.assign({}, requestOptions.headers || {}, apiHeaders) }));
+              response = await fetchWithTimeout(url, Object.assign({}, requestOptions, { headers: Object.assign({}, requestOptions.headers || {}, apiHeaders) }));
             }
           } catch (_) {}
         }
@@ -2771,6 +2865,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         const view = document.getElementById(id);
         if (view) view.classList.remove("hidden");
         currentViewId = id;
+        rememberPanelState({ view_id: id });
         setDetailMode(id);
         document.querySelectorAll("button.nav").forEach((button) => button.classList.toggle("active", button.dataset.view === id));
         const detailNav = document.getElementById("detail_nav");
@@ -3146,6 +3241,7 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       }
       async function selectPalco(palco, button) {
         currentPalco = palco;
+        rememberPanelState({ palco_ref: String(palco && palco.grp_ref || "") });
         document.body.classList.add("group-selected");
         const headerSelect = document.getElementById("palco_header_select");
         if (headerSelect && headerSelect.value !== palco.grp_ref) headerSelect.value = palco.grp_ref;
@@ -5240,8 +5336,19 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
         show("denied");
         return;
       }
-      fetch("/equalizador/api/me", { headers: apiHeaders })
-        .then((response) => response.ok ? response.json() : Promise.reject(new Error("denied")))
+      markPanel("panel_ping_started", "ok", "");
+      fetchWithTimeout("/equalizador/api/public/ping?panel=1&ts=" + Date.now(), {}, 3500)
+        .then((response) => markPanel("panel_ping_done", String(response.status), ""))
+        .catch((error) => markPanel("panel_ping_failed", error && error.message ? error.message : "ping_failed", ""));
+      markPanel("panel_api_me_started", "ok", "");
+      fetchWithTimeout("/equalizador/api/me", { headers: apiHeaders })
+        .then((response) => {
+          markPanel("panel_api_me_done", String(response.status), "");
+          if (response.ok) return response.json();
+          const err = new Error("denied");
+          err.status = response.status;
+          throw err;
+        })
         .then((me) => {
           const sessionToken = me.sessao && me.sessao.token ? me.sessao.token : "";
           if (sessionToken) setStoredSession(sessionToken);
@@ -5256,20 +5363,34 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
           document.getElementById("ui_ref").textContent = me.ui_ref || "";
           aplicarPerfil(me);
           return Promise.all([
-            fetch("/equalizador/api/palcos", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { palcos: [] }),
-            fetch("/equalizador/api/canais", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { canais: [] }),
-            fetch("/equalizador/api/bot/resumo", { headers: apiHeaders }).then((r) => r.ok ? r.json() : null)
+            fetchWithTimeout("/equalizador/api/palcos", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { palcos: [] }),
+            fetchWithTimeout("/equalizador/api/canais", { headers: apiHeaders }).then((r) => r.ok ? r.json() : { canais: [] }),
+            fetchWithTimeout("/equalizador/api/bot/resumo", { headers: apiHeaders }).then((r) => r.ok ? r.json() : null)
           ]);
         })
         .then(([palcosData, canaisData, botData]) => {
+          markPanel("panel_bootstrap_data_done", "ok", "");
           renderCanais(canaisData.canais || []);
           renderPalcos(palcosData.palcos || []);
           if (botData) renderBotResumo(botData);
           show("app");
+          const savedState = getStoredPanelState();
+          const savedPalcoRef = String(savedState && savedState.palco_ref || "").trim();
+          const savedViewId = String(savedState && savedState.view_id || "").trim();
+          const restoredPalco = savedPalcoRef ? (palcosDisponiveis || []).find((item) => String(item.grp_ref || "") === savedPalcoRef) : null;
+          if (restoredPalco) {
+            selectPalco(restoredPalco, null)
+              .then(() => { if (savedViewId) openView(savedViewId); })
+              .catch((error) => markPanel("panel_state_restore_failed", error && error.message ? error.message : "restore_failed", ""));
+          }
+          markPanel("panel_bootstrap_done", "ok", "");
         })
         .catch((error) => {
-          setStoredSession("");
-          reportClient("bootstrap_failed", error && error.message ? error.message : "Falha ao iniciar painel.");
+          const status = Number(error && error.status || 0);
+          if (status === 401 || status === 403) setStoredSession("");
+          reportClient("panel_bootstrap_failed", error && error.message ? error.message : "Falha ao iniciar painel.", status ? String(status) : "");
+          const detail = document.getElementById("denied_detail");
+          if (detail) detail.textContent = status ? "Sessão recusada pelo backend: " + status : "Falha ao iniciar painel. A sessão local foi preservada para nova tentativa.";
           show("denied");
         });
     })();
@@ -7666,12 +7787,57 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>tigraoRADIO · player</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script type="application/javascript">
+  (function(){
+    "use strict";
+    var boot={phase:"137.3",t0:Date.now(),bottomStarted:false,readySent:false};
+    window.__TR4_PLAYER_BOOT=boot;
+    function clean(v,n){return String(v==null?"":v).replace(new RegExp("[\\n\\r]","g")," ").slice(0,n||220);}
+    function mark(kind,message,extra){
+      try{
+        var payload={kind:clean(kind||"player_boot",60),message:clean(message||"",220),extra:clean(extra||"",240),href:location.pathname+location.search,user_agent:navigator.userAgent,source:"player_head",phase:"137.3",age_ms:String(Date.now()-boot.t0)};
+        var body=JSON.stringify(payload);
+        if(navigator.sendBeacon){try{var blob=new Blob([body],{type:"application/json"});if(navigator.sendBeacon("/equalizador/api/client-error",blob))return;}catch(_){} }
+        fetch("/equalizador/api/client-error",{method:"POST",headers:{"Content-Type":"application/json"},body:body,keepalive:true}).catch(function(){});
+      }catch(_){}
+    }
+    function tryReady(stage){
+      try{
+        var tg=window.Telegram&&window.Telegram.WebApp;
+        if(tg&&typeof tg.ready==="function"){
+          tg.ready();boot.readySent=true;
+          try{if(typeof tg.expand==="function")tg.expand();}catch(_){}
+          mark("player_telegram_ready",stage||"ready",String(tg.platform||""));return true;
+        }
+      }catch(e){mark("player_telegram_ready_failed",e&&e.message?e.message:"ready_failed",stage||"");}
+      return false;
+    }
+    function visible(kind,title,msg){
+      try{
+        var titleEl=document.getElementById("trackTitle"), artistEl=document.getElementById("trackArtist"), statusEl=document.getElementById("status");
+        if(titleEl)titleEl.textContent=title||"Diagnóstico";
+        if(artistEl)artistEl.textContent=msg||"Aguardando inicialização do Mini App.";
+        if(statusEl)statusEl.innerHTML="<strong>"+(title||"Diagnóstico")+"</strong>"+(msg||"");
+        mark(kind||"player_visible_diagnostic",title||"",msg||"");
+      }catch(_){}
+    }
+    window.__TR4_MARK_PLAYER=mark;
+    window.__TR4_READY_PLAYER=tryReady;
+    window.__TR4_VISIBLE_PLAYER=visible;
+    mark("player_head_js_started","ok","script inicial não bloqueante");
+    window.addEventListener("error",function(ev){mark("player_global_error",ev&&ev.message?ev.message:"error",(ev&&ev.filename?ev.filename:"")+":"+(ev&&ev.lineno?ev.lineno:0)+":"+(ev&&ev.colno?ev.colno:0));});
+    window.addEventListener("unhandledrejection",function(ev){var r=ev&&ev.reason;mark("player_global_rejection",r&&r.message?r.message:String(r||"rejection"),r&&r.stack?r.stack:"");});
+    document.addEventListener("DOMContentLoaded",function(){mark("player_dom_content_loaded","ok","");tryReady("dom");setTimeout(function(){if(!boot.bottomStarted)visible("player_bottom_script_not_started","Erro de inicialização","O HTML abriu, mas o JavaScript principal do player não iniciou.");},2500);});
+    setTimeout(function(){if(!boot.readySent&&!tryReady("timer_1200"))mark("player_telegram_object_missing","Telegram.WebApp ausente após 1.2s","");},1200);
+  })();
+  </script>
+  <script async src="https://telegram.org/js/telegram-web-app.js" onload="window.__TR4_READY_PLAYER&&window.__TR4_READY_PLAYER('telegram_script_load')" onerror="window.__TR4_MARK_PLAYER&&window.__TR4_MARK_PLAYER('player_telegram_script_error','falha ao carregar telegram-web-app.js','')"></script>
   <style>
     :root{color-scheme:dark;--bg:var(--tg-theme-bg-color,#0d1217);--surface:rgba(18,18,18,.62);--surface2:#22313f;--line:rgba(255,255,255,.10);--text:var(--tg-theme-text-color,#f6f7fb);--muted:var(--tg-theme-hint-color,rgba(246,247,251,.62));--green:#45e0a5;--blue:var(--tg-theme-button-color,#3478f6);--danger:#ff9d9d;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     *{box-sizing:border-box}html,body{margin:0;min-height:100%}body{display:flex;justify-content:center;background:radial-gradient(circle at 22% 0%,rgba(52,120,246,.18),transparent 34%),radial-gradient(circle at 90% 7%,rgba(69,224,165,.12),transparent 32%),var(--bg);color:var(--text)}button,input{font:inherit}.hidden{display:none!important}.phone{width:min(100%,430px);min-height:100vh;padding:calc(12px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 220px),#101417;display:block}
     .now-hero{position:relative;min-height:345px;border-radius:30px;overflow:hidden;background:#101010;border:1px solid var(--line);box-shadow:0 24px 70px rgba(0,0,0,.42);margin-bottom:14px}.now-hero__cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(1.02);opacity:1}.now-hero__cover.hidden{display:block!important;opacity:0}.now-hero__shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.08) 0%,rgba(0,0,0,.30) 44%,rgba(0,0,0,.90) 100%),radial-gradient(circle at 18% 22%,rgba(69,224,165,.25),transparent 34%),radial-gradient(circle at 88% 0%,rgba(52,120,246,.20),transparent 38%)}.brand{appearance:none;cursor:pointer;position:absolute;top:14px;right:14px;z-index:2;display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border-radius:999px;background:rgba(9,14,18,.58);border:1px solid rgba(255,255,255,.10);box-shadow:0 14px 32px rgba(0,0,0,.25);backdrop-filter:blur(16px);color:#eafff6;font-size:14px;font-weight:950;letter-spacing:-.03em}.brand span{color:var(--green)}.brand.loading{opacity:.72}.brand.loading strong:after{content:"";display:inline-block;width:8px;height:8px;margin-left:6px;border-radius:50%;background:var(--green);animation:pulse 1s infinite}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}.now-hero__body{position:absolute;left:20px;right:20px;bottom:20px;z-index:2}.eyebrow{margin:0 0 8px;color:var(--green);font-size:10px;font-weight:950;letter-spacing:.20em}.track-title{margin:0;color:#fff;font-size:clamp(24px,8.5vw,39px);line-height:1.02;letter-spacing:-.045em;text-transform:uppercase;text-shadow:0 12px 30px rgba(0,0,0,.42);overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;max-height:120px;overflow:hidden}.track-title.len-medium{font-size:clamp(22px,7.5vw,34px)}.track-title.len-long{font-size:clamp(20px,6.7vw,30px);line-height:1.06;letter-spacing:-.04em}.track-title.len-xlong{font-size:clamp(18px,5.8vw,26px);line-height:1.08;letter-spacing:-.035em;-webkit-line-clamp:4}.track-title a{color:inherit;text-decoration:none}.track-artist{margin:10px 0 0;color:rgba(255,255,255,.76);font-size:13px;font-weight:620;line-height:1.2;overflow-wrap:anywhere}.now-user{margin:16px 0 0;color:var(--green);font-size:13px;line-height:1.15;font-weight:950}
     .command-area,.publish-panel,.result-card{padding:14px;border-radius:26px;background:rgba(18,18,18,.60);border:1px solid rgba(255,255,255,.08);margin-bottom:12px}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 11px}.section-title h2,.publish-panel h2{margin:0;font-size:15px;color:rgba(255,255,255,.92);letter-spacing:-.02em}.section-title span{color:var(--muted);font-size:12px}.command-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.cmd{appearance:none;min-height:64px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:#22313f;color:#fff;display:grid;place-items:center;text-align:center;padding:10px;font-weight:950;font-size:14px;letter-spacing:-.02em;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);cursor:pointer}.cmd.primary{background:var(--blue)}.cmd:disabled{opacity:.48}.panel-button{display:block;min-width:140px;min-height:44px;margin:13px auto 0;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.10);color:#fff;font-weight:950;text-decoration:none;text-align:center;padding:11px 20px}.publish-panel h2{margin-bottom:10px}.group-compact{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:10px;border-radius:19px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075)}.group-compact strong{display:block;font-size:13px;line-height:1.1}.group-compact span{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.2}.select-group,.choice{min-height:42px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;padding:0 14px;font-weight:850}.choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.choice{min-height:48px;border-radius:16px;background:#22313f;font-weight:900}.choice.primary{background:var(--blue)}.group-list{max-height:260px;overflow:auto;border-radius:18px;margin-top:10px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.035)}.group-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:0;border-top:1px solid var(--line);background:transparent;color:#fff;text-align:left}.group-row:first-child{border-top:0}.group-row[aria-selected="true"]{background:rgba(52,120,246,.18)}.group-title{font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-meta{color:var(--muted);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.result{min-height:54px;padding:14px 15px;border-radius:19px;border:1px solid rgba(69,224,165,.25);background:rgba(69,224,165,.055);color:#bff7df;font-size:14px;line-height:1.35;margin-bottom:12px;overflow-wrap:anywhere}.result strong{display:block;color:#eafff6;font-size:15px;margin-bottom:4px}.result.bad{color:var(--danger);border-color:rgba(248,113,113,.24);background:rgba(248,113,113,.065)}.result-card h2{margin:0 0 8px;font-size:22px;letter-spacing:-.04em}.result-card p{margin:6px 0;color:rgba(255,255,255,.80);line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}.result-card img{display:block;width:100%;height:auto;object-fit:contain;margin-top:10px;border-radius:18px;border:1px solid rgba(255,255,255,.08)}.result-image-link{display:block}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.quick-actions button{min-height:46px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:#22313f;color:#fff;font-weight:850}
+    .boot-debug{display:block;margin-top:8px;color:rgba(246,247,251,.58);font-size:11px;line-height:1.35;word-break:break-word}
     @media(max-width:370px){.phone{padding-left:10px;padding-right:10px}.now-hero{min-height:320px;border-radius:26px}.now-hero__body{left:17px;right:17px;bottom:17px}.track-artist{font-size:12px}.now-user{font-size:12px}.cmd{min-height:58px;font-size:13px;border-radius:16px}.command-grid{gap:7px}}
   </style>
 </head>
@@ -7718,7 +7884,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       </div>
     </section>
 
-    <div id="status" class="result"><strong>Inicializando.</strong>O retorno dos comandos aparece aqui.</div>
+    <div id="status" class="result"><strong>Inicializando.</strong>O retorno dos comandos aparece aqui.<span id="bootDebug" class="boot-debug">HTML servido. JavaScript de diagnóstico inicializando.</span></div>
 
     <section id="resultCard" class="result-card hidden" aria-label="Resultado do comando">
       <h2 id="resultTitle">Resultado</h2>
@@ -7742,16 +7908,18 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function hide(id,shouldHide){const el=$(id);if(!el)return;if(shouldHide)el.classList.add("hidden");else el.classList.remove("hidden");}
   function safeText(v){return String(v==null?"":v);}
   function escapeHtml(v){return safeText(v).replace(/[&<>"']/g,function(ch){switch(ch){case "&":return "&amp;";case "<":return "&lt;";case ">":return "&gt;";case '"':return "&quot;";case "'":return "&#39;";default:return ch;}});}
-  function reportClient(kind,msg,extra){try{fetch("/equalizador/api/client-error",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:String(kind||"player_event").slice(0,60),message:String(msg||"").slice(0,220),extra:String(extra||"").slice(0,220),href:location.pathname,user_agent:navigator.userAgent})}).catch(function(){});}catch(_){} }
+  function reportClient(kind,msg,extra){try{if(window.__TR4_MARK_PLAYER){window.__TR4_MARK_PLAYER(kind,msg,extra);return;}fetch("/equalizador/api/client-error",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:String(kind||"player_event").slice(0,60),message:String(msg||"").slice(0,220),extra:String(extra||"").slice(0,240),href:location.pathname+location.search,user_agent:navigator.userAgent,source:"player_body",phase:"137.3"}),keepalive:true}).catch(function(){});}catch(_){} }
   window.onerror=function(message,source,line,col){reportClient("player_window_error",message,String(source||"")+":"+line+":"+col);return false;};
   window.addEventListener("unhandledrejection",function(ev){const r=ev&&ev.reason;reportClient("player_unhandledrejection",r&&r.message?r.message:String(r||"rejection"),r&&r.stack?r.stack:"");});
   function sessionToken(value){if(!value)return"";if(typeof value==="string")return value;return value.token?String(value.token):"";}
   function setStoredSession(value){const token=sessionToken(value);try{if(token)window.localStorage.setItem(SESSION_KEY,token);else window.localStorage.removeItem(SESSION_KEY);}catch(_){}try{if(token)window.sessionStorage.setItem(PANEL_SESSION_KEY,token);else window.sessionStorage.removeItem(PANEL_SESSION_KEY);}catch(_){}}
   function getStoredSession(){try{return window.localStorage.getItem(SESSION_KEY)||window.sessionStorage.getItem(PANEL_SESSION_KEY)||"";}catch(_){return "";} }
-  function configureTelegram(){tg=window.Telegram&&window.Telegram.WebApp;if(tg){try{tg.ready();tg.expand();}catch(_){}}initData=tg&&tg.initData?tg.initData:"";const stored=getStoredSession();apiHeaders=initData?{Authorization:"tma "+initData}:(stored?{Authorization:"eqs "+stored}:{});}
+  function configureTelegram(){tg=window.Telegram&&window.Telegram.WebApp;if(tg){try{if(window.__TR4_READY_PLAYER)window.__TR4_READY_PLAYER("configure");else{tg.ready();tg.expand();}}catch(e){reportClient("player_ready_failed",e&&e.message?e.message:"ready_failed","");}}initData=tg&&tg.initData?tg.initData:"";const stored=getStoredSession();apiHeaders=initData?{Authorization:"tma "+initData}:(stored?{Authorization:"eqs "+stored}:{});}
   function hasAuth(){return !!(apiHeaders&&apiHeaders.Authorization);}
-  async function api(path,opts){opts=opts||{};opts.headers=Object.assign({},apiHeaders,opts.headers||{});const res=await fetch(path,opts);const data=await res.json().catch(function(){return {};});if(!res.ok){const detail=data.detail||data.public_detail||data.message||("HTTP "+res.status);const err=new Error(typeof detail==="string"?detail:(detail.public_detail||detail.code||"Falha na operação."));err.payload=data;err.status=res.status;throw err;}return data;}
-  function status(msg,kind,title){const el=$("status");if(!el)return;el.className="result"+(kind?" "+kind:"");el.innerHTML="<strong>"+escapeHtml(title||"Status")+"</strong>"+escapeHtml(msg||"");}
+  function fetchTimeout(path,opts,ms){opts=opts||{};ms=ms||8000;const ctrl=(typeof AbortController!=="undefined")?new AbortController():null;let t=null;if(ctrl){opts.signal=ctrl.signal;t=setTimeout(function(){try{ctrl.abort();}catch(_){}},ms);}return fetch(path,opts).finally(function(){if(t)clearTimeout(t);});}
+  async function publicPing(){try{reportClient("player_ping_started","/api/public/ping","");const res=await fetchTimeout("/equalizador/api/public/ping?ts="+Date.now(),{method:"GET",cache:"no-store"},4500);reportClient("player_ping_done",String(res.status),res.ok?"ok":"not_ok");return res.ok;}catch(e){reportClient("player_ping_failed",e&&e.message?e.message:"ping_failed","");return false;}}
+  async function api(path,opts){opts=opts||{};opts.headers=Object.assign({},apiHeaders,opts.headers||{});reportClient("player_api_started",path,"");const res=await fetchTimeout(path,opts,10000);const data=await res.json().catch(function(){return {};});reportClient("player_api_done",path,String(res.status));if(!res.ok){const detail=data.detail||data.public_detail||data.message||("HTTP "+res.status);const err=new Error(typeof detail==="string"?detail:(detail.public_detail||detail.code||"Falha na operação."));err.payload=data;err.status=res.status;throw err;}return data;}
+  function status(msg,kind,title){const el=$("status");if(!el)return;el.className="result"+(kind?" "+kind:"");const debug=$("bootDebug");const debugText=debug?debug.textContent:"";el.innerHTML="<strong>"+escapeHtml(title||"Status")+"</strong>"+escapeHtml(msg||"")+(debugText?'<span id="bootDebug" class="boot-debug">'+escapeHtml(debugText)+'</span>':"");}
   function showBotFallback(){hide("openBotBtn",false);status("Abra pelo Telegram para validar sua sessão.","bad","Sessão pública");}
   function titleClass(value){const n=safeText(value).trim().length;if(n>70)return "len-xlong";if(n>44)return "len-long";if(n>24)return "len-medium";return "len-short";}
   function renderTrack(track){track=track||{};trackAvailable=!!track.available;const title=trackAvailable?(track.track_name||"Música"):(track.message||"Nada tocando agora");const artist=trackAvailable?(track.artist||"Artista"):(track.diagnostic_code||track.code||"Aguardando música");const url=track.spotify_url||"";const titleEl=$("trackTitle");titleEl.className="track-title "+titleClass(title);titleEl.innerHTML=url?'<a href="'+escapeHtml(url)+'" target="_blank" rel="noreferrer">'+escapeHtml(title)+"</a>":escapeHtml(title);$("trackArtist").textContent=trackAvailable?"— "+artist:artist;$("plays").textContent=String(track.user_plays||0);const cover=$("cover");if(track.cover_url){cover.src=track.cover_url;cover.classList.remove("hidden");}else{cover.removeAttribute("src");cover.classList.add("hidden");}updateCommandState();}
@@ -7769,7 +7937,9 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   async function refreshPublicSession(){if(refreshing)return;refreshing=true;const btn=$("refreshSessionBtn");if(btn)btn.classList.add("loading");try{configureTelegram();if(!hasAuth()){showBotFallback();return;}const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:currentGroups;renderTrack(home.track||{});renderGroups();if(selectedGroup&&!currentGroups.some(function(g){return g.ref===selectedGroup;}))selectedGroup="";if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);if(lastCommand&&lastCommand!=="nowp"){await runPublicCommand(lastCommand,{fromRefresh:true});}else{status("Sessão e música atualizadas.","ok","Atualizado");}}catch(e){reportClient("player_refresh_failed",e&&e.message?e.message:"refresh_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao atualizar sessão.","bad","Falha");}finally{refreshing=false;if(btn)btn.classList.remove("loading");}}
   function openPanel(){try{const token=getStoredSession();if(token)window.sessionStorage.setItem(PANEL_SESSION_KEY,token);}catch(_){}const url=new URL("/equalizador",window.location.href);window.location.assign(url.toString());}
   async function runPublicCommand(command,options){options=options||{};command=String(command||"").replace(/^[/]/,"").toLowerCase();if(!command)return;if(!hasAuth()){showBotFallback();return;}if(GROUP_COMMANDS[command]&&!selectedGroup){requireGroup(command);return;}lastCommand=command;try{status("Executando /"+command+".","","Comando");if(command==="nowp"){const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})});renderResult({title:"Publicar",text:res.message||"Publicado.",command_copy:"/nowp"});if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}const params=new URLSearchParams();if(selectedGroup)params.set("group_ref",selectedGroup);const res=await api("/equalizador/api/public/command/"+encodeURIComponent(command)+(params.toString()?"?"+params.toString():""));if(command==="playing"){renderTrack(res);renderResult({title:"Tocando",text:(res.track_name||"Música")+" — "+(res.artist||"Artista"),image_url:res.cover_url||"",download_url:res.cover_url||"",filename:"tocando-agora.jpg"});}else{renderResult(res);}if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_command_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao executar comando.","bad","Falha");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
-  async function bootstrap(){configureTelegram();reportClient("player_js_started","ok","phase137_1");if(!hasAuth()){showBotFallback();renderTrack({available:false,message:"Abra pelo Telegram."});return;}try{const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:[];renderTrack(home.track||{});renderGroups();if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);status("Escolha uma função na matriz.","ok","Pronto.");}catch(e){reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:"");showBotFallback();renderTrack({available:false,message:"Não foi possível carregar o player."});}}
+  function waitForTelegram(ms){const started=Date.now();return new Promise(function(resolve){(function tick(){configureTelegram();if(tg||Date.now()-started>=ms){resolve(!!tg);return;}setTimeout(tick,80);})();});}
+  function setBootDebug(text){const el=$("bootDebug");if(el)el.textContent=text;}
+  async function bootstrap(){try{if(window.__TR4_PLAYER_BOOT)window.__TR4_PLAYER_BOOT.bottomStarted=true;}catch(_){}reportClient("player_js_started","ok","phase137_3");setBootDebug("JS principal iniciou. Testando conexão com o backend.");await publicPing();setBootDebug("Conexão testada. Aguardando Telegram.WebApp/initData.");await waitForTelegram(1800);configureTelegram();if(!hasAuth()){reportClient("player_no_auth_after_wait",tg?"Telegram.WebApp sem initData/sessao":"Telegram.WebApp ausente","");showBotFallback();renderTrack({available:false,message:"Abra pelo Telegram oficial ou use uma sessão válida."});setBootDebug("Sem initData/sessão. Se estiver em cliente alternativo, teste no Telegram oficial.");return;}try{setBootDebug("Sessão encontrada. Chamando /api/public/me.");const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));setBootDebug("Usuário validado. Carregando home pública.");const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:[];renderTrack(home.track||{});renderGroups();if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);setBootDebug("Bootstrap completo.");status("Escolha uma função na matriz.","ok","Pronto.");}catch(e){reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:"");showBotFallback();renderTrack({available:false,message:"Não foi possível carregar o player."});setBootDebug("Falha no bootstrap: "+((e&&e.message)||"erro desconhecido"));}}
   document.querySelectorAll("[data-command]").forEach(function(btn){btn.addEventListener("click",function(){runPublicCommand(btn.getAttribute("data-command")||"");});});
   $("refreshSessionBtn").onclick=function(){refreshPublicSession();};
   const modBtn=$("modBtn");if(modBtn)modBtn.addEventListener("click",function(ev){ev.preventDefault();openPanel();});
@@ -7988,6 +8158,14 @@ def public_music_status() -> dict[str, object]:
 
 
 
+@router.get("/api/public/ping")
+def public_music_ping() -> dict[str, object]:
+    """Ping sem autenticação para provar que o JavaScript do WebView executou.
+
+    Fase 137.3: usado antes de initData/sessão para diferenciar falha de
+    carregamento do HTML, falha de execução do JS e falha posterior de auth/API.
+    """
+    return {"ok": True, "service": "tigraoRADIO", "phase": "137.3", "route": "/equalizador/api/public/ping"}
 
 @router.get("/api/public/diagnostico")
 async def public_music_diagnostico(authorization: str | None = Header(default=None)) -> dict[str, object]:
