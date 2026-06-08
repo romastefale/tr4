@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
+import re
+import secrets
+import time
+from pathlib import Path
 
 # Phase 136 public player: prefixo data URI exigido pelo backend/teste.
 _PHASE136_DATA_IMAGE_PREFIX = "data:image/png;base64,"
 from fastapi import APIRouter, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 import html
 import httpx
 
@@ -7930,8 +7935,10 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function renderGroups(){const box=$("groups");if(!box)return;if(!currentGroups.length){box.innerHTML='<div class="result">Nenhum grupo disponível.</div>';return;}box.innerHTML=currentGroups.map(function(g){const meta=g.username?"@"+g.username:(g.status||"disponível");return '<button class="group-row" type="button" data-group="'+escapeHtml(g.ref)+'" aria-selected="'+(g.ref===selectedGroup?'true':'false')+'"><span><span class="group-title">'+escapeHtml(g.title||"Grupo")+'</span><span class="group-meta">'+escapeHtml(meta)+'</span></span><span>›</span></button>';}).join("");box.querySelectorAll("[data-group]").forEach(function(btn){btn.onclick=function(){setSelectedGroup(btn.getAttribute("data-group")||"");hide("groups",true);hide("publishChoices",false);};});}
   function requireGroup(command){pendingGroupCommand=command;hide("publishPanel",false);hide("publishChoices",false);status("Escolha o grupo e confirme para continuar.","","Grupo necessário");}
   function resultDownloadTarget(data,image){return safeText(data.download_url||data.file_url||data.video_url||data.image_url||image||"");}
-  function downloadResult(){if(!currentResult)return;const image=currentResult.image_data_url||currentResult.image_url||"";const target=resultDownloadTarget(currentResult,image);const filename=safeText(currentResult.filename||currentResult.download_name||"tigraoRADIO-resultado.jpg");if(!target){status("Este resultado não trouxe arquivo para baixar.","bad","Download");return;}try{if(tg&&typeof tg.downloadFile==="function"&&new RegExp("^https?://","i").test(target)){tg.downloadFile({url:target,file_name:filename});return;}}catch(e){reportClient("player_downloadfile_failed",e&&e.message?e.message:"downloadFile_failed",target.slice(0,120));}const a=document.createElement("a");a.href=target;a.download=filename;a.rel="noreferrer";document.body.appendChild(a);a.click();setTimeout(function(){a.remove();},0);}
-  function sendCommandCopy(command){command=String(command||lastCommand||"").replace(/^[/]/,"").toLowerCase();if(!command){status("Nenhum comando executado para enviar.","bad","Comando");return;}const payload=JSON.stringify({type:"public_command_copy",command:"/"+command,group_ref:selectedGroup||""});try{if(tg&&typeof tg.sendData==="function"){tg.sendData(payload);return;}}catch(e){reportClient("player_senddata_failed",e&&e.message?e.message:"sendData_failed",command);}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText("/"+command).then(function(){status("Comando copiado para a área de transferência.","ok","Comando copiado");}).catch(function(){status("Não consegui enviar pelo Telegram nem copiar automaticamente.","bad","Comando");});}else{status("Comando: /"+command,"","Copie manualmente");}}
+  function absoluteUrl(value){try{return new URL(value,window.location.href).toString();}catch(_){return safeText(value);}}
+  async function prepareDownloadUrl(target,filename){if(new RegExp("^https?://","i").test(target))return target;const res=await api("/equalizador/api/public/download-result",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target:target,filename:filename})});return absoluteUrl(res.download_url||"");}
+  async function downloadResult(){if(!currentResult)return;const image=currentResult.image_data_url||currentResult.image_url||"";const target=resultDownloadTarget(currentResult,image);const filename=safeText(currentResult.filename||currentResult.download_name||"tigraoRADIO-resultado.jpg");if(!target){status("Este resultado não trouxe arquivo para baixar.","bad","Download");return;}reportClient("player_download_clicked",filename,target.slice(0,80));try{status("Preparando arquivo para download.","","Download");const url=await prepareDownloadUrl(target,filename);if(!url){throw new Error("download_url_missing");}if(tg&&typeof tg.downloadFile==="function"&&new RegExp("^https?://","i").test(url)){tg.downloadFile({url:url,file_name:filename});status("Pedido de download enviado ao Telegram.","ok","Download");reportClient("player_download_dispatched",filename,url.slice(0,120));return;}if(tg&&typeof tg.openLink==="function"&&new RegExp("^https?://","i").test(url)){tg.openLink(url,{try_instant_view:false});status("Abri o arquivo para download.","ok","Download");reportClient("player_download_openlink",filename,url.slice(0,120));return;}const a=document.createElement("a");a.href=url;a.download=filename;a.rel="noreferrer";document.body.appendChild(a);a.click();setTimeout(function(){a.remove();},0);status("Download solicitado.","ok","Download");reportClient("player_download_anchor",filename,url.slice(0,120));}catch(e){reportClient("player_download_failed",e&&e.message?e.message:"download_failed",target.slice(0,120));status((e&&e.message)||"Não consegui baixar este resultado.","bad","Download");}}
+  async function sendCommandCopy(command){command=String(command||lastCommand||"").replace(/^[/]/,"").toLowerCase();if(!command){status("Nenhum comando executado para enviar.","bad","Comando");return;}reportClient("player_send_command_clicked",command,selectedGroup||"");try{status("Enviando cópia pelo bot.","","Comando");const res=await api("/equalizador/api/public/send-command-copy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:"/"+command,group_ref:selectedGroup||"",result_title:(currentResult&&currentResult.title)||"",result_text:(currentResult&&(currentResult.text||currentResult.message))||""})});status(res.message||"Comando enviado pelo bot.","ok","Comando enviado");reportClient("player_send_command_done",command,"backend");return;}catch(e){reportClient("player_send_command_backend_failed",e&&e.message?e.message:"send_command_failed",command+":"+(e&&e.status?e.status:""));}const payload=JSON.stringify({type:"public_command_copy",command:"/"+command,group_ref:selectedGroup||""});try{if(tg&&typeof tg.sendData==="function"){reportClient("player_senddata_attempt",command,"");tg.sendData(payload);return;}}catch(e){reportClient("player_senddata_failed",e&&e.message?e.message:"sendData_failed",command);}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText("/"+command).then(function(){status("Comando copiado para a área de transferência.","ok","Comando copiado");}).catch(function(){status("Não consegui enviar pelo Telegram nem copiar automaticamente.","bad","Comando");});}else{status("Comando: /"+command,"","Copie manualmente");}}
   function renderResult(data){data=data||{};currentResult=data;const card=$("resultCard"),body=$("resultBody"),img=$("resultImage"),link=$("resultImageLink"),actions=$("resultActions");$("resultTitle").textContent=data.title||"Resultado";setBodyRich(body,data.text||data.message||"");const image=data.image_data_url||data.image_url||"";if(image){img.src=image;link.href=image;link.download=safeText(data.filename||data.download_name||"tigraoRADIO-resultado.jpg");link.classList.remove("hidden");}else{img.removeAttribute("src");link.removeAttribute("href");link.classList.add("hidden");}actions.innerHTML="";let used=0;function addAction(label,fn){if(used>=4)return;const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=fn;actions.appendChild(b);used+=1;}if(lastCommand)addAction("Enviar comando",function(){sendCommandCopy(lastCommand);});if(resultDownloadTarget(data,image))addAction("Baixar",downloadResult);if(Array.isArray(data.actions)&&data.actions.length){data.actions.forEach(function(action){addAction(action.label||"Abrir",function(){if(action.command)runPublicCommand(String(action.command).replace(/^[/]/,""));else if(action.url&&tg&&tg.openLink)tg.openLink(action.url);});});}if(used){actions.classList.remove("hidden");}else{actions.classList.add("hidden");}card.classList.remove("hidden");status("Resultado atualizado dentro do Mini App.","ok","Resultado pronto.");}
   async function loadPlayingPreview(){const res=await api("/equalizador/api/public/playing-preview");renderTrack(res);return res;}
   async function refreshPublicSession(){if(refreshing)return;refreshing=true;const btn=$("refreshSessionBtn");if(btn)btn.classList.add("loading");try{configureTelegram();if(!hasAuth()){showBotFallback();return;}const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:currentGroups;renderTrack(home.track||{});renderGroups();if(selectedGroup&&!currentGroups.some(function(g){return g.ref===selectedGroup;}))selectedGroup="";if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);if(lastCommand&&lastCommand!=="nowp"){await runPublicCommand(lastCommand,{fromRefresh:true});}else{status("Sessão e música atualizadas.","ok","Atualizado");}}catch(e){reportClient("player_refresh_failed",e&&e.message?e.message:"refresh_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao atualizar sessão.","bad","Falha");}finally{refreshing=false;if(btn)btn.classList.remove("loading");}}
@@ -7982,6 +7989,83 @@ def _public_identity_from_authorization(authorization: str | None) -> TelegramWe
         raise HTTPException(status_code=503, detail="Sessão temporariamente indisponível.") from exc
     except (InitDataError, EqualizadorSessionError) as exc:
         raise HTTPException(status_code=401, detail="Abra pelo Telegram para continuar.") from exc
+
+
+_PUBLIC_DOWNLOAD_DIR = Path(os.environ.get("TR4_PUBLIC_DOWNLOAD_DIR", "/tmp/tr4_public_downloads"))
+_PUBLIC_DOWNLOAD_MAX_BYTES = 3_500_000
+_PUBLIC_DOWNLOAD_TTL_SECONDS = 15 * 60
+_PUBLIC_COMMAND_COPY_ALLOWED = {"playing", "weekfm", "monthfm", "songcharts", "tcanvas", "tstory", "tly", "tnow", "nowp"}
+
+
+def _safe_public_filename(value: object, fallback: str = "tigraoRADIO-resultado") -> str:
+    raw = str(value or fallback).strip() or fallback
+    raw = raw.split("/")[-1].split("\\")[-1]
+    raw = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip(".-_")
+    return (raw or fallback)[:90]
+
+
+def _public_download_cleanup() -> None:
+    try:
+        _PUBLIC_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        for path in _PUBLIC_DOWNLOAD_DIR.iterdir():
+            try:
+                if path.is_file() and now - path.stat().st_mtime > _PUBLIC_DOWNLOAD_TTL_SECONDS:
+                    path.unlink(missing_ok=True)
+            except Exception:
+                continue
+    except Exception:
+        logger.debug("PUBLIC_DOWNLOAD_CLEANUP_FAILED", exc_info=True)
+
+
+def _public_download_extension(mime: str) -> str:
+    mime = str(mime or "").lower().split(";", 1)[0].strip()
+    return {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+        "video/mp4": ".mp4",
+        "text/plain": ".txt",
+    }.get(mime, ".bin")
+
+
+def _store_public_data_url(target: str, filename: str) -> tuple[str, str, str]:
+    match = re.match(r"^data:([A-Za-z0-9.+/-]+);base64,(.*)$", str(target or ""), re.S)
+    if not match:
+        raise HTTPException(status_code=400, detail="Arquivo para download inválido.")
+    mime = match.group(1).lower()
+    raw = match.group(2).strip()
+    try:
+        binary = base64.b64decode(raw, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Arquivo para download inválido.") from exc
+    if not binary or len(binary) > _PUBLIC_DOWNLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Arquivo grande demais para download pelo Mini App.")
+    ext = _public_download_extension(mime)
+    safe_name = _safe_public_filename(filename or f"tigraoRADIO-resultado{ext}")
+    if "." not in safe_name:
+        safe_name += ext
+    token = secrets.token_urlsafe(18)
+    _PUBLIC_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    stored = _PUBLIC_DOWNLOAD_DIR / f"{token}__{safe_name}"
+    stored.write_bytes(binary)
+    return token, safe_name, mime
+
+
+def _resolve_public_download_file(token: str) -> Path | None:
+    _public_download_cleanup()
+    safe_token = re.sub(r"[^A-Za-z0-9_-]", "", str(token or ""))
+    if not safe_token:
+        return None
+    try:
+        for path in _PUBLIC_DOWNLOAD_DIR.glob(f"{safe_token}__*"):
+            if path.is_file():
+                return path
+    except Exception:
+        return None
+    return None
 
 
 def _group_ref(chat_id: int) -> str:
@@ -8621,6 +8705,70 @@ async def public_music_command(
         return await _public_tnow_result(str(group_ref or ""))
 
     raise HTTPException(status_code=404, detail="Comando indisponível no Mini App.")
+
+@router.post("/api/public/download-result")
+async def public_music_download_result(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    _public_identity_from_authorization(authorization)
+    payload = await _read_json_payload(request)
+    target = str(payload.get("target") or "").strip()
+    filename = _safe_public_filename(payload.get("filename") or "tigraoRADIO-resultado.jpg")
+    if not target:
+        raise HTTPException(status_code=400, detail="Resultado sem arquivo para download.")
+    if target.lower().startswith(("http://", "https://")):
+        return {"ok": True, "download_url": target, "filename": filename}
+    token, safe_name, mime = _store_public_data_url(target, filename)
+    return {
+        "ok": True,
+        "download_url": f"/equalizador/api/public/download/{token}",
+        "filename": safe_name,
+        "mime_type": mime,
+    }
+
+
+@router.get("/api/public/download/{token}")
+async def public_music_download_file(token: str) -> FileResponse:
+    path = _resolve_public_download_file(token)
+    if not path:
+        raise HTTPException(status_code=404, detail="Arquivo expirado ou indisponível.")
+    filename = path.name.split("__", 1)[-1] if "__" in path.name else path.name
+    media_type = "application/octet-stream"
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        media_type = "image/jpeg"
+    elif suffix == ".png":
+        media_type = "image/png"
+    elif suffix == ".webp":
+        media_type = "image/webp"
+    elif suffix == ".mp4":
+        media_type = "video/mp4"
+    elif suffix == ".txt":
+        media_type = "text/plain"
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@router.post("/api/public/send-command-copy")
+async def public_music_send_command_copy(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _public_identity_from_authorization(authorization)
+    payload = await _read_json_payload(request)
+    command = str(payload.get("command") or "").strip().lower().lstrip("/")
+    if command not in _PUBLIC_COMMAND_COPY_ALLOWED:
+        raise HTTPException(status_code=400, detail="Comando indisponível para envio.")
+    result_title = str(payload.get("result_title") or "").strip()[:80]
+    result_text = html.unescape(str(payload.get("result_text") or "").strip())[:700]
+    text_lines = [f"/{command}", "", "Cópia enviada pelo Mini App tigraoRADIO."]
+    if result_title:
+        text_lines.extend(["", result_title])
+    if result_text:
+        cleaned = re.sub(r"<[^>]+>", "", result_text)
+        text_lines.extend(["", cleaned[:700]])
+    try:
+        await _bot_api("sendMessage", {"chat_id": int(identity.user_id), "text": "\n".join(text_lines)[:3900]})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail="Não consegui enviar a cópia pelo bot.") from exc
+    return {"ok": True, "message": "Enviei uma cópia no chat do bot."}
+
 
 @router.post("/api/public/nowp")
 async def public_music_nowp(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
