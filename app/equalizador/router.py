@@ -7708,6 +7708,11 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     .status.ok { color: #a4f1c0; border: 1px solid rgba(74, 222, 128, .22); }
     .status.bad { color: var(--danger); border: 1px solid rgba(248,113,113,.24); }
     .tip { color: var(--muted); font-size: 13px; line-height: 1.45; padding: 0 4px; }
+    .command-card { padding: 16px; }
+    .command-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .cmd-btn { min-height: 62px; border: 1px solid rgba(255,255,255,.10); border-radius: 18px; background: #202a35; color: var(--text); font-weight: 900; text-align: left; padding: 12px 14px; }
+    .cmd-btn small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 650; line-height: 1.25; }
+    .cmd-btn:active { transform: scale(.985); filter: brightness(.88); }
     @media (max-width: 520px) {
       body { padding-left: 12px; padding-right: 12px; }
       .hero { padding-left: 12px; padding-right: 12px; }
@@ -7731,6 +7736,18 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   </section>
 
   <label class="search" aria-label="Busca de grupos e ações">⌕ <input id="search" autocomplete="off" placeholder="Buscar grupo ou ação" /></label>
+
+  <section class="card command-card" aria-label="Comandos musicais">
+    <div class="section-title">Comandos musicais</div>
+    <div id="commandGrid" class="command-grid">
+      <button class="cmd-btn" type="button" data-command="/playing">Tocando agora<small>Prévia da música atual</small></button>
+      <button class="cmd-btn" type="button" data-command="/nowp">Publicar<small>Escolha o grupo e publique</small></button>
+      <button class="cmd-btn" type="button" data-command="/myself">Meu perfil<small>Seu cartão musical</small></button>
+      <button class="cmd-btn" type="button" data-command="/weekfm">Semana<small>Resumo semanal</small></button>
+      <button class="cmd-btn" type="button" data-command="/monthfm">Mês<small>Resumo mensal</small></button>
+      <button class="cmd-btn" type="button" data-command="/songcharts">Ranking<small>Top músicas do grupo</small></button>
+    </div>
+  </section>
 
   <section class="card track-card" id="trackCard">
     <div class="track">
@@ -7805,6 +7822,11 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       btn.onclick = function(){
         const command = btn.getAttribute("data-command") || "";
         if (!command) return;
+        if (command === "/nowp") {
+          document.getElementById("groups").scrollIntoView({behavior:"smooth", block:"center"});
+          status("Escolha um grupo e toque em Publicar atual.", "ok");
+          return;
+        }
         if (tg && tg.openTelegramLink) tg.openTelegramLink("https://t.me/" + String($('botUser').textContent || 'tigraoRADIObot').replace('@','') + "?start=" + encodeURIComponent("cmd_" + command.replace('/','')));
         else status("Use no bot: " + command, "ok");
       };
@@ -7842,6 +7864,15 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     }
     updatePublishState();
   }
+  async function loadPlayingPreview(){
+    try {
+      const preview = await api("/equalizador/api/public/playing-preview");
+      setTrack(preview.track || preview || {});
+      if (preview.track && preview.track.available) status("Música atual carregada.", "ok");
+    } catch (e) {
+      status((e && (e.detail || e.public_detail)) || "Não consegui carregar a música atual.", "bad");
+    }
+  }
   async function load(){
     if (!initData) { status("Abra pelo Telegram para carregar sua música e seus grupos.", "bad"); return; }
     try {
@@ -7854,24 +7885,9 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       setTrack(data.track || {});
       currentGroups = data.groups || [];
       $("stats").textContent = (currentGroups.length || 0) + " grupos em comum";
-      if (data.atalhos && !document.getElementById("commandPanel")) {
-        const panel = document.createElement("div");
-        panel.id = "commandPanel";
-        panel.className = "command-panel";
-        panel.innerHTML = data.atalhos.map(function(a){ return `<button type="button" class="command-chip" data-command="${escapeHtml(a.command)}">${escapeHtml(a.label)}</button>`; }).join("");
-        const anchor = document.getElementById("nowCard") || document.getElementById("search") || document.body;
-        anchor.parentNode.insertBefore(panel, anchor.nextSibling);
-        panel.addEventListener("click", function(ev){
-          const btn = ev.target.closest("button[data-command]");
-          if (!btn) return;
-          const cmd = btn.getAttribute("data-command") || "";
-          const bot = ($("botUser").textContent || "@tigraoRADIObot").replace(/^@/, "");
-          if (tg && tg.openTelegramLink) tg.openTelegramLink(`https://t.me/${bot}?start=cmd_${encodeURIComponent(cmd.replace(/^\//,""))}`);
-          else window.open(`https://t.me/${bot}`, "_blank");
-        });
-      }
       renderGroups(currentGroups);
-      status(trackAvailable ? "Prévia pronta. Escolha o grupo e publique." : "Sem música atual para publicar.", trackAvailable ? "ok" : "");
+      status("Carregando música atual...", "");
+      loadPlayingPreview();
     } catch (e) { status((e && (e.detail || e.public_detail)) || "Não foi possível carregar.", "bad"); showBotFallback(); }
   }
   $("search").addEventListener("input", () => renderGroups(currentGroups));
@@ -7911,13 +7927,21 @@ def public_music_player() -> HTMLResponse:
 
 def _public_identity_from_authorization(authorization: str | None) -> TelegramWebAppIdentity:
     try:
-        init_data = extract_tma_authorization((authorization or "").strip())
+        header = (authorization or "").strip()
+        if header.lower().startswith("eqs "):
+            return validate_equalizador_session(
+                header[4:].strip(),
+                renew_ttl_seconds=settings.TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
+            )
+        init_data = extract_tma_authorization(header)
         return validate_init_data(
             init_data,
             bot_token=settings.TELEGRAM_BOT_TOKEN,
             max_age_seconds=settings.TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
         )
-    except InitDataError as exc:
+    except EqualizadorStorageError as exc:
+        raise HTTPException(status_code=503, detail="Sessão temporariamente indisponível.") from exc
+    except (InitDataError, EqualizadorSessionError) as exc:
         raise HTTPException(status_code=401, detail="Abra pelo Telegram para continuar.") from exc
 
 
