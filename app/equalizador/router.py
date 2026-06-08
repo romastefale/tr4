@@ -7951,6 +7951,27 @@ async def _bot_api(method: str, payload: dict[str, object]) -> dict[str, object]
     return result if isinstance(result, dict) else {}
 
 
+
+def _public_cached_groups() -> list[dict[str, object]]:
+    """Lista grupos conhecidos sem chamadas de validação de membro em lote.
+
+    A checagem de presença do usuário continua ocorrendo no /nowp, no momento
+    de publicar. O player público não deve bloquear o primeiro carregamento.
+    """
+    groups: list[dict[str, object]] = []
+    for group in list_groups(80):
+        try:
+            chat_id = int(group["chat_id"])
+        except Exception:
+            continue
+        groups.append({
+            "ref": _group_ref(chat_id),
+            "title": str(group.get("title") or "Grupo")[:80],
+            "username": str(group.get("username") or "").lstrip("@")[:32],
+            "status": "disponível",
+        })
+    return groups
+
 async def _public_groups_for_user(user_id: int) -> list[dict[str, object]]:
     """Lista rápida para o Mini App público.
 
@@ -8064,9 +8085,48 @@ def public_music_status() -> dict[str, object]:
             "led_reactions_ativas": bool(settings.TR4_MUSIC_REACTIONS_ENABLED),
             "led_reactions_status": "desligado" if not settings.TR4_MUSIC_REACTIONS_ENABLED else "ativo",
             "painel_moderador": "visivel_apenas_para_operador_autorizado",
+            "menu_comandos_fixo": True,
+            "diagnostico_funcional": "/equalizador/api/public/diagnostico",
         },
     }
 
+
+
+
+@router.get("/api/public/diagnostico")
+async def public_music_diagnostico(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    """Diagnóstico funcional do player público.
+
+    Diferente de /status, este endpoint valida o caminho real do usuário atual.
+    Ele não publica nada e não expõe IDs brutos. Serve para separar falso 200
+    de funcionamento real: sessão, comandos, preview musical e grupos cacheados.
+    """
+    identity = _public_identity_from_authorization(authorization)
+    diag: dict[str, object] = {
+        "ok": True,
+        "rota": "/equalizador/player",
+        "autenticacao": "telegram_initdata_ou_sessao_curta",
+        "comandos": ["/playing", "/nowp", "/myself", "/weekfm", "/monthfm", "/songcharts"],
+        "menu_fixo": True,
+        "consulta_grupos_lenta": False,
+        "musica": {"available": False, "code": "nao_testado"},
+        "grupos": {"available": True, "modo": "cacheado_sem_getChatMember_em_lote", "count": 0},
+    }
+    try:
+        preview = await _public_playing_preview_for_identity(identity)
+        diag["musica"] = {
+            "available": bool(preview.get("available")),
+            "code": str(preview.get("diagnostic_code") or preview.get("code") or "ok"),
+            "source": str(preview.get("source") or "playing_payload"),
+        }
+    except Exception:
+        diag["musica"] = {"available": False, "code": "preview_exception"}
+    try:
+        groups = _public_cached_groups()
+        diag["grupos"] = {"available": True, "modo": "cacheado_sem_getChatMember_em_lote", "count": len(groups)}
+    except Exception:
+        diag["grupos"] = {"available": False, "modo": "cacheado", "count": 0}
+    return diag
 
 @router.get("/api/public/me")
 async def public_music_me(authorization: str | None = Header(default=None)) -> dict[str, object]:
@@ -8090,13 +8150,64 @@ async def public_music_me(authorization: str | None = Header(default=None)) -> d
     }
 
 
+
+async def _public_playing_preview_for_identity(identity: TelegramWebAppIdentity) -> dict[str, object]:
+    try:
+        track = await music_service.get_current_or_last_played(int(identity.user_id))
+    except Exception:
+        return {"available": False, "diagnostic_code": "track_lookup_failed", "message": "Não foi possível carregar sua música agora."}
+    if not track:
+        try:
+            from app.services.connection_check import connect_hint_for, is_user_connected
+            if not is_user_connected(int(identity.user_id)):
+                return {"available": False, "diagnostic_code": "music_account_not_connected", "message": connect_hint_for("private")}
+        except Exception:
+            pass
+        return {"available": False, "diagnostic_code": "nothing_playing", "message": "Nada tocando agora."}
+    try:
+        from app.bot.telegram import build_playing_payload_for_user
+        built = await build_playing_payload_for_user(
+            int(identity.user_id),
+            str(identity.user.get("first_name") or identity.user.get("username") or "Usuário"),
+            track,
+            str(identity.user.get("username") or "") or None,
+        )
+    except Exception:
+        built = None
+    track_name = str(track.get("track_name") or "").strip()
+    artist = str(track.get("artist") or "").strip()
+    if not track_name:
+        return {"available": False, "diagnostic_code": "track_without_name", "message": "Música sem nome retornada pela fonte."}
+    caption_html = ""
+    cover = str(track.get("album_image_url") or track.get("cover_url") or "")[:500]
+    if built:
+        _track_id, caption_html, built_cover, _keyboard, _emoji = built
+        cover = str(built_cover or cover or "")[:500]
+    return {
+        "available": True,
+        "diagnostic_code": "ok",
+        "source": str(track.get("source") or "music_service"),
+        "caption_html": caption_html,
+        "track_name": track_name[:120],
+        "artist": artist[:120],
+        "spotify_url": str(track.get("spotify_url") or "")[:500],
+        "cover_url": cover,
+        "user_plays": 0,
+    }
+
+
+@router.get("/api/public/playing-preview")
+async def public_music_playing_preview(authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _public_identity_from_authorization(authorization)
+    return await _public_playing_preview_for_identity(identity)
+
 @router.get("/api/public/home")
 async def public_music_home(authorization: str | None = Header(default=None)) -> dict[str, object]:
     identity = _public_identity_from_authorization(authorization)
     return {
         "ok": True,
-        "track": await _public_track_for_user(identity.user_id),
-        "groups": await _public_groups_for_user(identity.user_id),
+        "track": await _public_playing_preview_for_identity(identity),
+        "groups": _public_cached_groups(),
         "atalhos": [
             {"label": "Tocando agora", "command": "/playing", "kind": "music"},
             {"label": "Publicar atual", "command": "/nowp", "kind": "publish"},
