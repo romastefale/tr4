@@ -93,10 +93,11 @@ def delete_session(token: str, *, db_engine: Engine = default_engine) -> None:
         conn.execute(text("DELETE FROM eq_private_sessions WHERE token=:token"), {"token": str(token)})
 
 
-def cleanup_expired_sessions(*, now_ts: int, db_engine: Engine = default_engine) -> int:
+def cleanup_expired_sessions(*, now_ts: int, db_engine: Engine = default_engine, grace_seconds: int = 0) -> int:
     ensure_session_tables(db_engine)
+    delete_before = int(now_ts) - max(0, int(grace_seconds or 0))
     with db_engine.begin() as conn:
-        result = conn.execute(text("DELETE FROM eq_private_sessions WHERE expires_at <= :now_ts"), {"now_ts": int(now_ts)})
+        result = conn.execute(text("DELETE FROM eq_private_sessions WHERE expires_at <= :delete_before"), {"delete_before": delete_before})
     return int(getattr(result, "rowcount", 0) or 0)
 
 

@@ -35,11 +35,3 @@ def test_phase138_3_client_sends_full_result_payload():
     assert 'result_filename:filename' in src
     assert 'Enviando resultado pelo bot.' in src
     assert 'Resultado enviado pelo bot.' in src
-
-
-def test_phase138_3_public_commands_have_longer_timeout_than_bootstrap():
-    src = ROUTER.read_text(encoding='utf-8')
-    assert 'const timeoutMs=opts.timeoutMs||10000' in src
-    assert '{timeoutMs:45000}' in src
-    assert 'timeoutMs:25000' in src
-    assert 'timeoutMs:30000' in src

@@ -147,6 +147,7 @@ def validate_equalizador_session(
     *,
     now: float | None = None,
     renew_ttl_seconds: int | None = None,
+    expired_grace_seconds: int | None = None,
 ) -> TelegramWebAppIdentity:
     value = str(token or "").strip()
     if not value:
@@ -166,17 +167,40 @@ def validate_equalizador_session(
         identity, issued_at, expires_at = loaded
         session = EqualizadorSession(token=value, identity=identity, issued_at=issued_at, expires_at=expires_at)
         _sessions[value] = session
-    if session.expires_at <= current:
-        _sessions.pop(value, None)
-        try:
-            from app.equalizador.session_store import delete_session
-
-            delete_session(value)
-        except Exception:
-            logger.debug("equalizador_session_store_delete_failed", exc_info=True)
-        raise EqualizadorSessionError("session_expired")
-
     ttl = int(renew_ttl_seconds or 0)
+    grace = int(expired_grace_seconds or 0)
+    if session.expires_at <= current:
+        expired_for = current - int(session.expires_at)
+        if ttl > 0 and grace > 0 and expired_for <= grace:
+            session = EqualizadorSession(
+                token=value,
+                identity=session.identity,
+                issued_at=session.issued_at,
+                expires_at=current + ttl,
+            )
+            _sessions[value] = session
+            try:
+                from app.equalizador.session_store import save_session
+
+                save_session(
+                    token=value,
+                    identity=session.identity,
+                    issued_at=session.issued_at,
+                    expires_at=session.expires_at,
+                )
+            except Exception as exc:
+                logger.warning("equalizador_session_store_grace_renew_failed", exc_info=True)
+                raise EqualizadorStorageError("session_store_renew_failed") from exc
+        else:
+            _sessions.pop(value, None)
+            try:
+                from app.equalizador.session_store import delete_session
+
+                delete_session(value)
+            except Exception:
+                logger.debug("equalizador_session_store_delete_failed", exc_info=True)
+            raise EqualizadorSessionError("session_expired")
+
     if ttl > 0:
         new_expires_at = current + ttl
         remaining = int(session.expires_at) - current
