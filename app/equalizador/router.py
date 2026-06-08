@@ -7939,8 +7939,8 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function absoluteUrl(value){try{return new URL(value,window.location.href).toString();}catch(_){return safeText(value);}}
   async function prepareDownloadUrl(target,filename){if(new RegExp("^https?://","i").test(target))return target;const res=await api("/equalizador/api/public/download-result",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target:target,filename:filename})});return absoluteUrl(res.download_url||"");}
   async function downloadResult(){if(!currentResult)return;const image=currentResult.image_data_url||currentResult.image_url||"";const target=resultDownloadTarget(currentResult,image);const filename=safeText(currentResult.filename||currentResult.download_name||"tigraoRADIO-resultado.jpg");if(!target){status("Este resultado não trouxe arquivo para baixar.","bad","Download");return;}reportClient("player_download_clicked",filename,target.slice(0,80));try{status("Preparando arquivo para download.","","Download");const url=await prepareDownloadUrl(target,filename);if(!url){throw new Error("download_url_missing");}if(tg&&typeof tg.downloadFile==="function"&&new RegExp("^https?://","i").test(url)){tg.downloadFile({url:url,file_name:filename});status("Pedido de download enviado ao Telegram.","ok","Download");reportClient("player_download_dispatched",filename,url.slice(0,120));return;}if(tg&&typeof tg.openLink==="function"&&new RegExp("^https?://","i").test(url)){tg.openLink(url,{try_instant_view:false});status("Abri o arquivo para download.","ok","Download");reportClient("player_download_openlink",filename,url.slice(0,120));return;}const a=document.createElement("a");a.href=url;a.download=filename;a.rel="noreferrer";document.body.appendChild(a);a.click();setTimeout(function(){a.remove();},0);status("Download solicitado.","ok","Download");reportClient("player_download_anchor",filename,url.slice(0,120));}catch(e){reportClient("player_download_failed",e&&e.message?e.message:"download_failed",target.slice(0,120));status((e&&e.message)||"Não consegui baixar este resultado.","bad","Download");}}
-  async function sendCommandCopy(command){command=String(command||lastCommand||"").replace(/^[/]/,"").toLowerCase();if(!command){status("Nenhum resultado executado para enviar.","bad","Enviar resultado");return;}const image=currentResult?(currentResult.image_data_url||currentResult.image_url||currentResult.download_url||""):"";const filename=currentResult?(currentResult.filename||currentResult.download_name||"tigraoRADIO-resultado.jpg"):"tigraoRADIO-resultado.jpg";reportClient("player_send_command_clicked",command,selectedGroup||"");try{status("Enviando resultado pelo bot.","","Enviar resultado");const res=await api("/equalizador/api/public/send-command-copy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:"/"+command,group_ref:selectedGroup||"",result_title:(currentResult&&currentResult.title)||"",result_text:(currentResult&&(currentResult.text||currentResult.message))||"",result_image:image,result_filename:filename})});status(res.message||"Resultado enviado pelo bot.","ok","Resultado enviado");reportClient("player_send_command_done",command,"backend");return;}catch(e){reportClient("player_send_command_backend_failed",e&&e.message?e.message:"send_result_failed",command+":"+(e&&e.status?e.status:""));}const payload=JSON.stringify({type:"public_command_copy",command:"/"+command,group_ref:selectedGroup||""});try{if(tg&&typeof tg.sendData==="function"){reportClient("player_senddata_attempt",command,"");tg.sendData(payload);return;}}catch(e){reportClient("player_senddata_failed",e&&e.message?e.message:"sendData_failed",command);}if(navigator.clipboard&&navigator.clipboard.writeText){const fallbackText=((currentResult&&currentResult.title)?currentResult.title+"\\n\\n":"")+((currentResult&&(currentResult.text||currentResult.message))||("/"+command));navigator.clipboard.writeText(fallbackText).then(function(){status("Resultado copiado para a área de transferência.","ok","Resultado copiado");}).catch(function(){status("Não consegui enviar pelo Telegram nem copiar automaticamente.","bad","Enviar resultado");});}else{status("Não consegui enviar automaticamente.","bad","Enviar resultado");}}
-  function renderResult(data){data=data||{};currentResult=data;const card=$("resultCard"),body=$("resultBody"),img=$("resultImage"),link=$("resultImageLink"),actions=$("resultActions");$("resultTitle").textContent=data.title||"Resultado";setBodyRich(body,data.text||data.message||"");const image=data.image_data_url||data.image_url||"";if(image){img.src=image;link.href=image;link.download=safeText(data.filename||data.download_name||"tigraoRADIO-resultado.jpg");link.classList.remove("hidden");}else{img.removeAttribute("src");link.removeAttribute("href");link.classList.add("hidden");}actions.innerHTML="";let used=0;function addAction(label,fn){if(used>=4)return;const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=fn;actions.appendChild(b);used+=1;}if(lastCommand)addAction("Enviar resultado",function(){sendCommandCopy(lastCommand);});if(resultDownloadTarget(data,image))addAction("Baixar",downloadResult);if(Array.isArray(data.actions)&&data.actions.length){data.actions.forEach(function(action){addAction(action.label||"Abrir",function(){if(action.command)runPublicCommand(String(action.command).replace(/^[/]/,""));else if(action.url&&tg&&tg.openLink)tg.openLink(action.url);});});}if(used){actions.classList.remove("hidden");}else{actions.classList.add("hidden");}card.classList.remove("hidden");status("Resultado atualizado dentro do Mini App.","ok","Resultado pronto.");}
+  async function sendCommandCopy(command){command=String(command||lastCommand||"").replace(/^[/]/,"").toLowerCase();if(!command){status("Nenhum comando executado para enviar ao bot.","bad","Enviar no bot");return;}reportClient("player_send_command_clicked",command,selectedGroup||"");const payload=JSON.stringify({type:"public_command_copy",command:"/"+command,group_ref:selectedGroup||""});try{if(tg&&typeof tg.sendData==="function"){status("Executando /"+command+" na DM do bot.","ok","Enviado ao bot");reportClient("player_senddata_attempt",command,selectedGroup||"");tg.sendData(payload);return;}}catch(e){reportClient("player_senddata_failed",e&&e.message?e.message:"sendData_failed",command);}try{status("Executando /"+command+" pelo bot.","","Enviar no bot");const res=await api("/equalizador/api/public/send-command-copy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:"/"+command,group_ref:selectedGroup||""})});status(res.message||"Comando executado pelo bot.","ok","Executado");reportClient("player_send_command_done",command,"backend");return;}catch(e){reportClient("player_send_command_backend_failed",e&&e.message?e.message:"send_command_failed",command+":"+(e&&e.status?e.status:""));}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText("/"+command).then(function(){status("Comando copiado para a área de transferência.","ok","Comando copiado");}).catch(function(){status("Não consegui executar pelo Telegram nem copiar automaticamente.","bad","Enviar no bot");});}else{status("Não consegui executar automaticamente.","bad","Enviar no bot");}}
+  function renderResult(data){data=data||{};currentResult=data;const card=$("resultCard"),body=$("resultBody"),img=$("resultImage"),link=$("resultImageLink"),actions=$("resultActions");$("resultTitle").textContent=data.title||"Resultado";setBodyRich(body,data.text||data.message||"");const image=data.image_data_url||data.image_url||"";if(image){img.src=image;link.href=image;link.download=safeText(data.filename||data.download_name||"tigraoRADIO-resultado.jpg");link.classList.remove("hidden");}else{img.removeAttribute("src");link.removeAttribute("href");link.classList.add("hidden");}actions.innerHTML="";let used=0;function addAction(label,fn){if(used>=4)return;const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=fn;actions.appendChild(b);used+=1;}if(lastCommand)addAction("Enviar no bot",function(){sendCommandCopy(lastCommand);});if(resultDownloadTarget(data,image))addAction("Baixar",downloadResult);if(Array.isArray(data.actions)&&data.actions.length){data.actions.forEach(function(action){addAction(action.label||"Abrir",function(){if(action.command)runPublicCommand(String(action.command).replace(/^[/]/,""));else if(action.url&&tg&&tg.openLink)tg.openLink(action.url);});});}if(used){actions.classList.remove("hidden");}else{actions.classList.add("hidden");}card.classList.remove("hidden");status("Resultado atualizado dentro do Mini App.","ok","Resultado pronto.");}
   async function loadPlayingPreview(){const res=await api("/equalizador/api/public/playing-preview");renderTrack(res);return res;}
   async function refreshPublicSession(){if(refreshing)return;refreshing=true;const btn=$("refreshSessionBtn");if(btn)btn.classList.add("loading");try{configureTelegram();if(!hasAuth()){showBotFallback();return;}const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:currentGroups;renderTrack(home.track||{});renderGroups();if(selectedGroup&&!currentGroups.some(function(g){return g.ref===selectedGroup;}))selectedGroup="";if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);if(lastCommand&&lastCommand!=="nowp"){await runPublicCommand(lastCommand,{fromRefresh:true});}else{status("Sessão e música atualizadas.","ok","Atualizado");}}catch(e){reportClient("player_refresh_failed",e&&e.message?e.message:"refresh_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao atualizar sessão.","bad","Falha");}finally{refreshing=false;if(btn)btn.classList.remove("loading");}}
   function openPanel(){try{const token=getStoredSession();if(token)window.sessionStorage.setItem(PANEL_SESSION_KEY,token);}catch(_){}const url=new URL("/equalizador",window.location.href);window.location.assign(url.toString());}
@@ -8771,43 +8771,61 @@ def _absolute_public_url(request: Request, value: str) -> str:
 
 @router.post("/api/public/send-command-copy")
 async def public_music_send_command_copy(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    """Fallback para clientes sem Telegram.WebApp.sendData.
+
+    Regra da fase 138.5: o Mini App não envia texto renderizado pela UI.
+    Cada botão mapeia para um comando real do bot; este fallback reexecuta
+    o comando pelo backend usando dados confiáveis e ignora qualquer texto
+    ou imagem renderizados pela interface no payload.
+    """
     identity = _public_identity_from_authorization(authorization)
     payload = await _read_json_payload(request)
     command = str(payload.get("command") or "").strip().lower().lstrip("/")
+    group_ref = str(payload.get("group_ref") or "").strip()
     if command not in _PUBLIC_COMMAND_COPY_ALLOWED:
         raise HTTPException(status_code=400, detail="Comando indisponível para envio.")
-    result_title = _clean_public_result_text(payload.get("result_title"), limit=80)
-    result_text = _clean_public_result_text(payload.get("result_text"), limit=3600)
-    text_lines: list[str] = []
-    if result_title:
-        text_lines.append(result_title)
-    if result_text:
-        if text_lines:
-            text_lines.append("")
-        text_lines.append(result_text)
-    result_body = "\n".join(text_lines).strip()
-    if not result_body:
-        result_body = f"Resultado de /{command} indisponível para envio."
-    image_target = str(payload.get("result_image") or "").strip()
+    if command == "nowp":
+        await _bot_api("sendMessage", {"chat_id": int(identity.user_id), "text": "Use /nowp na DM do bot para abrir o seletor oficial de grupos."})
+        return {"ok": True, "message": "Abri o caminho oficial do /nowp no chat do bot."}
+    try:
+        result = await public_music_command(command, group_ref=group_ref or None, authorization=authorization)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail="Não consegui executar o comando pelo bot.") from exc
+
+    title = _clean_public_result_text(result.get("title"), limit=80) if isinstance(result, dict) else ""
+    text_value = _clean_public_result_text((result.get("text") or result.get("message")) if isinstance(result, dict) else "", limit=3600)
+    lines: list[str] = []
+    if title:
+        lines.append(title)
+    if text_value:
+        if lines:
+            lines.append("")
+        lines.append(text_value)
+    body = "\n".join(lines).strip() or f"/{command} executado pelo bot."
+    image_target = ""
+    filename = "tigraoRADIO-resultado.jpg"
+    if isinstance(result, dict):
+        image_target = str(result.get("image_data_url") or result.get("image_url") or result.get("download_url") or "").strip()
+        filename = _safe_public_filename(result.get("filename") or result.get("download_name") or filename)
     image_url = ""
     if image_target:
         if image_target.lower().startswith("data:"):
-            token, _safe_name, _mime = _store_public_data_url(
-                image_target,
-                _safe_public_filename(payload.get("result_filename") or "tigraoRADIO-resultado.jpg"),
-            )
+            token, _safe_name, _mime = _store_public_data_url(image_target, filename)
             image_url = _absolute_public_url(request, f"/equalizador/api/public/download/{token}")
         elif image_target.lower().startswith(("http://", "https://")):
             image_url = image_target
     try:
-        await _bot_api("sendMessage", {"chat_id": int(identity.user_id), "text": result_body[:3900]})
         if image_url:
-            await _bot_api("sendPhoto", {"chat_id": int(identity.user_id), "photo": image_url})
+            await _bot_api("sendPhoto", {"chat_id": int(identity.user_id), "photo": image_url, "caption": body[:1000]})
+        else:
+            await _bot_api("sendMessage", {"chat_id": int(identity.user_id), "text": body[:3900]})
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=409, detail="Não consegui enviar o resultado pelo bot.") from exc
-    return {"ok": True, "message": "Enviei o resultado no chat do bot."}
+        raise HTTPException(status_code=409, detail="Não consegui executar o comando pelo bot.") from exc
+    return {"ok": True, "message": f"Executei /{command} no chat do bot."}
 
 
 @router.post("/api/public/nowp")

@@ -754,9 +754,14 @@ def _register_handlers(dp: Dispatcher) -> None:
         if not isinstance(payload, dict) or payload.get("type") != "public_command_copy":
             return
         command = str(payload.get("command") or "").strip().lower().lstrip("/")
-        if command not in {"playing", "weekfm", "monthfm", "tcanvas", "tstory", "tly", "tnow"}:
+        group_ref = str(payload.get("group_ref") or "").strip()
+        allowed = {"playing", "weekfm", "monthfm", "songcharts", "nowp", "tcanvas", "tstory", "tly", "tnow"}
+        if command not in allowed:
             await message.answer("Comando do Mini App indisponível nesta conversa.")
             return
+        # Fase 138.5: cada botão do Mini App executa o comando real já existente.
+        # O Mini App não monta resultado nem texto de cópia; ele só envia o nome
+        # do comando e, quando necessário, o grupo escolhido.
         if command == "playing":
             await _send_playing(message)
             return
@@ -767,6 +772,63 @@ def _register_handlers(dp: Dispatcher) -> None:
         if command == "monthfm":
             from app.bot.monthfm import monthfm as _monthfm_handler
             await _monthfm_handler(message)
+            return
+        if command == "nowp":
+            from app.bot.music_extras import _list_common_groups, _nowp_groups_keyboard
+            if not message.from_user or not message.bot:
+                return
+            if not is_user_connected(message.from_user.id):
+                await message.answer(connect_hint_for(message.chat.type), parse_mode="HTML", disable_web_page_preview=True)
+                return
+            status_msg = await message.answer("Procurando grupos em comum...")
+            common = await _list_common_groups(message.bot, message.from_user.id)
+            if not common:
+                await status_msg.edit_text("Nenhum grupo em comum encontrado.")
+                return
+            await status_msg.edit_text(
+                "♫ Pra qual grupo enviar sua música atual?",
+                reply_markup=_nowp_groups_keyboard(message.from_user.id, common),
+            )
+            return
+        if command == "songcharts":
+            if not message.from_user or not message.bot:
+                return
+            if group_ref:
+                from app.bot.music_groups import list_groups
+                from app.bot.songcharts import _is_chat_admin, _members_in_chat, _render_and_send
+                def _miniapp_group_ref(chat_id: int) -> str:
+                    return make_ui_ref("grp", int(chat_id), settings.equalizador_alias_secret())
+                group = None
+                for item in list_groups(80):
+                    try:
+                        chat_id = int(item.get("chat_id"))
+                    except Exception:
+                        continue
+                    if _miniapp_group_ref(chat_id) == group_ref:
+                        group = item
+                        break
+                if not group:
+                    await message.answer("Escolha um grupo válido no Mini App antes de executar /songcharts.")
+                    return
+                chat_id = int(group["chat_id"])
+                if not await _is_chat_admin(message.bot, chat_id, message.from_user.id):
+                    await message.answer("♫ /songcharts está liberado só pras administradoras do grupo.")
+                    return
+                status = await message.answer(f"Gerando ranking de {html.escape(str(group.get('title') or 'grupo'))}...")
+                profiles = await lastfm_service.get_all_profiles()
+                members = await _members_in_chat(message.bot, chat_id, profiles)
+                await _render_and_send(
+                    bot=message.bot,
+                    target_chat_id=message.chat.id,
+                    chat_title=str(group.get("title") or "grupo"),
+                    members=members,
+                    period_kind="week",
+                    status_message=status,
+                    pin=False,
+                )
+                return
+            from app.bot.songcharts import songcharts as _songcharts_handler
+            await _songcharts_handler(message)
             return
         if command == "tcanvas":
             from app.bot.tcanvas import tcanvas as _tcanvas_handler

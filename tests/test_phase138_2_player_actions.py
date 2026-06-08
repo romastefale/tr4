@@ -20,11 +20,11 @@ def test_phase138_2_download_button_uses_backend_for_data_urls():
     assert 'tg.downloadFile' in src
 
 
-def test_phase138_2_send_command_button_uses_backend_before_senddata_fallback():
+def test_phase138_2_send_command_button_uses_telegram_senddata_before_backend_fallback():
     src = ROUTER.read_text(encoding='utf-8')
-    backend_index = src.index('/equalizador/api/public/send-command-copy')
     senddata_index = src.index('player_senddata_attempt')
-    assert backend_index < senddata_index
+    backend_index = src.index('/equalizador/api/public/send-command-copy')
+    assert senddata_index < backend_index
     assert 'player_send_command_clicked' in src
     assert 'player_send_command_done' in src
     assert 'player_send_command_backend_failed' in src
