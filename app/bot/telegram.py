@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 import uuid
 from typing import Any, Awaitable, Callable
@@ -742,6 +743,47 @@ def _register_handlers(dp: Dispatcher) -> None:
     if not getattr(dp, "_equalizador_capture_middleware_registered", False):
         dp.message.outer_middleware(EqualizadorCaptureMiddleware())
         setattr(dp, "_equalizador_capture_middleware_registered", True)
+
+    @dp.message(F.web_app_data)
+    async def public_player_web_app_data(message: Message) -> None:
+        raw = getattr(getattr(message, "web_app_data", None), "data", "") or ""
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            return
+        if not isinstance(payload, dict) or payload.get("type") != "public_command_copy":
+            return
+        command = str(payload.get("command") or "").strip().lower().lstrip("/")
+        if command not in {"playing", "weekfm", "monthfm", "tcanvas", "tstory", "tly", "tnow"}:
+            await message.answer("Comando do Mini App indisponível nesta conversa.")
+            return
+        if command == "playing":
+            await _send_playing(message)
+            return
+        if command == "weekfm":
+            from app.bot.weekfm import weekfm as _weekfm_handler
+            await _weekfm_handler(message)
+            return
+        if command == "monthfm":
+            from app.bot.monthfm import monthfm as _monthfm_handler
+            await _monthfm_handler(message)
+            return
+        if command == "tcanvas":
+            from app.bot.tcanvas import tcanvas as _tcanvas_handler
+            await _tcanvas_handler(message)
+            return
+        if command == "tstory":
+            from app.bot.tstory import tstory as _tstory_handler
+            await _tstory_handler(message)
+            return
+        if command == "tly":
+            from app.bot.tly import tly as _tly_handler
+            await _tly_handler(message)
+            return
+        if command == "tnow":
+            from app.bot.tnow import tnow as _tnow_handler
+            await _tnow_handler(message)
+            return
 
     @dp.message(Command("start"))
     async def start(message: Message) -> None:
