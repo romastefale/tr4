@@ -31,4 +31,4 @@ def test_phase138_3_client_sends_only_command_and_group_ref():
     assert 'type:"public_command_copy"' in src
     assert 'command:"/"+command' in src
     assert 'group_ref:selectedGroup||""' in src
-    assert 'Executando /"+command+" na DM do bot.' in src
+    assert 'Enviando /"+command+" na sua DM pelo bot.' in src

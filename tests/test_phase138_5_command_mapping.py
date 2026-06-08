@@ -15,12 +15,13 @@ def test_phase138_5_buttons_send_command_name_not_ui_result_payload():
     assert 'result_filename:' not in src
 
 
-def test_phase138_5_senddata_is_primary_execution_path():
+def test_phase138_5_execute_command_is_primary_execution_path():
     src = ROUTER.read_text(encoding='utf-8')
+    execute_index = src.index('/equalizador/api/public/execute-command')
     senddata_index = src.index('player_senddata_attempt')
     backend_index = src.index('/equalizador/api/public/send-command-copy')
-    assert senddata_index < backend_index
-    assert 'Executando /"+command+" na DM do bot.' in src
+    assert execute_index < senddata_index < backend_index
+    assert 'Enviando /"+command+" na sua DM pelo bot.' in src
     assert 'Enviar no bot' in src
 
 

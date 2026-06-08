@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import ipaddress
 import os
 import re
 import secrets
+import socket
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Phase 136 public player: prefixo data URI exigido pelo backend/teste.
 _PHASE136_DATA_IMAGE_PREFIX = "data:image/png;base64,"
@@ -14,8 +17,11 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 import html
 import httpx
+import logging
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 from app.db.database import engine as default_engine
 from app.bot.music_groups import remember_group, list_groups
 from app.services.music import music_service
@@ -7937,10 +7943,13 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function requireGroup(command){pendingGroupCommand=command;hide("publishPanel",false);hide("publishChoices",false);status("Escolha o grupo e confirme para continuar.","","Grupo necessário");}
   function resultDownloadTarget(data,image){return safeText(data.download_url||data.file_url||data.video_url||data.image_url||image||"");}
   function absoluteUrl(value){try{return new URL(value,window.location.href).toString();}catch(_){return safeText(value);}}
-  async function prepareDownloadUrl(target,filename){if(new RegExp("^https?://","i").test(target))return target;const res=await api("/equalizador/api/public/download-result",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target:target,filename:filename})});return absoluteUrl(res.download_url||"");}
-  async function downloadResult(){if(!currentResult)return;const image=currentResult.image_data_url||currentResult.image_url||"";const target=resultDownloadTarget(currentResult,image);const filename=safeText(currentResult.filename||currentResult.download_name||"tigraoRADIO-resultado.jpg");if(!target){status("Este resultado não trouxe arquivo para baixar.","bad","Download");return;}reportClient("player_download_clicked",filename,target.slice(0,80));try{status("Preparando arquivo para download.","","Download");const url=await prepareDownloadUrl(target,filename);if(!url){throw new Error("download_url_missing");}if(tg&&typeof tg.downloadFile==="function"&&new RegExp("^https?://","i").test(url)){tg.downloadFile({url:url,file_name:filename});status("Pedido de download enviado ao Telegram.","ok","Download");reportClient("player_download_dispatched",filename,url.slice(0,120));return;}if(tg&&typeof tg.openLink==="function"&&new RegExp("^https?://","i").test(url)){tg.openLink(url,{try_instant_view:false});status("Abri o arquivo para download.","ok","Download");reportClient("player_download_openlink",filename,url.slice(0,120));return;}const a=document.createElement("a");a.href=url;a.download=filename;a.rel="noreferrer";document.body.appendChild(a);a.click();setTimeout(function(){a.remove();},0);status("Download solicitado.","ok","Download");reportClient("player_download_anchor",filename,url.slice(0,120));}catch(e){reportClient("player_download_failed",e&&e.message?e.message:"download_failed",target.slice(0,120));status((e&&e.message)||"Não consegui baixar este resultado.","bad","Download");}}
-  async function sendCommandCopy(command){command=String(command||lastCommand||"").replace(/^[/]/,"").toLowerCase();if(!command){status("Nenhum comando executado para enviar ao bot.","bad","Enviar no bot");return;}reportClient("player_send_command_clicked",command,selectedGroup||"");const payload=JSON.stringify({type:"public_command_copy",command:"/"+command,group_ref:selectedGroup||""});try{if(tg&&typeof tg.sendData==="function"){status("Executando /"+command+" na DM do bot.","ok","Enviado ao bot");reportClient("player_senddata_attempt",command,selectedGroup||"");tg.sendData(payload);return;}}catch(e){reportClient("player_senddata_failed",e&&e.message?e.message:"sendData_failed",command);}try{status("Executando /"+command+" pelo bot.","","Enviar no bot");const res=await api("/equalizador/api/public/send-command-copy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:"/"+command,group_ref:selectedGroup||""})});status(res.message||"Comando executado pelo bot.","ok","Executado");reportClient("player_send_command_done",command,"backend");return;}catch(e){reportClient("player_send_command_backend_failed",e&&e.message?e.message:"send_command_failed",command+":"+(e&&e.status?e.status:""));}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText("/"+command).then(function(){status("Comando copiado para a área de transferência.","ok","Comando copiado");}).catch(function(){status("Não consegui executar pelo Telegram nem copiar automaticamente.","bad","Enviar no bot");});}else{status("Não consegui executar automaticamente.","bad","Enviar no bot");}}
-  function renderResult(data){data=data||{};currentResult=data;const card=$("resultCard"),body=$("resultBody"),img=$("resultImage"),link=$("resultImageLink"),actions=$("resultActions");$("resultTitle").textContent=data.title||"Resultado";setBodyRich(body,data.text||data.message||"");const image=data.image_data_url||data.image_url||"";if(image){img.src=image;link.href=image;link.download=safeText(data.filename||data.download_name||"tigraoRADIO-resultado.jpg");link.classList.remove("hidden");}else{img.removeAttribute("src");link.removeAttribute("href");link.classList.add("hidden");}actions.innerHTML="";let used=0;function addAction(label,fn){if(used>=4)return;const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=fn;actions.appendChild(b);used+=1;}if(lastCommand)addAction("Enviar no bot",function(){sendCommandCopy(lastCommand);});if(resultDownloadTarget(data,image))addAction("Baixar",downloadResult);if(Array.isArray(data.actions)&&data.actions.length){data.actions.forEach(function(action){addAction(action.label||"Abrir",function(){if(action.command)runPublicCommand(String(action.command).replace(/^[/]/,""));else if(action.url&&tg&&tg.openLink)tg.openLink(action.url);});});}if(used){actions.classList.remove("hidden");}else{actions.classList.add("hidden");}card.classList.remove("hidden");status("Resultado atualizado dentro do Mini App.","ok","Resultado pronto.");}
+  function publicTimestamp(){const d=new Date();function z(n){return String(n).padStart(2,"0");}return String(d.getFullYear())+z(d.getMonth()+1)+z(d.getDate())+"_"+z(d.getHours())+z(d.getMinutes())+z(d.getSeconds());}
+  function publicFilename(command,ext){return "tigraoRADIO_"+safeText(command||lastCommand||"resultado").replace(/[^A-Za-z0-9_-]+/g,"-")+"_"+publicTimestamp()+"."+(ext||"txt");}
+  function textDataUrl(value){return "data:text/plain;base64,"+btoa(unescape(encodeURIComponent(safeText(value||""))));}
+  async function prepareDownloadUrl(target,filename){const res=await api("/equalizador/api/public/download-result",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target:target,filename:filename})});return absoluteUrl(res.download_url||"");}
+  async function downloadResult(){if(!currentResult)return;const image=currentResult.image_data_url||currentResult.image_url||"";let target=resultDownloadTarget(currentResult,image);let filename=safeText(currentResult.filename||currentResult.download_name||"");if(!target){const text=currentResult.text||currentResult.message||"";if(text){target=textDataUrl(text);filename=filename||publicFilename(lastCommand,"txt");}}if(!target){status("Este resultado não trouxe arquivo para baixar.","bad","Download");return;}if(!filename)filename=publicFilename(lastCommand,new RegExp("^data:image/png","i").test(target)?"png":"txt");reportClient("player_download_clicked",filename,target.slice(0,80));try{status("Preparando arquivo para download.","","Download");const url=await prepareDownloadUrl(target,filename);if(!url){throw new Error("download_url_missing");}reportClient("player_download_url_created",filename,url.slice(0,120));if(tg&&typeof tg.downloadFile==="function"&&new RegExp("^https?://","i").test(url)){reportClient("player_download_native_attempt",filename,url.slice(0,120));tg.downloadFile({url:url,file_name:filename});status("Pedido de download enviado ao Telegram.","ok","Download");return;}reportClient("player_download_fallback_open",filename,url.slice(0,120));window.open(url,"_blank");status("Abri o arquivo para download.","ok","Download");}catch(e){reportClient("player_download_failed",e&&e.message?e.message:"download_failed",target.slice(0,120));status((e&&e.message)||"Não consegui baixar este resultado.","bad","Download");}}
+  async function sendCommandCopy(command){command=String(command||lastCommand||"").replace(/^[/]/,"").toLowerCase();if(!command){status("Nenhum comando executado para enviar ao bot.","bad","Enviar no bot");return;}reportClient("player_execute_command_clicked",command,selectedGroup||"");reportClient("player_send_command_clicked",command,selectedGroup||"");try{status("Enviando /"+command+" na sua DM pelo bot.","","Enviar para bot");const res=await api("/equalizador/api/public/execute-command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:command,group_ref:selectedGroup||"",format:"dm"})});status(res.message||"Enviado na sua DM.","ok","Enviado para bot");reportClient("player_send_command_done",command,"execute-command");return;}catch(e){reportClient("player_execute_command_failed",e&&e.message?e.message:"execute_command_failed",command+":"+(e&&e.status?e.status:""));}const payload=JSON.stringify({type:"public_command_copy",command:"/"+command,group_ref:selectedGroup||""});try{if(tg&&typeof tg.sendData==="function"){status("Tentando fallback do Telegram para /"+command+".","","Enviar para bot");reportClient("player_senddata_attempt",command,selectedGroup||"");tg.sendData(payload);return;}}catch(e){reportClient("player_senddata_failed",e&&e.message?e.message:"sendData_failed",command);}try{const res=await api("/equalizador/api/public/send-command-copy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:"/"+command,group_ref:selectedGroup||""})});status(res.message||"Comando executado pelo bot.","ok","Executado");reportClient("player_send_command_done",command,"legacy-backend");return;}catch(e){reportClient("player_send_command_backend_failed",e&&e.message?e.message:"send_command_failed",command+":"+(e&&e.status?e.status:""));}status("Não consegui executar automaticamente.","bad","Enviar para bot");}
+  function renderResult(data){data=data||{};currentResult=data;const card=$("resultCard"),body=$("resultBody"),img=$("resultImage"),link=$("resultImageLink"),actions=$("resultActions");$("resultTitle").textContent=data.title||"Resultado";setBodyRich(body,data.text||data.message||"");const image=data.image_data_url||data.image_url||"";if(image){img.src=image;link.href=image;link.download=safeText(data.filename||data.download_name||"tigraoRADIO-resultado.jpg");link.classList.remove("hidden");}else{img.removeAttribute("src");link.removeAttribute("href");link.classList.add("hidden");}actions.innerHTML="";let used=0;function addAction(label,fn){if(used>=4)return;const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=fn;actions.appendChild(b);used+=1;}if(lastCommand)addAction("Enviar no bot",function(){sendCommandCopy(lastCommand);});if(resultDownloadTarget(data,image)||data.text||data.message)addAction("Baixar",downloadResult);if(Array.isArray(data.actions)&&data.actions.length){data.actions.forEach(function(action){addAction(action.label||"Abrir",function(){if(action.command)runPublicCommand(String(action.command).replace(/^[/]/,""));else if(action.url&&tg&&tg.openLink)tg.openLink(action.url);});});}if(used){actions.classList.remove("hidden");}else{actions.classList.add("hidden");}card.classList.remove("hidden");status("Resultado atualizado dentro do Mini App.","ok","Resultado pronto.");}
   async function loadPlayingPreview(){const res=await api("/equalizador/api/public/playing-preview");renderTrack(res);return res;}
   async function refreshPublicSession(){if(refreshing)return;refreshing=true;const btn=$("refreshSessionBtn");if(btn)btn.classList.add("loading");try{configureTelegram();if(!hasAuth()){showBotFallback();return;}const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:currentGroups;renderTrack(home.track||{});renderGroups();if(selectedGroup&&!currentGroups.some(function(g){return g.ref===selectedGroup;}))selectedGroup="";if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);if(lastCommand&&lastCommand!=="nowp"){await runPublicCommand(lastCommand,{fromRefresh:true});}else{status("Sessão e música atualizadas.","ok","Atualizado");}}catch(e){reportClient("player_refresh_failed",e&&e.message?e.message:"refresh_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao atualizar sessão.","bad","Falha");}finally{refreshing=false;if(btn)btn.classList.remove("loading");}}
   function openPanel(){try{const token=getStoredSession();if(token)window.sessionStorage.setItem(PANEL_SESSION_KEY,token);}catch(_){}const url=new URL("/equalizador",window.location.href);window.location.assign(url.toString());}
@@ -7997,6 +8006,7 @@ _PUBLIC_DOWNLOAD_DIR = Path(os.environ.get("TR4_PUBLIC_DOWNLOAD_DIR", "/tmp/tr4_
 _PUBLIC_DOWNLOAD_MAX_BYTES = 3_500_000
 _PUBLIC_DOWNLOAD_TTL_SECONDS = 15 * 60
 _PUBLIC_COMMAND_COPY_ALLOWED = {"playing", "weekfm", "monthfm", "songcharts", "tcanvas", "tstory", "tly", "tnow", "nowp"}
+_GROUP_REQUIRED_COMMANDS = {"songcharts", "nowp", "tnow"}
 
 
 def _safe_public_filename(value: object, fallback: str = "tigraoRADIO-resultado") -> str:
@@ -8033,16 +8043,7 @@ def _public_download_extension(mime: str) -> str:
     }.get(mime, ".bin")
 
 
-def _store_public_data_url(target: str, filename: str) -> tuple[str, str, str]:
-    match = re.match(r"^data:([A-Za-z0-9.+/-]+);base64,(.*)$", str(target or ""), re.S)
-    if not match:
-        raise HTTPException(status_code=400, detail="Arquivo para download inválido.")
-    mime = match.group(1).lower()
-    raw = match.group(2).strip()
-    try:
-        binary = base64.b64decode(raw, validate=True)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Arquivo para download inválido.") from exc
+def _store_public_bytes(binary: bytes, filename: str, mime: str) -> tuple[str, str, str]:
     if not binary or len(binary) > _PUBLIC_DOWNLOAD_MAX_BYTES:
         raise HTTPException(status_code=413, detail="Arquivo grande demais para download pelo Mini App.")
     ext = _public_download_extension(mime)
@@ -8054,6 +8055,19 @@ def _store_public_data_url(target: str, filename: str) -> tuple[str, str, str]:
     stored = _PUBLIC_DOWNLOAD_DIR / f"{token}__{safe_name}"
     stored.write_bytes(binary)
     return token, safe_name, mime
+
+
+def _store_public_data_url(target: str, filename: str) -> tuple[str, str, str]:
+    match = re.match(r"^data:([A-Za-z0-9.+/-]+);base64,(.*)$", str(target or ""), re.S)
+    if not match:
+        raise HTTPException(status_code=400, detail="Arquivo para download inválido.")
+    mime = match.group(1).lower()
+    raw = match.group(2).strip()
+    try:
+        binary = base64.b64decode(raw, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Arquivo para download inválido.") from exc
+    return _store_public_bytes(binary, filename, mime)
 
 
 def _resolve_public_download_file(token: str) -> Path | None:
@@ -8708,6 +8722,71 @@ async def public_music_command(
 
     raise HTTPException(status_code=404, detail="Comando indisponível no Mini App.")
 
+_BLOCKED_PUBLIC_DOWNLOAD_HOSTS = {"localhost", "metadata", "metadata.google.internal"}
+
+
+def _public_download_ip_blocked(ip: ipaddress._BaseAddress) -> bool:
+    return bool(
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _assert_safe_public_download_url(target: str) -> None:
+    parsed = urlparse(str(target or ""))
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="URL remota inválida para download.")
+    host = parsed.hostname.strip().lower().rstrip(".")
+    if host in _BLOCKED_PUBLIC_DOWNLOAD_HOSTS or host.endswith(".internal"):
+        raise HTTPException(status_code=400, detail="URL remota bloqueada para download.")
+    try:
+        addresses = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme.lower() == "https" else 80), type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise HTTPException(status_code=400, detail="URL remota inválida para download.") from exc
+        addresses = []
+        for info in infos:
+            raw_ip = info[4][0]
+            try:
+                addresses.append(ipaddress.ip_address(raw_ip))
+            except ValueError:
+                continue
+    if not addresses or any(_public_download_ip_blocked(ip) for ip in addresses):
+        raise HTTPException(status_code=400, detail="URL remota bloqueada para download.")
+
+
+async def _fetch_public_download_bytes(target: str) -> tuple[bytes, str]:
+    _assert_safe_public_download_url(target)
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=False) as client:
+        async with client.stream("GET", target) as res:
+            status_code = int(getattr(res, "status_code", 200) or 200)
+            if 300 <= status_code < 400:
+                raise HTTPException(status_code=400, detail="Redirecionamento remoto bloqueado para download.")
+            res.raise_for_status()
+            raw_length = str(res.headers.get("content-length") or "").strip()
+            if raw_length:
+                try:
+                    if int(raw_length) > _PUBLIC_DOWNLOAD_MAX_BYTES:
+                        raise HTTPException(status_code=413, detail="Arquivo grande demais para download pelo Mini App.")
+                except ValueError:
+                    pass
+            mime = str(res.headers.get("content-type") or "application/octet-stream").split(";", 1)[0].strip()
+            chunks = bytearray()
+            async for chunk in res.aiter_bytes():
+                if not chunk:
+                    continue
+                chunks.extend(chunk)
+                if len(chunks) > _PUBLIC_DOWNLOAD_MAX_BYTES:
+                    raise HTTPException(status_code=413, detail="Arquivo grande demais para download pelo Mini App.")
+    return bytes(chunks), mime
+
+
 @router.post("/api/public/download-result")
 async def public_music_download_result(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
     _public_identity_from_authorization(authorization)
@@ -8717,7 +8796,19 @@ async def public_music_download_result(request: Request, authorization: str | No
     if not target:
         raise HTTPException(status_code=400, detail="Resultado sem arquivo para download.")
     if target.lower().startswith(("http://", "https://")):
-        return {"ok": True, "download_url": target, "filename": filename}
+        try:
+            binary, mime = await _fetch_public_download_bytes(target)
+            token, safe_name, mime = _store_public_bytes(binary, filename, mime)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail="Não consegui preparar o arquivo remoto para download.") from exc
+        return {
+            "ok": True,
+            "download_url": f"/equalizador/api/public/download/{token}",
+            "filename": safe_name,
+            "mime_type": mime,
+        }
     token, safe_name, mime = _store_public_data_url(target, filename)
     return {
         "ok": True,
@@ -8745,7 +8836,7 @@ async def public_music_download_file(token: str) -> FileResponse:
         media_type = "video/mp4"
     elif suffix == ".txt":
         media_type = "text/plain"
-    return FileResponse(path, media_type=media_type, filename=filename)
+    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="attachment")
 
 
 def _clean_public_result_text(value: object, limit: int = 3600) -> str:
@@ -8769,6 +8860,87 @@ def _absolute_public_url(request: Request, value: str) -> str:
     return str(request.base_url).rstrip("/") + "/" + raw.lstrip("/")
 
 
+async def _dispatch_public_command_result_to_dm(
+    *,
+    request: Request,
+    identity: TelegramWebAppIdentity,
+    command: str,
+    result: dict[str, object],
+) -> None:
+    title = _clean_public_result_text(result.get("title"), limit=80)
+    text_value = _clean_public_result_text(result.get("text") or result.get("message"), limit=3600)
+    lines: list[str] = []
+    if title:
+        lines.append(title)
+    if text_value:
+        if lines:
+            lines.append("")
+        lines.append(text_value)
+    body = "\n".join(lines).strip() or f"/{command} executado pelo bot."
+    image_target = str(result.get("image_data_url") or result.get("image_url") or result.get("cover_url") or result.get("download_url") or result.get("file_url") or "").strip()
+    filename = _safe_public_filename(result.get("filename") or result.get("download_name") or "tigraoRADIO-resultado.jpg")
+    image_url = ""
+    document_url = ""
+    if image_target:
+        if image_target.lower().startswith("data:"):
+            token, safe_name, mime = _store_public_data_url(image_target, filename)
+            url = _absolute_public_url(request, f"/equalizador/api/public/download/{token}")
+            if str(mime).startswith("image/"):
+                image_url = url
+            else:
+                document_url = url
+                filename = safe_name
+        elif image_target.lower().startswith(("http://", "https://")):
+            if filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")) or image_target.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
+                image_url = image_target
+            else:
+                document_url = image_target
+    if image_url:
+        await _bot_api("sendPhoto", {"chat_id": int(identity.user_id), "photo": image_url, "caption": body[:1000]})
+    elif document_url:
+        await _bot_api("sendDocument", {"chat_id": int(identity.user_id), "document": document_url, "caption": body[:1000]})
+    else:
+        await _bot_api("sendMessage", {"chat_id": int(identity.user_id), "text": body[:3900]})
+
+
+@router.post("/api/public/execute-command")
+async def public_music_execute_command(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    logger.info("public_execute_command_requested")
+    try:
+        identity = _public_identity_from_authorization(authorization)
+        logger.info("public_execute_command_session_ok user_id=%s", identity.user_id)
+        payload = await _read_json_payload(request)
+        command = str(payload.get("command") or "").strip().lower().lstrip("/")
+        group_ref = str(payload.get("group_ref") or "").strip()
+        fmt = str(payload.get("format") or "dm").strip().lower()
+        if fmt != "dm":
+            raise HTTPException(status_code=400, detail="Formato indisponível para execução pública.")
+        if command not in _PUBLIC_COMMAND_COPY_ALLOWED:
+            raise HTTPException(status_code=400, detail="Comando indisponível para envio.")
+        if command in _GROUP_REQUIRED_COMMANDS and not group_ref:
+            raise HTTPException(status_code=400, detail="Escolha um grupo antes de enviar.")
+        logger.info("public_execute_command_dispatch_started command=%s user_id=%s", command, identity.user_id)
+        if command == "nowp":
+            result = await public_music_nowp(request, authorization=authorization)
+            await _dispatch_public_command_result_to_dm(
+                request=request,
+                identity=identity,
+                command=command,
+                result={"title": "Publicar", "text": result.get("message") or "Publicado."},
+            )
+        else:
+            result = await public_music_command(command, group_ref=group_ref or None, authorization=authorization)
+            await _dispatch_public_command_result_to_dm(request=request, identity=identity, command=command, result=result)
+        logger.info("public_execute_command_dm_sent command=%s user_id=%s", command, identity.user_id)
+        return {"ok": True, "sent": True, "command": command, "message": "Enviado na sua DM."}
+    except HTTPException:
+        logger.exception("public_execute_command_failed")
+        raise
+    except Exception as exc:
+        logger.exception("public_execute_command_failed")
+        raise HTTPException(status_code=409, detail="Não consegui enviar o comando na sua DM.") from exc
+
+
 @router.post("/api/public/send-command-copy")
 async def public_music_send_command_copy(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
     """Fallback para clientes sem Telegram.WebApp.sendData.
@@ -8784,9 +8956,10 @@ async def public_music_send_command_copy(request: Request, authorization: str | 
     group_ref = str(payload.get("group_ref") or "").strip()
     if command not in _PUBLIC_COMMAND_COPY_ALLOWED:
         raise HTTPException(status_code=400, detail="Comando indisponível para envio.")
+    if command in _GROUP_REQUIRED_COMMANDS and not group_ref:
+        raise HTTPException(status_code=400, detail="Escolha um grupo antes de enviar.")
     if command == "nowp":
-        await _bot_api("sendMessage", {"chat_id": int(identity.user_id), "text": "Use /nowp na DM do bot para abrir o seletor oficial de grupos."})
-        return {"ok": True, "message": "Abri o caminho oficial do /nowp no chat do bot."}
+        raise HTTPException(status_code=409, detail="/nowp exige publicação em grupo pelo fluxo próprio.")
     try:
         result = await public_music_command(command, group_ref=group_ref or None, authorization=authorization)
     except HTTPException:
