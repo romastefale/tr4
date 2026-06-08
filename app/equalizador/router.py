@@ -2095,6 +2095,19 @@ api(base + "/canais-remetentes").then((r) => r.ok ? r.json() : { remetentes: [] 
       const tg = window.Telegram && window.Telegram.WebApp;
       if (tg) { tg.ready(); tg.expand(); }
       const initData = tg && tg.initData ? tg.initData : "";
+  function getStoredPublicSession() {
+    try { return window.localStorage.getItem("tr4_public_eqs") || ""; }
+    catch (_) { return ""; }
+  }
+  function setStoredPublicSession(token) {
+    try {
+      if (token) window.localStorage.setItem("tr4_public_eqs", token);
+      else window.localStorage.removeItem("tr4_public_eqs");
+    } catch (_) {}
+  }
+  const storedPublicSession = getStoredPublicSession();
+  let apiHeaders = initData ? { Authorization: "tma " + initData } : (storedPublicSession ? { Authorization: "eqs " + storedPublicSession } : {});
+  const headers = apiHeaders;
       const SESSION_KEY = "tr4_equalizador_eqs";
       const reportClient = (kind, message, extra) => {
         try { if (window.__eqClientError) window.__eqClientError(kind, message, "equalizador", 0, 0, extra || ""); } catch (_) {}
@@ -7854,6 +7867,10 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       btn.onclick = function(){
         const command = btn.getAttribute("data-command") || "";
         if (!command) return;
+        if (command === "/songcharts") {
+          status("Use /songcharts no grupo onde deseja ver o ranking.", "ok");
+          return;
+        }
         if (command === "/nowp") {
           document.getElementById("groups").scrollIntoView({behavior:"smooth", block:"center"});
           status("Escolha um grupo e toque em Publicar atual.", "ok");
@@ -7906,6 +7923,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     }
   }
   async function load(){
+    if (!initData && !storedPublicSession) { status("Abra pelo Telegram para carregar sua música e seus grupos.", "bad"); return; }
     if (!hasAuth()) {
       setOpenBotVisible(true);
       reportClient("public_initdata_ausente", "Mini App sem initData e sem sessão pública local.");
@@ -7917,6 +7935,11 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       const me = await api("/equalizador/api/public/me");
       $("botUser").textContent = me.bot_username || "@tigraoRADIObot";
       if (me.bot_photo_url) { $("botPhoto").onerror = showBotFallback; $("botPhoto").src = me.bot_photo_url; $("botPhoto").classList.remove("hidden"); $("botPhotoFallback").classList.add("hidden"); } else { showBotFallback(); }
+      const sessionToken = me.sessao && me.sessao.token ? me.sessao.token : "";
+      if (sessionToken) {
+        setStoredPublicSession(sessionToken);
+        apiHeaders = { Authorization: "eqs " + sessionToken };
+      }
       if (me.can_open_equalizador) $("modBtn").classList.remove("hidden"); else $("modBtn").classList.add("hidden");
       const data = await api("/equalizador/api/public/home");
       renderCommands(data.commands || []);

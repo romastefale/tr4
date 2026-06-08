@@ -757,6 +757,30 @@ def _register_handlers(dp: Dispatcher) -> None:
         parts = (message.text or "").split(maxsplit=1)
         payload = parts[1].strip() if len(parts) >= 2 else ""
 
+        if payload.startswith("cmd_") and message.from_user:
+            cmd = payload[len("cmd_"):].strip().lower()
+            if cmd == "playing":
+                await _send_playing(message)
+                return
+            if cmd == "myself":
+                from app.bot.myself import myself
+                await myself(message)
+                return
+            if cmd == "weekfm":
+                from app.bot.weekfm import weekfm
+                await weekfm(message)
+                return
+            if cmd == "monthfm":
+                from app.bot.monthfm import monthfm
+                await monthfm(message)
+                return
+            if cmd == "songcharts":
+                await message.answer("Use /songcharts no grupo onde deseja ver o ranking.")
+                return
+            if cmd == "nowp":
+                await message.answer("Abra o Mini App, escolha um grupo e toque em Publicar atual.")
+                return
+
         if payload.startswith("mm_") and message.from_user:
             try:
                 sessao = mark_session_waiting(session_ref=payload, telegram_user_id=int(message.from_user.id))
@@ -767,6 +791,30 @@ def _register_handlers(dp: Dispatcher) -> None:
                 return
             except MultimediaError:
                 await message.answer("Sessão multimídia indisponível ou pertencente a outro usuário.")
+                return
+
+        if payload.startswith("cmd_") and message.from_user:
+            command = payload[len("cmd_"):].strip().lower().lstrip("/")
+            if command == "playing":
+                await _send_playing(message)
+                return
+            if command == "myself":
+                from app.bot.myself import myself as _myself_handler
+                await _myself_handler(message)
+                return
+            if command == "weekfm":
+                from app.bot.weekfm import weekfm as _weekfm_handler
+                await _weekfm_handler(message)
+                return
+            if command == "monthfm":
+                from app.bot.monthfm import monthfm as _monthfm_handler
+                await _monthfm_handler(message)
+                return
+            if command == "nowp":
+                await message.answer("Abra o Mini App, escolha um grupo e toque em Publicar atual.")
+                return
+            if command == "songcharts":
+                await message.answer("O ranking usa /songcharts dentro do grupo e respeita a regra de administrador.")
                 return
 
         if payload.startswith("lastfm_") and message.from_user:
@@ -1317,24 +1365,24 @@ def _register_handlers(dp: Dispatcher) -> None:
     )
     async def equalizador_multimedia_private_text_active_session(message: Message) -> object:
         if not message.from_user:
-            return UNHANDLED
+            return None  # phase133: aiogram handler fallback sem NameError
         try:
             active = active_session_for_user(telegram_user_id=int(message.from_user.id))
         except Exception:
             active = None
         if not active:
-            return UNHANDLED
+            return None  # phase133: aiogram handler fallback sem NameError
         payload_data = _multimedia_message_payload(message)
         hint = extract_multimedia_session_ref(getattr(getattr(message, "reply_to_message", None), "text", "") or getattr(getattr(message, "reply_to_message", None), "caption", ""))
         if not payload_data:
-            return UNHANDLED
+            return None  # phase133: aiogram handler fallback sem NameError
         try:
             sessao = attach_telegram_message_to_session(telegram_user_id=int(message.from_user.id), message_data=payload_data, session_ref_hint=hint)
         except MultimediaError as exc:
             await message.answer(str(exc)[:160] or "Texto não aceito.")
             return None
         if not sessao:
-            return UNHANDLED
+            return None  # phase133: aiogram handler fallback sem NameError
         keyboard = _multimedia_return_keyboard()
         await message.answer("Texto recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
         return None
