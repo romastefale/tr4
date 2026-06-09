@@ -8010,7 +8010,6 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   $("songchartsBackBtn").onclick=function(){showMorePage();};
   $("moreRadioBtn").onclick=function(){sendDmOnlyCommand("radiofm");};
   $("moreAlbnowBtn").onclick=function(){sendDmOnlyCommand("albnow");};
-  $("moreAdminCancelBtn").onclick=function(){showHome();status("Voltou para a tela inicial.","","Início");};
   $("moreMemberCancelBtn").onclick=function(){showHome();status("Voltou para a tela inicial.","","Início");};
   $("toggleGroupsBtn").onclick=function(){hide("groups",!$("groups").classList.contains("hidden"));};
   $("publishConfirm").onclick=function(){if(!pendingGroupCommand){pendingGroupCommand="nowp";}if(!selectedGroup){hide("groups",false);status("Escolha um grupo antes de confirmar.","bad","Grupo obrigatório");return;}const cmd=pendingGroupCommand;pendingGroupCommand="";hide("publishChoices",true);runPublicCommand(cmd,{confirmed:true,target:cmd==="tstory"?"group":""});};
