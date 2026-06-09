@@ -7849,8 +7849,8 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     :root{color-scheme:dark;--bg:var(--tg-theme-bg-color,#0d1217);--surface:rgba(18,18,18,.62);--surface2:#22313f;--line:rgba(255,255,255,.10);--text:var(--tg-theme-text-color,#f6f7fb);--muted:var(--tg-theme-hint-color,rgba(246,247,251,.62));--green:#45e0a5;--blue:var(--tg-theme-button-color,#3478f6);--danger:#ff9d9d;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     *{box-sizing:border-box}html,body{margin:0;min-height:100%}body{display:flex;justify-content:center;background:radial-gradient(circle at 22% 0%,rgba(52,120,246,.18),transparent 34%),radial-gradient(circle at 90% 7%,rgba(69,224,165,.12),transparent 32%),var(--bg);color:var(--text)}button,input{font:inherit}.hidden{display:none!important}.phone{width:min(100%,430px);min-height:100vh;padding:calc(12px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 220px),#101417;display:block}
     .now-hero{position:relative;min-height:345px;border-radius:30px;overflow:hidden;background:#101010;border:1px solid var(--line);box-shadow:0 24px 70px rgba(0,0,0,.42);margin-bottom:14px}.now-hero__cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(1.02);opacity:1}.now-hero__cover.hidden{display:block!important;opacity:0}.now-hero__shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.08) 0%,rgba(0,0,0,.30) 44%,rgba(0,0,0,.90) 100%),radial-gradient(circle at 18% 22%,rgba(69,224,165,.25),transparent 34%),radial-gradient(circle at 88% 0%,rgba(52,120,246,.20),transparent 38%)}.brand{appearance:none;cursor:pointer;position:absolute;top:14px;right:14px;z-index:2;display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border-radius:999px;background:rgba(9,14,18,.58);border:1px solid rgba(255,255,255,.10);box-shadow:0 14px 32px rgba(0,0,0,.25);backdrop-filter:blur(16px);color:#eafff6;font-size:14px;font-weight:950;letter-spacing:-.03em}.brand span{color:var(--green)}.brand.loading{opacity:.72}.brand.loading strong:after{content:"";display:inline-block;width:8px;height:8px;margin-left:6px;border-radius:50%;background:var(--green);animation:pulse 1s infinite}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}.now-hero__body{position:absolute;left:20px;right:20px;bottom:20px;z-index:2}.eyebrow{margin:0 0 8px;color:var(--green);font-size:10px;font-weight:950;letter-spacing:.20em}.track-title{margin:0;color:#fff;font-size:clamp(24px,8.5vw,39px);line-height:1.02;letter-spacing:-.045em;text-transform:uppercase;text-shadow:0 12px 30px rgba(0,0,0,.42);overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;max-height:120px;overflow:hidden}.track-title.len-medium{font-size:clamp(22px,7.5vw,34px)}.track-title.len-long{font-size:clamp(20px,6.7vw,30px);line-height:1.06;letter-spacing:-.04em}.track-title.len-xlong{font-size:clamp(18px,5.8vw,26px);line-height:1.08;letter-spacing:-.035em;-webkit-line-clamp:4}.track-title a{color:inherit;text-decoration:none}.track-artist{margin:10px 0 0;color:rgba(255,255,255,.76);font-size:13px;font-weight:620;line-height:1.2;overflow-wrap:anywhere}.now-user{margin:16px 0 0;color:var(--green);font-size:13px;line-height:1.15;font-weight:950}
-    .command-area,.publish-panel,.result-card{padding:14px;border-radius:26px;background:rgba(18,18,18,.60);border:1px solid rgba(255,255,255,.08);margin-bottom:12px}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 11px}.section-title h2,.publish-panel h2{margin:0;font-size:15px;color:rgba(255,255,255,.92);letter-spacing:-.02em}.section-title span{color:var(--muted);font-size:12px}.command-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.cmd{appearance:none;min-height:64px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:#22313f;color:#fff;display:grid;place-items:center;text-align:center;padding:10px;font-weight:950;font-size:14px;letter-spacing:-.02em;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);cursor:pointer}.cmd.primary{background:var(--blue)}.cmd:disabled{opacity:.48}.panel-button{display:block;min-width:140px;min-height:44px;margin:13px auto 0;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.10);color:#fff;font-weight:950;text-decoration:none;text-align:center;padding:11px 20px}.publish-panel h2{margin-bottom:10px}.group-compact{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px;border-radius:19px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075)}.group-photo{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--blue),#22313f);border:1px solid rgba(255,255,255,.14);color:#fff;font-weight:950}.group-info{min-width:0;overflow:hidden}.group-info strong{display:block;font-size:13px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.group-info span{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.select-group{width:auto;min-width:76px;min-height:38px;height:38px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;padding:0 14px;font-weight:850;white-space:nowrap}.choice{min-height:42px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;padding:0 14px;font-weight:850}.choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.choice{min-height:48px;border-radius:16px;background:#22313f;font-weight:900}.choice.primary{background:var(--blue)}.group-list{max-height:260px;overflow:auto;border-radius:18px;margin-top:10px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.035)}.group-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:0;border-top:1px solid var(--line);background:transparent;color:#fff;text-align:left}.group-row:first-child{border-top:0}.group-row[aria-selected="true"]{background:rgba(52,120,246,.18)}.group-title{font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-meta{color:var(--muted);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.result{min-height:54px;padding:14px 15px;border-radius:19px;border:1px solid rgba(69,224,165,.25);background:rgba(69,224,165,.055);color:#bff7df;font-size:14px;line-height:1.35;margin-bottom:12px;overflow-wrap:anywhere}.result strong{display:block;color:#eafff6;font-size:15px;margin-bottom:4px}.result.bad{color:var(--danger);border-color:rgba(248,113,113,.24);background:rgba(248,113,113,.065)}.result-card h2{margin:0 0 8px;font-size:22px;letter-spacing:-.04em}.result-card p{margin:6px 0;color:rgba(255,255,255,.80);line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}.result-card img{display:block;width:100%;height:auto;object-fit:contain;margin-top:10px;border-radius:18px;border:1px solid rgba(255,255,255,.08)}.result-image-link{display:block}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.quick-actions button{min-height:46px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:#22313f;color:#fff;font-weight:850}
-    .boot-debug{display:block;margin-top:8px;color:rgba(246,247,251,.58);font-size:11px;line-height:1.35;word-break:break-word}
+    .command-area,.publish-panel,.result-card{padding:14px;border-radius:26px;background:rgba(18,18,18,.60);border:1px solid rgba(255,255,255,.08);margin-bottom:12px}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 11px}.section-title h2,.publish-panel h2{margin:0;font-size:15px;color:rgba(255,255,255,.92);letter-spacing:-.02em}.section-title span{color:var(--muted);font-size:12px}.command-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.cmd{appearance:none;min-height:64px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:#22313f;color:#fff;display:grid;place-items:center;text-align:center;padding:10px;font-weight:950;font-size:14px;letter-spacing:-.02em;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);cursor:pointer}.cmd.primary{background:var(--blue)}.cmd:disabled{opacity:.48}.panel-button{display:block;min-width:140px;min-height:44px;margin:13px auto 0;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.10);color:#fff;font-weight:950;text-decoration:none;text-align:center;padding:11px 20px}.publish-panel h2{margin-bottom:10px}.group-compact{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px;border-radius:19px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075)}.group-photo{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--blue),#22313f);border:1px solid rgba(255,255,255,.14);color:#fff;font-weight:950}.group-info{min-width:0;overflow:hidden}.group-info strong{display:block;font-size:13px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.group-info span{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.select-group{width:auto;min-width:76px;min-height:38px;height:38px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;padding:0 14px;font-weight:850;white-space:nowrap}.choice{min-height:42px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;padding:0 14px;font-weight:850}.choice-grid{display:grid;grid-template-columns:1fr;gap:9px;margin-top:10px}.choice{min-height:48px;border-radius:16px;background:#22313f;font-weight:900}.choice.primary{background:var(--blue)}.group-list{max-height:260px;overflow:auto;border-radius:18px;margin-top:10px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.035)}.group-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:0;border-top:1px solid var(--line);background:transparent;color:#fff;text-align:left}.group-row:first-child{border-top:0}.group-row[aria-selected="true"]{background:rgba(52,120,246,.18)}.group-title{font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-meta{color:var(--muted);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.result{min-height:54px;padding:14px 15px;border-radius:19px;border:1px solid rgba(69,224,165,.25);background:rgba(69,224,165,.055);color:#bff7df;font-size:14px;line-height:1.35;margin-bottom:12px;overflow-wrap:anywhere}.result strong{display:block;color:#eafff6;font-size:15px;margin-bottom:4px}.result.bad{color:var(--danger);border-color:rgba(248,113,113,.24);background:rgba(248,113,113,.065)}.result-card h2{margin:0 0 8px;font-size:22px;letter-spacing:-.04em}.result-card p{margin:6px 0;color:rgba(255,255,255,.80);line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}.result-card img{display:block;width:100%;height:auto;object-fit:contain;margin-top:10px;border-radius:18px;border:1px solid rgba(255,255,255,.08)}.result-image-link{display:block}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.quick-actions button{min-height:46px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:#22313f;color:#fff;font-weight:850}
+    .command-area{padding:0;background:transparent;border:0}.command-area .section-title{display:none}.boot-debug{display:block;margin-top:8px;color:rgba(246,247,251,.58);font-size:11px;line-height:1.35;word-break:break-word}
     @media(max-width:370px){.phone{padding-left:10px;padding-right:10px}.now-hero{min-height:320px;border-radius:26px}.now-hero__body{left:17px;right:17px;bottom:17px}.track-artist{font-size:12px}.now-user{font-size:12px}.cmd{min-height:58px;font-size:13px;border-radius:16px}.command-grid{gap:7px}}
   </style>
 </head>
@@ -7869,17 +7869,13 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
     </section>
 
     <section class="command-area" aria-label="Comandos musicais">
-      <div class="section-title"><h2>Comandos musicais</h2><span>3×3</span></div>
       <div id="commandGrid" class="command-grid">
-        <button class="cmd" type="button" data-command="playing">Tocando</button>
         <button class="cmd primary" type="button" data-command="nowp">Publicar</button>
         <button class="cmd" type="button" data-command="weekfm">Semana</button>
         <button class="cmd" type="button" data-command="monthfm">Mês</button>
-        <button class="cmd" type="button" data-command="songcharts">Ranking</button>
         <button class="cmd" type="button" data-command="tcanvas">Canvas</button>
         <button class="cmd" type="button" data-command="tstory">Story</button>
         <button class="cmd" type="button" data-command="tly">Letra</button>
-        <button class="cmd" type="button" data-command="tnow">Mosaico</button>
       </div>
       <a id="modBtn" class="panel-button hidden" href="/equalizador">Painel</a>
     </section>
@@ -7893,8 +7889,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
       </div>
       <div id="groups" class="group-list hidden"><div class="result">Carregando grupos.</div></div>
       <div id="publishChoices" class="choice-grid hidden">
-        <button id="publishConfirm" class="choice primary" type="button">Continuar</button>
-        <button id="publishCancel" class="choice" type="button">Cancelar</button>
+        <button id="publishConfirm" class="choice primary" type="button">Confirmar</button>
       </div>
     </section>
 
@@ -7915,7 +7910,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   const SESSION_KEY="tr4_public_eqs";
   const PANEL_SESSION_KEY="tr4_equalizador_eqs";
   const BOOT_LINK="https://t.me/tigraoRADIObot?startapp";
-  const GROUP_COMMANDS={nowp:true,songcharts:true,tcanvas:true,tstory:true,tnow:true};
+  const GROUP_COMMANDS={nowp:true,tcanvas:true};
   let tg=null,initData="",apiHeaders={},selectedGroup="",currentGroups=[],trackAvailable=false,pendingGroupCommand="";
   let lastCommand="",currentResult=null,refreshing=false;
   function $(id){return document.getElementById(id);}
@@ -7939,7 +7934,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   function renderTrack(track){track=track||{};trackAvailable=!!track.available;const title=trackAvailable?(track.track_name||"Música"):(track.message||"Nada tocando agora");const artist=trackAvailable?(track.artist||"Artista"):(track.diagnostic_code||track.code||"Aguardando música");const url=track.spotify_url||"";const titleEl=$("trackTitle");titleEl.className="track-title "+titleClass(title);titleEl.innerHTML=url?'<a href="'+escapeHtml(url)+'" target="_blank" rel="noreferrer">'+escapeHtml(title)+"</a>":escapeHtml(title);$("trackArtist").textContent=trackAvailable?"— "+artist:artist;$("plays").textContent=String(track.user_plays||0);const cover=$("cover");if(track.cover_url){cover.src=track.cover_url;cover.classList.remove("hidden");}else{cover.removeAttribute("src");cover.classList.add("hidden");}updateCommandState();}
   function sanitizeRichText(value){const wrap=document.createElement("template");wrap.innerHTML=safeText(value).replace(/\\n/g,"<br>");const allowed={B:true,STRONG:true,I:true,EM:true,CODE:true,BR:true,BLOCKQUOTE:true,P:true,A:true};function clean(node){if(node.nodeType===Node.TEXT_NODE)return document.createTextNode(node.nodeValue||"");const frag=document.createDocumentFragment();if(node.nodeType!==Node.ELEMENT_NODE){Array.from(node.childNodes||[]).forEach(function(child){frag.appendChild(clean(child));});return frag;}const tag=node.tagName;if(!allowed[tag]){Array.from(node.childNodes).forEach(function(child){frag.appendChild(clean(child));});return frag;}const el=document.createElement(tag.toLowerCase());if(tag==="A"){const href=node.getAttribute("href")||"";if(new RegExp("^https?://","i").test(href)){el.setAttribute("href",href);el.setAttribute("target","_blank");el.setAttribute("rel","noreferrer");}}Array.from(node.childNodes).forEach(function(child){el.appendChild(clean(child));});return el;}const out=document.createDocumentFragment();Array.from(wrap.content.childNodes).forEach(function(child){out.appendChild(clean(child));});return out;}
   function setBodyRich(el,value){el.textContent="";el.appendChild(sanitizeRichText(value));}
-  function updateCommandState(){document.querySelectorAll("[data-command]").forEach(function(btn){const cmd=btn.getAttribute("data-command")||"";btn.disabled=(!trackAvailable&&cmd!=="weekfm"&&cmd!=="monthfm"&&cmd!=="songcharts"&&cmd!=="tnow");});}
+  function updateCommandState(){document.querySelectorAll("[data-command]").forEach(function(btn){const cmd=btn.getAttribute("data-command")||"";btn.disabled=(!trackAvailable&&cmd!=="weekfm"&&cmd!=="monthfm");});}
   function groupInitial(group){const raw=safeText((group&&group.title)||(group&&group.username)||"G").trim();return(raw.charAt(0)||"G").toUpperCase();}function setSelectedGroup(ref){selectedGroup=ref||"";let group=currentGroups.find(function(g){return g.ref===selectedGroup;});$("selectedGroupTitle").textContent=group?group.title:"Escolha um grupo";$("selectedGroupHint").textContent=group?(group.username?"@"+group.username:"Grupo selecionado para publicação."):"Usado apenas quando a função postar no grupo.";const photo=$("selectedGroupPhoto");if(photo)photo.textContent=group?groupInitial(group):"G";renderGroups();}
   function renderGroups(){const box=$("groups");if(!box)return;if(!currentGroups.length){box.innerHTML='<div class="result">Nenhum grupo disponível.</div>';return;}box.innerHTML=currentGroups.map(function(g){const meta=g.username?"@"+g.username:(g.status||"disponível");return '<button class="group-row" type="button" data-group="'+escapeHtml(g.ref)+'" aria-selected="'+(g.ref===selectedGroup?'true':'false')+'"><span><span class="group-title">'+escapeHtml(g.title||"Grupo")+'</span><span class="group-meta">'+escapeHtml(meta)+'</span></span><span>›</span></button>';}).join("");box.querySelectorAll("[data-group]").forEach(function(btn){btn.onclick=function(){setSelectedGroup(btn.getAttribute("data-group")||"");hide("groups",true);hide("publishChoices",false);};});}
   function requireGroup(command){pendingGroupCommand=command;hide("publishPanel",false);hide("publishChoices",false);status("Escolha o grupo e confirme para continuar.","","Grupo necessário");}
@@ -7955,7 +7950,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   async function loadPlayingPreview(){const res=await api("/equalizador/api/public/playing-preview");renderTrack(res);return res;}
   async function refreshPublicSession(){if(refreshing)return;refreshing=true;const btn=$("refreshSessionBtn");if(btn)btn.classList.add("loading");try{configureTelegram();if(!hasAuth()){showBotFallback();return;}const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:currentGroups;renderTrack(home.track||{});renderGroups();if(selectedGroup&&!currentGroups.some(function(g){return g.ref===selectedGroup;}))selectedGroup="";if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);if(lastCommand&&lastCommand!=="nowp"){await runPublicCommand(lastCommand,{fromRefresh:true});}else{status("Sessão e música atualizadas.","ok","Atualizado");}}catch(e){reportClient("player_refresh_failed",e&&e.message?e.message:"refresh_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao atualizar sessão.","bad","Falha");}finally{refreshing=false;if(btn)btn.classList.remove("loading");}}
   function openPanel(){try{const token=getStoredSession();if(token)window.sessionStorage.setItem(PANEL_SESSION_KEY,token);}catch(_){}const url=new URL("/equalizador",window.location.href);window.location.assign(url.toString());}
-  async function runPublicCommand(command,options){options=options||{};command=String(command||"").replace(/^[/]/,"").toLowerCase();if(!command)return;if(!hasAuth()){showBotFallback();return;}if(GROUP_COMMANDS[command]&&!selectedGroup){requireGroup(command);return;}lastCommand=command;try{status("Executando /"+command+".","","Comando");if(command==="nowp"){const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})});renderResult({title:"Publicar",text:res.message||"Publicado.",command_copy:"/nowp"});if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}const params=new URLSearchParams();if(selectedGroup)params.set("group_ref",selectedGroup);const res=await api("/equalizador/api/public/command/"+encodeURIComponent(command)+(params.toString()?"?"+params.toString():""));if(command==="playing"){renderTrack(res);renderResult({title:"Tocando",text:(res.track_name||"Música")+" — "+(res.artist||"Artista"),image_url:res.cover_url||"",download_url:res.cover_url||"",filename:"tocando-agora.jpg"});}else{renderResult(res);}if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_command_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao executar comando.","bad","Falha");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
+  async function runPublicCommand(command,options){options=options||{};command=String(command||"").replace(/^[/]/,"").toLowerCase();if(!command)return;if(!hasAuth()){showBotFallback();return;}if(GROUP_COMMANDS[command]&&!options.confirmed){requireGroup(command);return;}if(GROUP_COMMANDS[command]&&!selectedGroup){requireGroup(command);return;}lastCommand=command;const label=command==="nowp"?"Publicar":command==="weekfm"?"Semana":command==="monthfm"?"Mês":command==="tcanvas"?"Canvas":command==="tstory"?"Story":command==="tly"?"Letra":command;try{reportClient("player_action_clicked",command,selectedGroup||"");status(GROUP_COMMANDS[command]?"Publicando.":"Enviando na DM.","",label);const res=await api("/equalizador/api/public/execute-command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:command,group_ref:selectedGroup||"",format:"dm"})});const result=(res&&res.result&&typeof res.result==="object")?res.result:{title:label,text:(res&&res.message)||"Concluído."};if(!result.title)result.title=label;if(!result.text&&!result.message)result.text=(res&&res.message)||"Concluído.";renderResult(result);status((res&&res.message)||(GROUP_COMMANDS[command]?"Publicado no grupo e enviado na sua DM.":"Enviado na sua DM."),"ok",label);reportClient(GROUP_COMMANDS[command]?"player_action_group_publish_done":"player_action_dm_sent",command,selectedGroup||"");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_action_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao executar ação.","bad",label);if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
   function waitForTelegram(ms){const started=Date.now();return new Promise(function(resolve){(function tick(){configureTelegram();if(tg||Date.now()-started>=ms){resolve(!!tg);return;}setTimeout(tick,80);})();});}
   function setBootDebug(text){const el=$("bootDebug");if(el)el.textContent=text;}
   async function bootstrap(){try{if(window.__TR4_PLAYER_BOOT)window.__TR4_PLAYER_BOOT.bottomStarted=true;}catch(_){}reportClient("player_js_started","ok","phase137_3");setBootDebug("JS principal iniciou. Testando conexão com o backend.");await publicPing();setBootDebug("Conexão testada. Aguardando Telegram.WebApp/initData.");await waitForTelegram(1800);configureTelegram();if(!hasAuth()){reportClient("player_no_auth_after_wait",tg?"Telegram.WebApp sem initData/sessao":"Telegram.WebApp ausente","");showBotFallback();renderTrack({available:false,message:"Abra pelo Telegram oficial ou use uma sessão válida."});setBootDebug("Sem initData/sessão. Se estiver em cliente alternativo, teste no Telegram oficial.");return;}try{setBootDebug("Sessão encontrada. Chamando /api/public/me.");const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));setBootDebug("Usuário validado. Carregando home pública.");const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:[];renderTrack(home.track||{});renderGroups();if(!selectedGroup&&currentGroups.length)setSelectedGroup(currentGroups[0].ref);setBootDebug("Bootstrap completo.");status("Escolha uma função na matriz.","ok","Pronto.");}catch(e){reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:"");showBotFallback();renderTrack({available:false,message:"Não foi possível carregar o player."});setBootDebug("Falha no bootstrap: "+((e&&e.message)||"erro desconhecido"));}}
@@ -7963,8 +7958,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   $("refreshSessionBtn").onclick=function(){refreshPublicSession();};
   const modBtn=$("modBtn");if(modBtn)modBtn.addEventListener("click",function(ev){ev.preventDefault();openPanel();});
   $("toggleGroupsBtn").onclick=function(){hide("groups",!$("groups").classList.contains("hidden"));};
-  $("publishConfirm").onclick=function(){if(!pendingGroupCommand){pendingGroupCommand="nowp";}const cmd=pendingGroupCommand;pendingGroupCommand="";hide("publishChoices",true);runPublicCommand(cmd);};
-  $("publishCancel").onclick=function(){pendingGroupCommand="";hide("publishChoices",true);hide("publishPanel",true);status("Publicação cancelada.","","Cancelado");};
+  $("publishConfirm").onclick=function(){if(!pendingGroupCommand){pendingGroupCommand="nowp";}const cmd=pendingGroupCommand;pendingGroupCommand="";hide("publishChoices",true);hide("publishPanel",true);runPublicCommand(cmd,{confirmed:true});};
   bootstrap();
 })();
 </script>
@@ -8007,8 +8001,8 @@ def _public_identity_from_authorization(authorization: str | None) -> TelegramWe
 _PUBLIC_DOWNLOAD_DIR = Path(os.environ.get("TR4_PUBLIC_DOWNLOAD_DIR", "/tmp/tr4_public_downloads"))
 _PUBLIC_DOWNLOAD_MAX_BYTES = 3_500_000
 _PUBLIC_DOWNLOAD_TTL_SECONDS = 15 * 60
-_PUBLIC_COMMAND_COPY_ALLOWED = {"playing", "weekfm", "monthfm", "songcharts", "tcanvas", "tstory", "tly", "tnow", "nowp"}
-_GROUP_REQUIRED_COMMANDS = {"songcharts", "nowp", "tnow"}
+_PUBLIC_COMMAND_COPY_ALLOWED = {"weekfm", "monthfm", "tcanvas", "tstory", "tly", "nowp"}
+_GROUP_REQUIRED_COMMANDS = {"nowp", "tcanvas"}
 
 
 def _safe_public_filename(value: object, fallback: str = "tigraoRADIO-resultado") -> str:
@@ -8862,10 +8856,10 @@ def _absolute_public_url(request: Request, value: str) -> str:
     return str(request.base_url).rstrip("/") + "/" + raw.lstrip("/")
 
 
-async def _dispatch_public_command_result_to_dm(
+async def _dispatch_public_command_result_to_chat(
     *,
     request: Request,
-    identity: TelegramWebAppIdentity,
+    chat_id: int,
     command: str,
     result: dict[str, object],
 ) -> None:
@@ -8898,11 +8892,26 @@ async def _dispatch_public_command_result_to_dm(
             else:
                 document_url = image_target
     if image_url:
-        await _bot_api("sendPhoto", {"chat_id": int(identity.user_id), "photo": image_url, "caption": body[:1000]})
+        await _bot_api("sendPhoto", {"chat_id": int(chat_id), "photo": image_url, "caption": body[:1000]})
     elif document_url:
-        await _bot_api("sendDocument", {"chat_id": int(identity.user_id), "document": document_url, "caption": body[:1000]})
+        await _bot_api("sendDocument", {"chat_id": int(chat_id), "document": document_url, "caption": body[:1000]})
     else:
-        await _bot_api("sendMessage", {"chat_id": int(identity.user_id), "text": body[:3900]})
+        await _bot_api("sendMessage", {"chat_id": int(chat_id), "text": body[:3900]})
+
+
+async def _dispatch_public_command_result_to_dm(
+    *,
+    request: Request,
+    identity: TelegramWebAppIdentity,
+    command: str,
+    result: dict[str, object],
+) -> None:
+    await _dispatch_public_command_result_to_chat(
+        request=request,
+        chat_id=int(identity.user_id),
+        command=command,
+        result=result,
+    )
 
 
 @router.post("/api/public/execute-command")
@@ -8918,29 +8927,45 @@ async def public_music_execute_command(request: Request, authorization: str | No
         if fmt != "dm":
             raise HTTPException(status_code=400, detail="Formato indisponível para execução pública.")
         if command not in _PUBLIC_COMMAND_COPY_ALLOWED:
-            raise HTTPException(status_code=400, detail="Comando indisponível para envio.")
+            raise HTTPException(status_code=400, detail="Ação indisponível no player público.")
         if command in _GROUP_REQUIRED_COMMANDS and not group_ref:
-            raise HTTPException(status_code=400, detail="Escolha um grupo antes de enviar.")
+            detail = "Escolha um grupo antes de publicar." if command == "nowp" else "Escolha um grupo antes de continuar."
+            raise HTTPException(status_code=400, detail=detail)
         logger.info("public_execute_command_dispatch_started command=%s user_id=%s", command, identity.user_id)
+        result: dict[str, object]
+        destination = "dm"
+        message = "Enviado na sua DM."
         if command == "nowp":
-            result = await public_music_nowp(request, authorization=authorization)
-            await _dispatch_public_command_result_to_dm(
+            published = await public_music_nowp(request, authorization=authorization)
+            result = {"title": "Publicar", "text": published.get("message") or "Publicado."}
+            await _dispatch_public_command_result_to_dm(request=request, identity=identity, command=command, result=result)
+            destination = "group+dm"
+            message = "Publicado no grupo e enviado na sua DM."
+        elif command == "tcanvas":
+            group = _resolve_public_group(group_ref)
+            if not group:
+                raise HTTPException(status_code=404, detail="Grupo indisponível.")
+            result = await public_music_command(command, group_ref=group_ref or None, authorization=authorization)
+            await _dispatch_public_command_result_to_chat(
                 request=request,
-                identity=identity,
+                chat_id=int(group["chat_id"]),
                 command=command,
-                result={"title": "Publicar", "text": result.get("message") or "Publicado."},
+                result=result,
             )
+            await _dispatch_public_command_result_to_dm(request=request, identity=identity, command=command, result=result)
+            destination = "group+dm"
+            message = "Publicado no grupo e enviado na sua DM."
         else:
             result = await public_music_command(command, group_ref=group_ref or None, authorization=authorization)
             await _dispatch_public_command_result_to_dm(request=request, identity=identity, command=command, result=result)
         logger.info("public_execute_command_dm_sent command=%s user_id=%s", command, identity.user_id)
-        return {"ok": True, "sent": True, "command": command, "message": "Enviado na sua DM."}
+        return {"ok": True, "sent": True, "command": command, "destination": destination, "message": message, "result": result}
     except HTTPException:
         logger.exception("public_execute_command_failed")
         raise
     except Exception as exc:
         logger.exception("public_execute_command_failed")
-        raise HTTPException(status_code=409, detail="Não consegui enviar o comando na sua DM.") from exc
+        raise HTTPException(status_code=409, detail="Não consegui concluir a ação pelo player público.") from exc
 
 
 @router.post("/api/public/send-command-copy")
