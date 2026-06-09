@@ -8485,11 +8485,21 @@ def _public_text_result(title: str, text_value: str, **extra: object) -> dict[st
     return payload
 
 
-async def _public_card_result(title: str, result: object, *, fallback: str = "") -> dict[str, object]:
+async def _public_card_result(
+    title: str,
+    result: object,
+    *,
+    fallback: str = "",
+    display_name: str = "Usuário",
+    user_id: int = 0,
+    username: str | None = None,
+    raw_period: str | None = None,
+) -> dict[str, object]:
     text_value = str(getattr(result, "text", "") or fallback or "Sem conteúdo.")
     image_data_url = ""
+    caption_html = ""
+    card_data = getattr(result, "card_data", None)
     try:
-        card_data = getattr(result, "card_data", None)
         if card_data is not None:
             from app.services.monthfm_card import render_monthfm_card
             image_data_url = _public_image_data_url(await render_monthfm_card(card_data))
@@ -8497,7 +8507,18 @@ async def _public_card_result(title: str, result: object, *, fallback: str = "")
         logger.exception("PUBLIC_PLAYER_CARD_RENDER_FAILED title=%s", title)
     if not image_data_url:
         image_data_url = _public_image_data_url(getattr(result, "photo_bytes", None))
-    return _public_text_result(title, text_value, image_data_url=image_data_url)
+    if image_data_url:
+        try:
+            if title.lower().startswith("semana"):
+                from app.bot.weekfm import _caption as _weekfm_caption
+                caption_html = _weekfm_caption(card_data, display_name, int(user_id or 0), username)
+            elif title.lower().startswith("m"):
+                from app.bot.monthfm import _format_caption as _monthfm_caption
+                caption_html = _monthfm_caption(card_data, raw_period, display_name, int(user_id or 0), username)
+        except Exception:
+            logger.exception("PUBLIC_PLAYER_ORIGINAL_CAPTION_FAILED title=%s", title)
+            caption_html = ""
+    return _public_text_result(title, text_value, image_data_url=image_data_url, caption_html=caption_html)
 
 
 async def _public_track_media_result(identity: TelegramWebAppIdentity, command: str) -> dict[str, object]:
@@ -8693,7 +8714,15 @@ async def public_music_command(
                 display_name=display_name,
                 raw_week=None,
             )
-            return await _public_card_result("Semana", result, fallback="Não consegui gerar o extrato semanal.")
+            return await _public_card_result(
+                "Semana",
+                result,
+                fallback="Não consegui gerar o extrato semanal.",
+                display_name=display_name,
+                user_id=int(identity.user_id),
+                username=username,
+                raw_period=None,
+            )
         except Exception:
             logger.exception("PUBLIC_PLAYER_WEEKFM_FAILED user=%s", identity.user_id)
             raise HTTPException(status_code=409, detail="Não consegui gerar o extrato semanal agora.")
@@ -8706,7 +8735,15 @@ async def public_music_command(
                 display_name=display_name,
                 raw_month=None,
             )
-            return await _public_card_result("Mês", result, fallback="Não consegui gerar o extrato mensal.")
+            return await _public_card_result(
+                "Mês",
+                result,
+                fallback="Não consegui gerar o extrato mensal.",
+                display_name=display_name,
+                user_id=int(identity.user_id),
+                username=username,
+                raw_period=None,
+            )
         except Exception:
             logger.exception("PUBLIC_PLAYER_MONTHFM_FAILED user=%s", identity.user_id)
             raise HTTPException(status_code=409, detail="Não consegui gerar o extrato mensal agora.")
@@ -8989,6 +9026,7 @@ async def _send_public_result_to_chat(
             lines.append("")
         lines.append(text_value)
     body = "\n".join(lines).strip() or fallback
+    original_caption = str(result.get("caption_html") or "").strip()
     image_target = str(result.get("image_data_url") or result.get("image_url") or result.get("cover_url") or result.get("download_url") or result.get("file_url") or "").strip()
     filename = _safe_public_filename(result.get("filename") or result.get("download_name") or "tigraoRADIO-resultado.jpg")
     image_url = ""
@@ -9008,10 +9046,18 @@ async def _send_public_result_to_chat(
             else:
                 document_url = image_target
     if image_url:
-        return await _bot_api("sendPhoto", {"chat_id": int(chat_id), "photo": image_url, "caption": body[:1000]})
+        payload: dict[str, object] = {"chat_id": int(chat_id), "photo": image_url}
+        if original_caption:
+            payload["caption"] = original_caption[:1000]
+            payload["parse_mode"] = "HTML"
+        return await _bot_api("sendPhoto", payload)
     if document_url:
-        return await _bot_api("sendDocument", {"chat_id": int(chat_id), "document": document_url, "caption": body[:1000]})
-    return await _bot_api("sendMessage", {"chat_id": int(chat_id), "text": body[:3900]})
+        payload = {"chat_id": int(chat_id), "document": document_url}
+        if original_caption:
+            payload["caption"] = original_caption[:1000]
+            payload["parse_mode"] = "HTML"
+        return await _bot_api("sendDocument", payload)
+    return await _bot_api("sendMessage", {"chat_id": int(chat_id), "text": body[:3900], "parse_mode": "HTML"})
 
 
 async def _public_assert_user_in_group(identity: TelegramWebAppIdentity, chat_id: int) -> None:
