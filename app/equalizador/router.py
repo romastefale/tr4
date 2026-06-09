@@ -8365,6 +8365,17 @@ async def _public_playing_preview_for_identity(identity: TelegramWebAppIdentity)
     if built:
         _track_id, caption_html, built_cover, _keyboard, _emoji = built
         cover = str(built_cover or cover or "")[:500]
+    user_plays = 0
+    if artist and track_name:
+        try:
+            from app.services.lastfm import lastfm_service
+            count = await asyncio.wait_for(
+                lastfm_service.get_user_track_playcount(int(identity.user_id), artist, track_name),
+                timeout=1.8,
+            )
+            user_plays = int(count or 0)
+        except Exception:
+            user_plays = 0
     return {
         "available": True,
         "diagnostic_code": "ok",
@@ -8374,7 +8385,7 @@ async def _public_playing_preview_for_identity(identity: TelegramWebAppIdentity)
         "artist": artist[:120],
         "spotify_url": str(track.get("spotify_url") or "")[:500],
         "cover_url": cover,
-        "user_plays": 0,
+        "user_plays": user_plays,
     }
 
 
