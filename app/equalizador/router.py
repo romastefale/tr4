@@ -7961,10 +7961,10 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   async function api(path,opts){opts=opts||{};const timeoutMs=Number(opts.timeoutMs||10000);delete opts.timeoutMs;opts.headers=Object.assign({},apiHeaders,opts.headers||{});reportClient("player_api_started",path,"");const res=await fetchTimeout(path,opts,timeoutMs);const data=await res.json().catch(function(){return {};});reportClient("player_api_done",path,String(res.status));if(!res.ok){const detail=data.detail||data.public_detail||data.message||("HTTP "+res.status);const err=new Error(typeof detail==="string"?detail:(detail.public_detail||detail.code||"Falha na operação."));err.payload=data;err.status=res.status;throw err;}return data;}
   function status(msg,kind,title){const el=$("status");if(!el)return;el.className="result"+(kind?" "+kind:"");const debug=$("bootDebug");const debugText=debug?debug.textContent:"";el.innerHTML="<strong>"+escapeHtml(title||"Status")+"</strong>"+escapeHtml(msg||"")+(debugText?'<span id="bootDebug" class="boot-debug">'+escapeHtml(debugText)+'</span>':"");}
   function showHome(){document.body.classList.remove("mode-publish");document.body.classList.remove("mode-more");pendingGroupCommand="";hide("publishPanel",true);hide("morePanel",true);hide("groups",true);hide("publishChoices",true);hide("storyChoices",true);hide("moreSongchartsChoices",true);hide("groupPickerBlock",false);}
-  function showMorePage(){document.body.classList.add("mode-publish");document.body.classList.add("mode-more");pendingGroupCommand="";hide("publishPanel",true);hide("groups",true);hide("publishChoices",true);hide("storyChoices",true);hide("groupPickerBlock",true);hide("morePanel",false);hide("resultCard",true);currentResult=null;hide("moreSongchartsChoices",true);hide("moreAdminChoices",!canOpenEqualizador);hide("moreMemberChoices",!!canOpenEqualizador);status("Escolha uma opção.","ok","Mais opções");}
+  function showMorePage(){document.body.classList.add("mode-publish");document.body.classList.add("mode-more");pendingGroupCommand="";hide("publishPanel",true);hide("groups",true);hide("publishChoices",true);hide("storyChoices",true);hide("groupPickerBlock",true);hide("morePanel",false);hide("resultCard",true);currentResult=null;hide("moreSongchartsChoices",true);hide("moreAdminChoices",!canOpenEqualizador);hide("moreMemberChoices",false);status("Escolha uma opção.","ok","Mais opções");}
   function showSongchartsChoices(){document.body.classList.add("mode-publish");document.body.classList.add("mode-more");hide("publishPanel",true);hide("groups",true);hide("publishChoices",true);hide("storyChoices",true);hide("groupPickerBlock",true);hide("morePanel",false);hide("moreAdminChoices",true);hide("moreMemberChoices",true);hide("moreSongchartsChoices",false);hide("songchartsAllWeekBtn",!canOpenUniversalSongcharts);hide("songchartsAllMonthBtn",!canOpenUniversalSongcharts);status("Escolha o período do Songcharts.","ok","Songcharts");}
   function openSongchartsGroup(period){pendingSongchartsPeriod=period||"week";selectedGroup="";setSelectedGroup("");showPublishPage("songcharts");}
-  async function runSongchartsUniversal(period){pendingSongchartsPeriod=period||"week";lastCommand="songcharts";selectedGroup="";try{status("Gerando Songcharts universal.","","Songcharts");const res=await api("/equalizador/api/public/songcharts-universal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({period:pendingSongchartsPeriod}),timeoutMs:45000});showHome();renderResult(res);status("Songcharts universal gerado.","ok","Songcharts");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_songcharts_universal_failed",e&&e.message?e.message:"songcharts_universal_failed",pendingSongchartsPeriod+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao gerar Songcharts universal.","bad","Falha");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
+  async function runSongchartsUniversal(period){pendingSongchartsPeriod=period||"week";lastCommand="";selectedGroup="";try{hide("resultCard",true);currentResult=null;status("Enviando Songcharts universal na DM.","","Songcharts");const res=await api("/equalizador/api/public/songcharts-universal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({period:pendingSongchartsPeriod}),timeoutMs:45000});showHome();status(res.message||"Songcharts universal enviado na sua DM.","ok","Songcharts");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_songcharts_universal_failed",e&&e.message?e.message:"songcharts_universal_failed",pendingSongchartsPeriod+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao gerar Songcharts universal.","bad","Falha");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
   function showPublishPage(command){pendingGroupCommand=command||"nowp";const title=COMMAND_TITLES[pendingGroupCommand]||"Publicar";const titleEl=$("publishActionTitle");if(titleEl)titleEl.textContent=title;const hint=$("selectedGroupHint");if(hint&&!selectedGroup)hint.textContent="Toque em um grupo abaixo e confirme.";document.body.classList.add("mode-publish");document.body.classList.remove("mode-more");hide("morePanel",true);hide("publishPanel",false);hide("resultCard",true);currentResult=null;if(pendingGroupCommand==="tstory"){hide("storyChoices",false);hide("groupPickerBlock",true);hide("groups",true);hide("publishChoices",true);return;}hide("storyChoices",true);hide("groupPickerBlock",false);hide("groups",false);hide("publishChoices",false);renderGroups();}
   function showBotFallback(){hide("openBotBtn",false);status("Abra pelo Telegram para validar sua sessão.","bad","Sessão pública");}
   function titleClass(value){const n=safeText(value).trim().length;if(n>70)return "len-xlong";if(n>44)return "len-long";if(n>24)return "len-medium";return "len-short";}
@@ -9490,11 +9490,26 @@ async def public_music_songcharts_universal(request: Request, authorization: str
             members=members,
             period_kind=kind,  # type: ignore[arg-type]
         )
-        return await _public_card_result(
+        public_result = await _public_card_result(
             "Songcharts geral" if kind == "week" else "Songcharts geral mensal",
             result,
             fallback="Não consegui gerar o Songcharts universal.",
         )
+        sent = await _send_public_result_to_chat(
+            request=request,
+            chat_id=int(identity.user_id),
+            result=public_result,
+            fallback="Songcharts universal gerado pelo bot.",
+        )
+        dm_message_id = int(sent.get("message_id") or 0)
+        return {
+            "ok": True,
+            "command": "songcharts",
+            "target": "dm",
+            "period": kind,
+            "message": ("Songcharts universal mensal enviado na sua DM." if kind == "month" else "Songcharts universal semanal enviado na sua DM."),
+            "dm_message_id": dm_message_id,
+        }
     except HTTPException:
         raise
     except Exception as exc:
@@ -9600,7 +9615,7 @@ async def public_music_group_command(request: Request, authorization: str | None
             copied_message_id = int(copied.get("message_id") or 0)
         except Exception:
             logger.exception("PUBLIC_PLAYER_GROUP_COMMAND_COPY_DM_FAILED command=%s user_id=%s chat_id=%s message_id=%s", command, identity.user_id, chat_id, source_message_id)
-    label = {"weekfm": "Semana", "monthfm": "Mês", "tcanvas": "Canvas", "tly": "Letra", "tnow": "Mosaico"}.get(command, command)
+    label = {"weekfm": "Semana", "monthfm": "Mês", "tcanvas": "Canvas", "tly": "Letra", "tnow": "Mosaico", "songcharts": "Songcharts mensal" if period == "month" else "Songcharts"}.get(command, command)
     return {
         "ok": True,
         "command": command,
