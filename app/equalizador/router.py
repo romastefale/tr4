@@ -7886,7 +7886,12 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
 
     <section id="publishPanel" class="publish-panel hidden" aria-label="Publicar em grupo">
       <h2 id="publishActionTitle">Publicar</h2>
-      <div class="group-compact">
+      <div id="storyChoices" class="choice-grid hidden">
+        <button id="storyDmBtn" class="choice primary" type="button">Enviar na DM</button>
+        <button id="storyGroupBtn" class="choice" type="button">Enviar no grupo</button>
+        <button id="storyCancelBtn" class="choice" type="button">Voltar</button>
+      </div>
+      <div id="groupPickerBlock" class="group-compact">
         <div id="selectedGroupPhoto" class="group-photo">G</div>
         <div class="group-info"><strong id="selectedGroupTitle">Escolha um grupo</strong><span id="selectedGroupHint">Toque em um grupo abaixo e confirme.</span></div>
         <button id="toggleGroupsBtn" class="select-group" type="button">Trocar</button>
@@ -7915,9 +7920,9 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   const SESSION_KEY="tr4_public_eqs";
   const PANEL_SESSION_KEY="tr4_equalizador_eqs";
   const BOOT_LINK="https://t.me/tigraoRADIObot?startapp";
-  const GROUP_COMMANDS={nowp:true,weekfm:true,monthfm:true,tcanvas:true,songcharts:true,tstory:true,tnow:true};
-  const PAGE_COMMANDS={nowp:true,weekfm:true,monthfm:true,tcanvas:true};
-  const COMMAND_TITLES={nowp:"Publicar",weekfm:"Semana",monthfm:"Mês",tcanvas:"Canvas"};
+  const GROUP_COMMANDS={nowp:true,weekfm:true,monthfm:true,tcanvas:true,songcharts:true,tnow:true};
+  const PAGE_COMMANDS={nowp:true,weekfm:true,monthfm:true,tcanvas:true,tstory:true};
+  const COMMAND_TITLES={nowp:"Publicar",weekfm:"Semana",monthfm:"Mês",tcanvas:"Canvas",tstory:"Story"};
   let tg=null,initData="",apiHeaders={},selectedGroup="",currentGroups=[],trackAvailable=false,pendingGroupCommand="";
   let lastCommand="",currentResult=null,refreshing=false;
   function $(id){return document.getElementById(id);}
@@ -7936,8 +7941,8 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   async function publicPing(){try{reportClient("player_ping_started","/api/public/ping","");const res=await fetchTimeout("/equalizador/api/public/ping?ts="+Date.now(),{method:"GET",cache:"no-store"},4500);reportClient("player_ping_done",String(res.status),res.ok?"ok":"not_ok");return res.ok;}catch(e){reportClient("player_ping_failed",e&&e.message?e.message:"ping_failed","");return false;}}
   async function api(path,opts){opts=opts||{};opts.headers=Object.assign({},apiHeaders,opts.headers||{});reportClient("player_api_started",path,"");const res=await fetchTimeout(path,opts,10000);const data=await res.json().catch(function(){return {};});reportClient("player_api_done",path,String(res.status));if(!res.ok){const detail=data.detail||data.public_detail||data.message||("HTTP "+res.status);const err=new Error(typeof detail==="string"?detail:(detail.public_detail||detail.code||"Falha na operação."));err.payload=data;err.status=res.status;throw err;}return data;}
   function status(msg,kind,title){const el=$("status");if(!el)return;el.className="result"+(kind?" "+kind:"");const debug=$("bootDebug");const debugText=debug?debug.textContent:"";el.innerHTML="<strong>"+escapeHtml(title||"Status")+"</strong>"+escapeHtml(msg||"")+(debugText?'<span id="bootDebug" class="boot-debug">'+escapeHtml(debugText)+'</span>':"");}
-  function showHome(){document.body.classList.remove("mode-publish");pendingGroupCommand="";hide("publishPanel",true);hide("groups",true);hide("publishChoices",true);}
-  function showPublishPage(command){pendingGroupCommand=command||"nowp";const title=COMMAND_TITLES[pendingGroupCommand]||"Publicar";const titleEl=$("publishActionTitle");if(titleEl)titleEl.textContent=title;const hint=$("selectedGroupHint");if(hint&&!selectedGroup)hint.textContent="Toque em um grupo abaixo e confirme.";document.body.classList.add("mode-publish");hide("publishPanel",false);hide("groups",false);hide("publishChoices",false);hide("resultCard",true);currentResult=null;renderGroups();}
+  function showHome(){document.body.classList.remove("mode-publish");pendingGroupCommand="";hide("publishPanel",true);hide("groups",true);hide("publishChoices",true);hide("storyChoices",true);hide("groupPickerBlock",false);}
+  function showPublishPage(command){pendingGroupCommand=command||"nowp";const title=COMMAND_TITLES[pendingGroupCommand]||"Publicar";const titleEl=$("publishActionTitle");if(titleEl)titleEl.textContent=title;const hint=$("selectedGroupHint");if(hint&&!selectedGroup)hint.textContent="Toque em um grupo abaixo e confirme.";document.body.classList.add("mode-publish");hide("publishPanel",false);hide("resultCard",true);currentResult=null;if(pendingGroupCommand==="tstory"){hide("storyChoices",false);hide("groupPickerBlock",true);hide("groups",true);hide("publishChoices",true);return;}hide("storyChoices",true);hide("groupPickerBlock",false);hide("groups",false);hide("publishChoices",false);renderGroups();}
   function showBotFallback(){hide("openBotBtn",false);status("Abra pelo Telegram para validar sua sessão.","bad","Sessão pública");}
   function titleClass(value){const n=safeText(value).trim().length;if(n>70)return "len-xlong";if(n>44)return "len-long";if(n>24)return "len-medium";return "len-short";}
   function renderTrack(track){track=track||{};trackAvailable=!!track.available;const title=trackAvailable?(track.track_name||"Música"):(track.message||"Nada tocando agora");const artist=trackAvailable?(track.artist||"Artista"):(track.diagnostic_code||track.code||"Aguardando música");const url=track.spotify_url||"";const titleEl=$("trackTitle");titleEl.className="track-title "+titleClass(title);titleEl.innerHTML=url?'<a href="'+escapeHtml(url)+'" target="_blank" rel="noreferrer">'+escapeHtml(title)+"</a>":escapeHtml(title);$("trackArtist").textContent=trackAvailable?"— "+artist:artist;$("plays").textContent=String(track.user_plays||0);const cover=$("cover");if(track.cover_url){cover.src=track.cover_url;cover.classList.remove("hidden");}else{cover.removeAttribute("src");cover.classList.add("hidden");}updateCommandState();}
@@ -7963,7 +7968,7 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   async function loadPlayingPreview(){const res=await api("/equalizador/api/public/playing-preview");renderTrack(res);return res;}
   async function refreshPublicSession(){if(refreshing)return;refreshing=true;const btn=$("refreshSessionBtn");if(btn)btn.classList.add("loading");try{configureTelegram();if(!hasAuth()){showBotFallback();return;}const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:currentGroups;renderTrack(home.track||{});renderGroups();if(selectedGroup&&!currentGroups.some(function(g){return g.ref===selectedGroup;})){selectedGroup="";setSelectedGroup("");}if(lastCommand&&lastCommand!=="nowp"){await runPublicCommand(lastCommand,{fromRefresh:true});}else{status("Sessão e música atualizadas.","ok","Atualizado");}}catch(e){reportClient("player_refresh_failed",e&&e.message?e.message:"refresh_failed",e&&e.status?e.status:"");status((e&&e.message)||"Falha ao atualizar sessão.","bad","Falha");}finally{refreshing=false;if(btn)btn.classList.remove("loading");}}
   function openPanel(){try{const token=getStoredSession();if(token)window.sessionStorage.setItem(PANEL_SESSION_KEY,token);}catch(_){}const url=new URL("/equalizador",window.location.href);window.location.assign(url.toString());}
-  async function runPublicCommand(command,options){options=options||{};command=String(command||"").replace(/^[/]/,"").toLowerCase();if(!command)return;if(!hasAuth()){showBotFallback();return;}if(PAGE_COMMANDS[command]&&!options.confirmed){requireGroup(command);return;}if(GROUP_COMMANDS[command]&&!selectedGroup){requireGroup(command);return;}lastCommand=command;try{status("Executando /"+command+".","","Comando");if(command==="nowp"){hide("resultCard",true);currentResult=null;const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})});showHome();status(res.message||"Publicado no grupo e copiado na sua DM.","ok","Publicar");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}if(command==="weekfm"||command==="monthfm"||command==="tcanvas"){hide("resultCard",true);currentResult=null;const res=await api("/equalizador/api/public/group-command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:command,group_ref:selectedGroup})});showHome();const label=COMMAND_TITLES[command]||"Comando";status(res.message||(label+" enviado no grupo e copiado na sua DM."),"ok",label);if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}const params=new URLSearchParams();if(selectedGroup)params.set("group_ref",selectedGroup);const res=await api("/equalizador/api/public/command/"+encodeURIComponent(command)+(params.toString()?"?"+params.toString():""));if(command==="playing"){renderTrack(res);renderResult({title:"Tocando",text:(res.track_name||"Música")+" — "+(res.artist||"Artista"),image_url:res.cover_url||"",download_url:res.cover_url||"",filename:"tocando-agora.jpg"});}else{renderResult(res);}if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_command_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao executar comando.","bad","Falha");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
+  async function runPublicCommand(command,options){options=options||{};command=String(command||"").replace(/^[/]/,"").toLowerCase();if(!command)return;if(!hasAuth()){showBotFallback();return;}if(PAGE_COMMANDS[command]&&!options.confirmed){requireGroup(command);return;}if(GROUP_COMMANDS[command]&&!selectedGroup){requireGroup(command);return;}lastCommand=command;try{status("Executando /"+command+".","","Comando");if(command==="nowp"){hide("resultCard",true);currentResult=null;const res=await api("/equalizador/api/public/nowp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({group_ref:selectedGroup})});showHome();status(res.message||"Publicado no grupo e copiado na sua DM.","ok","Publicar");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}if(command==="weekfm"||command==="monthfm"||command==="tcanvas"){hide("resultCard",true);currentResult=null;const res=await api("/equalizador/api/public/group-command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:command,group_ref:selectedGroup})});showHome();const label=COMMAND_TITLES[command]||"Comando";status(res.message||(label+" enviado no grupo e copiado na sua DM."),"ok",label);if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}if(command==="tstory"){hide("resultCard",true);currentResult=null;const target=options.target==="group"?"group":"dm";if(target==="group"&&!selectedGroup){hide("storyChoices",true);hide("groupPickerBlock",false);hide("groups",false);hide("publishChoices",false);renderGroups();status("Escolha o grupo e confirme para continuar.","","Grupo necessário");return;}const res=await api("/equalizador/api/public/story-command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target:target,group_ref:target==="group"?selectedGroup:""})});showHome();status(res.message||"Story enviado na sua DM.","ok","Story");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");return;}const params=new URLSearchParams();if(selectedGroup)params.set("group_ref",selectedGroup);const res=await api("/equalizador/api/public/command/"+encodeURIComponent(command)+(params.toString()?"?"+params.toString():""));if(command==="playing"){renderTrack(res);renderResult({title:"Tocando",text:(res.track_name||"Música")+" — "+(res.artist||"Artista"),image_url:res.cover_url||"",download_url:res.cover_url||"",filename:"tocando-agora.jpg"});}else{renderResult(res);}if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("success");}catch(e){reportClient("player_command_failed",e&&e.message?e.message:"command_failed",command+":"+(e&&e.status?e.status:""));status((e&&e.message)||"Falha ao executar comando.","bad","Falha");if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred("error");}}
   function waitForTelegram(ms){const started=Date.now();return new Promise(function(resolve){(function tick(){configureTelegram();if(tg||Date.now()-started>=ms){resolve(!!tg);return;}setTimeout(tick,80);})();});}
   function setBootDebug(text){const el=$("bootDebug");if(el)el.textContent=text;}
   async function bootstrap(){try{if(window.__TR4_PLAYER_BOOT)window.__TR4_PLAYER_BOOT.bottomStarted=true;}catch(_){}reportClient("player_js_started","ok","phase137_3");setBootDebug("JS principal iniciou. Testando conexão com o backend.");await publicPing();setBootDebug("Conexão testada. Aguardando Telegram.WebApp/initData.");await waitForTelegram(1800);configureTelegram();if(!hasAuth()){reportClient("player_no_auth_after_wait",tg?"Telegram.WebApp sem initData/sessao":"Telegram.WebApp ausente","");showBotFallback();renderTrack({available:false,message:"Abra pelo Telegram oficial ou use uma sessão válida."});setBootDebug("Sem initData/sessão. Se estiver em cliente alternativo, teste no Telegram oficial.");return;}try{setBootDebug("Sessão encontrada. Chamando /api/public/me.");const me=await api("/equalizador/api/public/me");if(me&&me.sessao)setStoredSession(me.sessao);hide("modBtn",!(me&&me.can_open_equalizador));setBootDebug("Usuário validado. Carregando home pública.");const home=await api("/equalizador/api/public/home");currentGroups=Array.isArray(home.groups)?home.groups:[];renderTrack(home.track||{});renderGroups();setSelectedGroup(selectedGroup||"");setBootDebug("Bootstrap completo.");status("Escolha uma função na matriz.","ok","Pronto.");}catch(e){reportClient("player_bootstrap_failed",e&&e.message?e.message:"bootstrap_failed",e&&e.status?e.status:"");showBotFallback();renderTrack({available:false,message:"Não foi possível carregar o player."});setBootDebug("Falha no bootstrap: "+((e&&e.message)||"erro desconhecido"));}}
@@ -7971,8 +7976,11 @@ _PUBLIC_MUSIC_HTML = """<!doctype html>
   $("refreshSessionBtn").onclick=function(){if(document.body.classList.contains("mode-publish")){showHome();status("Voltou para a tela inicial.","","Início");return;}refreshPublicSession();};
   const modBtn=$("modBtn");if(modBtn)modBtn.addEventListener("click",function(ev){ev.preventDefault();openPanel();});
   $("toggleGroupsBtn").onclick=function(){hide("groups",!$("groups").classList.contains("hidden"));};
-  $("publishConfirm").onclick=function(){if(!pendingGroupCommand){pendingGroupCommand="nowp";}if(!selectedGroup){hide("groups",false);status("Escolha um grupo antes de confirmar.","bad","Grupo obrigatório");return;}const cmd=pendingGroupCommand;pendingGroupCommand="";hide("publishChoices",true);runPublicCommand(cmd,{confirmed:true});};
+  $("publishConfirm").onclick=function(){if(!pendingGroupCommand){pendingGroupCommand="nowp";}if(!selectedGroup){hide("groups",false);status("Escolha um grupo antes de confirmar.","bad","Grupo obrigatório");return;}const cmd=pendingGroupCommand;pendingGroupCommand="";hide("publishChoices",true);runPublicCommand(cmd,{confirmed:true,target:cmd==="tstory"?"group":""});};
   $("publishCancel").onclick=function(){showHome();status("Publicação cancelada.","","Cancelado");};
+  $("storyDmBtn").onclick=function(){runPublicCommand("tstory",{confirmed:true,target:"dm"});};
+  $("storyGroupBtn").onclick=function(){pendingGroupCommand="tstory";hide("storyChoices",true);hide("groupPickerBlock",false);hide("groups",false);hide("publishChoices",false);renderGroups();};
+  $("storyCancelBtn").onclick=function(){showHome();status("Story cancelado.","","Cancelado");};
   bootstrap();
 })();
 </script>
@@ -9144,6 +9152,180 @@ async def _public_tcanvas_to_group(
         return int(getattr(sent, "message_id", 0) or 0)
     finally:
         await bot.session.close()
+
+
+async def _public_tstory_to_chat(
+    *,
+    identity: TelegramWebAppIdentity,
+    chat_id: int,
+) -> int:
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=409, detail="Bot indisponível.")
+    try:
+        from app.services.connection_check import connect_hint_for, is_user_connected
+        if not is_user_connected(int(identity.user_id)):
+            raise HTTPException(status_code=409, detail=connect_hint_for("private"))
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    track = await music_service.get_current_or_last_played(int(identity.user_id))
+    if not track:
+        raise HTTPException(status_code=409, detail="Nada está tocando agora. Bota algo pra rolar no Spotify ou Last.fm e tenta de novo.")
+
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+    from aiogram.types import BufferedInputFile
+    from app.bot.tstory import _caption, _download
+    from app.services.bot_identity import get_bot_identity
+    from app.services.spotify import spotify_service
+    from app.services.spotify_canvas import spotify_canvas_service
+    from app.services.tstory_card import render_tstory_full, render_tstory_overlay
+    from app.services.tstory_video import compose_story_video
+
+    bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    try:
+        try:
+            await bot.send_chat_action(int(chat_id), "upload_video")
+        except Exception:
+            pass
+
+        title = str(track.get("track_name") or "").strip()
+        artist = str(track.get("artist") or "").strip()
+        cover_url = track.get("album_image_url")
+        spotify_url = str(track.get("spotify_url") or "").strip()
+        track_id = str(track.get("track_id") or "").strip()
+        user_name = str(identity.user.get("first_name") or identity.user.get("username") or "Usuário")
+        listening = f"{user_name} está ouvindo agora"
+        caption = _caption(user_name, title, artist, spotify_url)
+
+        cover_bytes = await _download(cover_url)
+        bot_identity = await get_bot_identity(bot)
+        bot_name = bot_identity.name
+        bot_logo = bot_identity.photo_bytes
+
+        canvas_track_id = track_id
+        if track_id.startswith("lfm:") and artist and title:
+            try:
+                match = await spotify_service.search_track(artist, title)
+                if match and match.get("id"):
+                    canvas_track_id = match["id"]
+            except Exception:
+                logger.exception("PUBLIC_TSTORY_RESOLVE_ERROR track=%s", track_id)
+
+        video_bytes: bytes | None = None
+        try:
+            canvas_url = await spotify_canvas_service.get_canvas_url(canvas_track_id)
+            if canvas_url:
+                canvas_bytes = await spotify_canvas_service.download_canvas_bytes(canvas_url)
+                if canvas_bytes:
+                    overlay_png = await render_tstory_overlay(
+                        cover_bytes=cover_bytes,
+                        listening=listening,
+                        title=title,
+                        artist=artist,
+                        bot_name=bot_name,
+                        bot_logo_bytes=bot_logo,
+                    )
+                    if overlay_png:
+                        video_bytes = await compose_story_video(canvas_bytes, overlay_png)
+        except Exception:
+            logger.exception("PUBLIC_TSTORY_VIDEO_FAILED track=%s", track_id)
+
+        if video_bytes:
+            try:
+                sent = await bot.send_video(
+                    chat_id=int(chat_id),
+                    video=BufferedInputFile(video_bytes, filename=f"tstory-{canvas_track_id}.mp4"),
+                    caption=caption,
+                    parse_mode="HTML",
+                )
+                return int(getattr(sent, "message_id", 0) or 0)
+            except Exception:
+                logger.exception("PUBLIC_TSTORY_VIDEO_SEND_FAILED track=%s", track_id)
+
+        card = await render_tstory_full(
+            cover_bytes=cover_bytes,
+            listening=listening,
+            title=title,
+            artist=artist,
+            bot_name=bot_name,
+            bot_logo_bytes=bot_logo,
+        )
+        if card:
+            sent = await bot.send_photo(
+                chat_id=int(chat_id),
+                photo=BufferedInputFile(card, filename="tstory.jpg"),
+                caption=caption,
+                parse_mode="HTML",
+            )
+            return int(getattr(sent, "message_id", 0) or 0)
+
+        if cover_bytes:
+            sent = await bot.send_photo(
+                chat_id=int(chat_id),
+                photo=BufferedInputFile(cover_bytes, filename="cover.jpg"),
+                caption=caption,
+                parse_mode="HTML",
+            )
+            return int(getattr(sent, "message_id", 0) or 0)
+
+        sent = await bot.send_message(chat_id=int(chat_id), text=caption, parse_mode="HTML")
+        return int(getattr(sent, "message_id", 0) or 0)
+    finally:
+        await bot.session.close()
+
+
+@router.post("/api/public/story-command")
+async def public_music_story_command(request: Request, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    identity = _public_identity_from_authorization(authorization)
+    payload = await _read_json_payload(request)
+    target = str(payload.get("target") or "dm").strip().lower()
+    group_ref = str(payload.get("group_ref") or "").strip()
+    if target not in {"dm", "group"}:
+        raise HTTPException(status_code=400, detail="Destino indisponível para Story.")
+    if target == "group":
+        group = _resolve_public_group(group_ref)
+        if not group:
+            raise HTTPException(status_code=404, detail="Grupo indisponível.")
+        chat_id = int(group["chat_id"])
+        await _public_assert_user_in_group(identity, chat_id)
+        source_message_id = await _public_tstory_to_chat(identity=identity, chat_id=chat_id)
+        copied_message_id = 0
+        if source_message_id:
+            try:
+                copied = await _bot_api(
+                    "copyMessage",
+                    {
+                        "chat_id": int(identity.user_id),
+                        "from_chat_id": chat_id,
+                        "message_id": source_message_id,
+                    },
+                )
+                copied_message_id = int(copied.get("message_id") or 0)
+            except Exception:
+                logger.exception("PUBLIC_PLAYER_TSTORY_COPY_DM_FAILED user_id=%s chat_id=%s message_id=%s", identity.user_id, chat_id, source_message_id)
+        return {
+            "ok": True,
+            "command": "tstory",
+            "target": "group",
+            "message": f"Story enviado em {str(group.get('title') or 'grupo')[:80]}." + (" Cópia enviada na sua DM." if copied_message_id else ""),
+            "source_chat_id": chat_id,
+            "source_message_id": source_message_id,
+            "copied_to_dm": bool(copied_message_id),
+            "dm_message_id": copied_message_id,
+        }
+
+    dm_message_id = await _public_tstory_to_chat(identity=identity, chat_id=int(identity.user_id))
+    return {
+        "ok": True,
+        "command": "tstory",
+        "target": "dm",
+        "message": "Story enviado na sua DM.",
+        "dm_message_id": dm_message_id,
+    }
 
 
 @router.post("/api/public/group-command")
