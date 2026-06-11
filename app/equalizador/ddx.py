@@ -26,6 +26,8 @@ DDX_SOFT_DELAY_SECONDS = 10 * 60
 DDX_MAX_WORDS = 250
 DDX_MAX_WORD_LEN = 80
 DDX_MAX_TEXT_LEN = 4096
+DDX_REINCIDENCE_THRESHOLD = 5
+DDX_OWNER_ONLY_DETAIL = "DDX owner-only: configuração exclusiva do proprietário técnico."
 _SCHEDULED_TASKS: dict[str, asyncio.Task[None]] = {}
 _SCHEDULED_BOUND = 1000
 
@@ -132,7 +134,7 @@ def _matching_words(text_value: str, words: list[str]) -> list[str]:
 
 
 def _mode_label(mode: str) -> str:
-    return "DDX 10 minutos" if mode == DDX_SOFT_MODE else "DDX imediato"
+    return "DDX 10 minutos (legado)" if mode == DDX_SOFT_MODE else "DDX imediato"
 
 
 def _filter_ref(*, palco_ref: str, mode: str, alias_secret: str) -> str:
@@ -185,8 +187,11 @@ def ensure_ddx_tables(db_engine: Engine = default_engine) -> None:
                     status TEXT NOT NULL,
                     actor_name TEXT,
                     actor_username TEXT,
+                    actor_user_id INTEGER,
+                    actor_kind TEXT NOT NULL DEFAULT 'user',
                     matched_words_json TEXT NOT NULL DEFAULT '[]',
                     text_preview TEXT,
+                    full_text TEXT,
                     public_detail TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -196,6 +201,14 @@ def ensure_ddx_tables(db_engine: Engine = default_engine) -> None:
         )
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_ddx_events_palco ON eq_ddx_events(palco_ref, created_at)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_ddx_events_sched ON eq_ddx_events(scheduled_ref, status)"))
+        existing_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(eq_ddx_events)").fetchall()}
+        if "actor_user_id" not in existing_cols:
+            conn.execute(text("ALTER TABLE eq_ddx_events ADD COLUMN actor_user_id INTEGER"))
+        if "actor_kind" not in existing_cols:
+            conn.execute(text("ALTER TABLE eq_ddx_events ADD COLUMN actor_kind TEXT NOT NULL DEFAULT 'user'"))
+        if "full_text" not in existing_cols:
+            conn.execute(text("ALTER TABLE eq_ddx_events ADD COLUMN full_text TEXT"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_ddx_events_actor ON eq_ddx_events(actor_user_id, status, created_at)"))
         conn.execute(
             text(
                 """
@@ -429,7 +442,7 @@ def cancelar_ddx_agendado(
     task = _SCHEDULED_TASKS.pop(safe_ref, None)
     if task and not task.done():
         task.cancel()
-    return {"ok": True, "scheduled_ref": safe_ref, "status": "canceled", "resumo": "Apagamento DDX 10 minutos cancelado."}
+    return {"ok": True, "scheduled_ref": safe_ref, "status": "canceled", "resumo": "Apagamento DDX 10 minutos (legado) cancelado."}
 
 
 def _record_event(
@@ -442,9 +455,12 @@ def _record_event(
     status: str,
     actor_name: str,
     actor_username: str | None,
-    matched_words: list[str] | tuple[str, ...],
-    text_preview: str,
-    public_detail: str,
+    actor_user_id: int | None = None,
+    actor_kind: str = "user",
+    matched_words: list[str] | tuple[str, ...] = (),
+    text_preview: str = "",
+    full_text: str | None = None,
+    public_detail: str = "",
     db_engine: Engine = default_engine,
 ) -> None:
     now = _now_iso()
@@ -454,10 +470,10 @@ def _record_event(
             text(
                 """
                 INSERT OR REPLACE INTO eq_ddx_events
-                (event_ref, scheduled_ref, telegram_chat_id, palco_ref, mode, status, actor_name, actor_username,
-                 matched_words_json, text_preview, public_detail, created_at, updated_at)
-                VALUES (:event_ref, :scheduled_ref, :chat_id, :palco_ref, :mode, :status, :actor_name, :actor_username,
-                        :matched_words, :preview, :detail,
+                (event_ref, scheduled_ref, telegram_chat_id, palco_ref, mode, status, actor_name, actor_username, actor_user_id, actor_kind,
+                 matched_words_json, text_preview, full_text, public_detail, created_at, updated_at)
+                VALUES (:event_ref, :scheduled_ref, :chat_id, :palco_ref, :mode, :status, :actor_name, :actor_username, :actor_user_id, :actor_kind,
+                        :matched_words, :preview, :full_text, :detail,
                         COALESCE((SELECT created_at FROM eq_ddx_events WHERE event_ref=:event_ref), :now), :now)
                 """
             ),
@@ -470,8 +486,11 @@ def _record_event(
                 "status": status,
                 "actor_name": _safe_text(actor_name, fallback="Membro"),
                 "actor_username": safe_public_username(actor_username),
+                "actor_user_id": int(actor_user_id or 0) or None,
+                "actor_kind": _safe_text(actor_kind, fallback="user")[:32],
                 "matched_words": json.dumps(list(matched_words), ensure_ascii=False),
                 "preview": _safe_summary(text_preview, limit=400),
+                "full_text": str(full_text if full_text is not None else text_preview)[:DDX_MAX_TEXT_LEN],
                 "detail": _safe_text(public_detail, fallback=""),
                 "now": now,
             },
@@ -486,6 +505,18 @@ def _get_filter_for_chat(chat_id: int, mode: str, *, db_engine: Engine = default
             {"chat_id": int(chat_id), "mode": str(mode)},
         ).mappings().first()
     return dict(row) if row else None
+
+
+def _count_actor_deleted_events(actor_user_id: int, *, db_engine: Engine = default_engine) -> int:
+    if not int(actor_user_id or 0):
+        return 0
+    ensure_ddx_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT COUNT(*) AS total FROM eq_ddx_events WHERE actor_user_id=:actor_user_id AND status='deleted'"),
+            {"actor_user_id": int(actor_user_id)},
+        ).mappings().first()
+    return int((row or {}).get("total") or 0)
 
 
 def _palco_ref_for_chat(chat_id: int, *, alias_secret: str, db_engine: Engine = default_engine) -> str:
@@ -511,6 +542,29 @@ async def _notify_maestros(bot: Any, text: str) -> None:
             logger.debug("DDX_NOTIFY_FAILED", exc_info=True)
 
 
+async def _notify_reincidence_if_needed(
+    bot: Any,
+    *,
+    actor_user_id: int | None,
+    actor_name: str,
+    actor_username: str | None,
+    chat_title: str,
+    threshold: int = DDX_REINCIDENCE_THRESHOLD,
+) -> None:
+    if not int(actor_user_id or 0):
+        return
+    total = _count_actor_deleted_events(int(actor_user_id))
+    if total < int(threshold):
+        return
+    await _notify_maestros(
+        bot,
+        "Equalizador · DDX reincidência\n\n"
+        f"Autor: {html.escape(actor_name)}{(' · @' + html.escape(actor_username)) if actor_username else ''}\n"
+        f"Ocorrências globais: {total}\n"
+        f"Grupo mais recente: {html.escape(chat_title)}\n\n"
+        "Sugestão: avaliar ban pelo /show antes de executar qualquer ação crítica.",
+    )
+
 def _message_text(message: Any) -> str:
     return str(getattr(message, "text", None) or getattr(message, "caption", None) or "")[:DDX_MAX_TEXT_LEN]
 
@@ -521,11 +575,24 @@ def _is_group_message(message: Any) -> bool:
     return "group" in chat_type
 
 
-def _actor_public(message: Any) -> tuple[str, str | None]:
+def _actor_public(message: Any) -> tuple[str, str | None, int | None, str]:
     user = getattr(message, "from_user", None)
-    if not user:
-        return "Membro", None
-    return _safe_text(getattr(user, "full_name", None), fallback="Membro"), safe_public_username(getattr(user, "username", None))
+    if user:
+        return (
+            _safe_text(getattr(user, "full_name", None), fallback="Membro"),
+            safe_public_username(getattr(user, "username", None)),
+            int(getattr(user, "id", 0) or 0) or None,
+            "user",
+        )
+    sender_chat = getattr(message, "sender_chat", None)
+    if sender_chat:
+        return (
+            _safe_text(getattr(sender_chat, "title", None), fallback="Canal remetente"),
+            safe_public_username(getattr(sender_chat, "username", None)),
+            None,
+            "sender_chat",
+        )
+    return "Membro", None, None, "unknown"
 
 
 def _snapshot_from_pending_row(row: dict[str, Any]) -> _DDXSnapshot:
@@ -680,7 +747,7 @@ async def equalizador_ddx_preprocess_update(bot: Any, update: Any, *, alias_secr
         return False
     secret = alias_secret or settings.equalizador_alias_secret()
     palco_ref = _palco_ref_for_chat(chat_id, alias_secret=secret)
-    actor_name, actor_username = _actor_public(message)
+    actor_name, actor_username, actor_user_id, actor_kind = _actor_public(message)
     chat_title = _safe_text(getattr(chat, "title", None), fallback="Grupo")
 
     hard = _get_filter_for_chat(chat_id, DDX_HARD_MODE)
@@ -690,6 +757,33 @@ async def equalizador_ddx_preprocess_update(bot: Any, update: Any, *, alias_secr
         if matches:
             created_at = _now_iso()
             event_ref = _event_ref(palco_ref=palco_ref, mode=DDX_HARD_MODE, message_id=message_id, created_at=created_at, alias_secret=secret)
+            if actor_kind == "sender_chat":
+                _record_event(
+                    event_ref=event_ref,
+                    scheduled_ref=None,
+                    chat_id=chat_id,
+                    palco_ref=palco_ref,
+                    mode=DDX_HARD_MODE,
+                    status="sender_chat_alert",
+                    actor_name=actor_name,
+                    actor_username=actor_username,
+                    actor_user_id=actor_user_id,
+                    actor_kind=actor_kind,
+                    matched_words=matches,
+                    text_preview=text_value,
+                    full_text=text_value,
+                    public_detail="Canal remetente detectado; somente alerta owner.",
+                )
+                words_text = ", ".join(html.escape(w) for w in matches) or "filtro"
+                await _notify_maestros(
+                    bot,
+                    "Equalizador · DDX alerta de canal remetente\n\n"
+                    f"Grupo: {html.escape(chat_title)}\n"
+                    f"Canal: {html.escape(actor_name)}{(' · @' + html.escape(actor_username)) if actor_username else ''}\n"
+                    f"Filtro: {words_text}\n\n"
+                    f"Mensagem não apagada automaticamente:\n<blockquote>{html.escape(_safe_summary(text_value, limit=900))}</blockquote>",
+                )
+                return False
             try:
                 await bot.delete_message(chat_id=chat_id, message_id=message_id)
                 status = "deleted"
@@ -708,8 +802,11 @@ async def equalizador_ddx_preprocess_update(bot: Any, update: Any, *, alias_secr
                 status=status,
                 actor_name=actor_name,
                 actor_username=actor_username,
+                actor_user_id=actor_user_id,
+                actor_kind=actor_kind,
                 matched_words=matches,
                 text_preview=text_value,
+                full_text=text_value,
                 public_detail=detail,
             )
             if status == "deleted":
@@ -722,10 +819,19 @@ async def equalizador_ddx_preprocess_update(bot: Any, update: Any, *, alias_secr
                     f"Filtro: {words_text}\n\n"
                     f"Mensagem apagada:\n<blockquote>{html.escape(_safe_summary(text_value, limit=900))}</blockquote>",
                 )
+                await _notify_reincidence_if_needed(
+                    bot,
+                    actor_user_id=actor_user_id,
+                    actor_name=actor_name,
+                    actor_username=actor_username,
+                    chat_title=chat_title,
+                )
                 return True
             return False
 
-    soft = _get_filter_for_chat(chat_id, DDX_SOFT_MODE)
+    # DDX 10 minutos remains only as a legacy data path. New scope is a single
+    # owner-only immediate severity, so no new soft schedules are created.
+    soft = None
     if soft and bool(soft.get("enabled")):
         words = _load_words(soft.get("words_json"))
         matches = _matching_words(text_value, words)
@@ -782,8 +888,11 @@ async def equalizador_ddx_preprocess_update(bot: Any, update: Any, *, alias_secr
                 status="scheduled",
                 actor_name=actor_name,
                 actor_username=actor_username,
+                actor_user_id=actor_user_id,
+                actor_kind=actor_kind,
                 matched_words=matches,
                 text_preview=text_value,
+                full_text=text_value,
                 public_detail="Apagamento programado para 10 minutos.",
             )
             task = asyncio.create_task(_delete_soft_after_delay(bot, snap), name=f"ddx_soft:{sched_ref}")

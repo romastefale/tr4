@@ -19,7 +19,6 @@ PERSISTENCE_CRITICAL_TABLES: tuple[str, ...] = (
     "track_plays",
     "track_likes",
     "track_reactions",
-    "reaction_audit",
     "eq_operadores",
     "eq_runtime_grants",
     "eq_private_sessions",

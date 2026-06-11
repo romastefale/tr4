@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Iterable
@@ -28,6 +29,10 @@ def rbac_runtime_error_payload(exc: BaseException) -> dict[str, str]:
     code = str(exc) or exc.__class__.__name__
     public = getattr(exc, "public_detail", "Concessão inválida ou alvo indisponível.")
     return {"code": code, "public_detail": str(public)}
+
+
+def _stable_ref_number(seed: str) -> int:
+    return int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:15], 16) % (10**12)
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -79,7 +84,7 @@ def ensure_rbac_runtime_tables(db_engine: Engine = default_engine) -> None:
 def _grant_ref(*, user_id: int, chat_id: int | None, canal_codigo: str, alias_secret: str) -> str:
     base = f"{int(user_id)}:{'*' if chat_id is None else int(chat_id)}:{canal_codigo}"
     # Use the existing ref helper so raw IDs never leave the API.
-    return make_ui_ref("exp", abs(hash((base, alias_secret))) % (10**12), alias_secret)
+    return make_ui_ref("exp", _stable_ref_number(f"{base}:{alias_secret}"), alias_secret)
 
 
 def _resolve_usr_ref(usr_ref: str, *, db_engine: Engine = default_engine) -> int | None:
@@ -133,7 +138,7 @@ def _record_governance_audit(
     ensure_rbac_runtime_tables(db_engine)
     now = _now_iso()
     seed = f"{actor_ref}:{subject_ref}:{action}:{now}"
-    event_ref = make_ui_ref("exp", abs(hash((seed, alias_secret))) % (10**12), alias_secret)
+    event_ref = make_ui_ref("exp", _stable_ref_number(f"{seed}:{alias_secret}"), alias_secret)
     with db_engine.begin() as conn:
         conn.execute(
             text(

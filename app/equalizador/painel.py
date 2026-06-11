@@ -22,7 +22,7 @@ TelegramApiCallable = Callable[[str, str, dict[str, Any] | None], Awaitable[Any]
 RIGHT_LABELS: dict[str, str] = {
     "can_manage_chat": "Gerenciar grupo",
     "can_delete_messages": "Apagar mensagens",
-    "can_restrict_members": "Restringir/remover membros",
+    "can_restrict_members": "Restringir/banir membros",
     "can_invite_users": "Convidar e aprovar entrada",
     "can_pin_messages": "Fixar mensagens",
     "can_change_info": "Alterar título/descrição",
@@ -44,7 +44,7 @@ ACTION_CATALOG: tuple[dict[str, object], ...] = (
     {"codigo": "reacoes.auditoria", "nome": "Auditar reações", "categoria": "Reações", "direitos": ()},
     {"codigo": "membros.silenciar", "nome": "Silenciar membro", "categoria": "Membros", "direitos": ("can_restrict_members",)},
     {"codigo": "membros.liberar", "nome": "Liberar membro", "categoria": "Membros", "direitos": ("can_restrict_members",)},
-    {"codigo": "membros.remover", "nome": "Remover membro", "categoria": "Membros", "direitos": ("can_restrict_members",)},
+    {"codigo": "membros.remover", "nome": "Banir membro", "categoria": "Membros", "direitos": ("can_restrict_members",)},
     {"codigo": "membros.reintegrar", "nome": "Reintegrar membro", "categoria": "Membros", "direitos": ("can_restrict_members",)},
     {"codigo": "convites.criar", "nome": "Criar convite", "categoria": "Entradas", "direitos": ("can_invite_users",)},
     {"codigo": "convites.editar", "nome": "Editar convite", "categoria": "Entradas", "direitos": ("can_invite_users",)},

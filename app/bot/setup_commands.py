@@ -41,26 +41,37 @@ _PUBLIC_COMMANDS: tuple[CommandDef, ...] = (
     CommandDef("start", "Boas-vindas"),
 )
 
+_PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PUBLIC_COMMANDS + (
+    CommandDef("show", "Painel owner do Equalizador"),
+    CommandDef("broadcast", "Broadcast musical owner"),
+)
+
 
 def _to_bot_commands(commands: tuple[CommandDef, ...]) -> list[BotCommand]:
     return [BotCommand(command=item.command, description=item.description[:256]) for item in commands]
 
 
 def command_scope_summary() -> dict[str, object]:
-    return {"public": [item.command for item in _PUBLIC_COMMANDS]}
+    return {"public": [item.command for item in _PUBLIC_COMMANDS], "private": [item.command for item in _PRIVATE_COMMANDS]}
 
 
 async def setup_bot_commands(bot: Bot) -> None:
-    commands = _to_bot_commands(_PUBLIC_COMMANDS)
-    scopes = (
+    public_commands = _to_bot_commands(_PUBLIC_COMMANDS)
+    private_commands = _to_bot_commands(_PRIVATE_COMMANDS)
+    public_scopes = (
         BotCommandScopeDefault(),
-        BotCommandScopeAllPrivateChats(),
         BotCommandScopeAllGroupChats(),
         BotCommandScopeAllChatAdministrators(),
     )
     try:
-        for scope in scopes:
-            await bot.set_my_commands(commands, scope=scope)
-        logger.info("BOT_COMMANDS_PUBLIC_SET | count=%s | scopes=%s", len(commands), len(scopes))
+        for scope in public_scopes:
+            await bot.set_my_commands(public_commands, scope=scope)
+        await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
+        logger.info(
+            "BOT_COMMANDS_SET | public=%s | private=%s | public_scopes=%s",
+            len(public_commands),
+            len(private_commands),
+            len(public_scopes),
+        )
     except Exception:
         logger.warning("BOT_COMMANDS_PUBLIC_FAILED", exc_info=True)

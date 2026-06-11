@@ -15,9 +15,11 @@ from aiogram.enums import ParseMode
 from aiogram.types import Update
 
 from app.bot.monthfm import router as monthfm_router
+from app.bot.music_broadcast import router as music_broadcast_router
 from app.bot.myself import router as myself_router
 from app.bot.radiofm import router as radiofm_router
 from app.bot.setup_commands import setup_bot_commands
+from app.bot.show_owner import router as show_owner_router
 from app.bot.songcharts import router as songcharts_router
 from app.bot.tcanvas import router as tcanvas_router
 from app.bot.telegram import _register_handlers, bot_dispatcher, shutdown_telegram_bot
@@ -27,6 +29,8 @@ from app.bot.tstory import router as tstory_router
 from app.bot.weekfm import router as weekfm_router
 from app.bot.music_extras import register_music_extra_handlers
 from app.bot.music_groups import ensure_tables as ensure_music_group_tables, remember_group
+from app.bot.music_broadcast import run_due_music_broadcast_schedules
+from app.bot.owner_daily_summary import send_daily_limit_summary_to_owners
 from app.config import settings
 from app.config.settings import (
     BASE_URL,
@@ -35,6 +39,7 @@ from app.config.settings import (
     TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS,
     TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE,
     TR4_EQUALIZADOR_SESSION_TTL_SECONDS,
+    RADIO_SCHEDULER_ENABLED,
     telegram_webhook_secret,
     validate_required_env,
 )
@@ -61,6 +66,7 @@ _telegram_startup_task: asyncio.Task | None = None
 _telegram_startup_error: str | None = None
 _radio_scheduler_task: asyncio.Task | None = None
 _ddx_scheduler_task: asyncio.Task | None = None
+_music_broadcast_scheduler_task: asyncio.Task | None = None
 
 
 def _message_from_update(update: Update):
@@ -91,9 +97,11 @@ def _configure_dispatcher_once() -> None:
     dispatcher.include_router(tcanvas_router)
     dispatcher.include_router(tstory_router)
     dispatcher.include_router(tly_router)
+    dispatcher.include_router(music_broadcast_router)
     dispatcher.include_router(radiofm_router)
     dispatcher.include_router(myself_router)
     dispatcher.include_router(songcharts_router)
+    dispatcher.include_router(show_owner_router)
     register_music_extra_handlers(dispatcher)
     _register_handlers(dispatcher)
     _telegram_dispatcher_configured = True
@@ -168,9 +176,29 @@ async def _ddx_scheduler_loop() -> None:
         await asyncio.sleep(10)
 
 
+async def _music_broadcast_scheduler_loop() -> None:
+    """Owner-configured music broadcast scheduler.
+
+    Processes durable broadcast schedules every minute. Each schedule stores its
+    own last processed slot so restarts do not send duplicate hourly cards.
+    """
+    if not TR4_EQUALIZADOR_ENABLED or not TELEGRAM_BOT_TOKEN:
+        return
+    while True:
+        try:
+            if bot is not None:
+                await run_due_music_broadcast_schedules(bot, limit=10)
+                await send_daily_limit_summary_to_owners(bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("MUSIC_BROADCAST_SCHEDULER_TICK_FAILED", exc_info=True)
+        await asyncio.sleep(60)
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
-    global bot, _telegram_startup_task, _telegram_ready, _telegram_startup_error, _radio_scheduler_task, _ddx_scheduler_task
+    global bot, _telegram_startup_task, _telegram_ready, _telegram_startup_error, _radio_scheduler_task, _ddx_scheduler_task, _music_broadcast_scheduler_task
     missing_env = validate_required_env()
     if missing_env:
         logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
@@ -183,7 +211,7 @@ async def on_startup() -> None:
     ensure_music_group_tables()
     _telegram_ready = False
     _telegram_startup_error = None
-    if TR4_EQUALIZADOR_ENABLED and TELEGRAM_BOT_TOKEN and _radio_scheduler_task is None:
+    if TR4_EQUALIZADOR_ENABLED and RADIO_SCHEDULER_ENABLED and TELEGRAM_BOT_TOKEN and _radio_scheduler_task is None:
         _radio_scheduler_task = asyncio.create_task(_radio_scheduler_loop())
         logger.info("EQUALIZADOR_RADIO_SCHEDULER_SCHEDULED")
     if not TELEGRAM_BOT_TOKEN:
@@ -195,6 +223,9 @@ async def on_startup() -> None:
         if TR4_EQUALIZADOR_ENABLED and _ddx_scheduler_task is None:
             _ddx_scheduler_task = asyncio.create_task(_ddx_scheduler_loop())
             logger.info("EQUALIZADOR_DDX_SCHEDULER_SCHEDULED")
+        if TR4_EQUALIZADOR_ENABLED and _music_broadcast_scheduler_task is None:
+            _music_broadcast_scheduler_task = asyncio.create_task(_music_broadcast_scheduler_loop())
+            logger.info("MUSIC_BROADCAST_SCHEDULER_SCHEDULED")
         _configure_dispatcher_once()
         _telegram_startup_task = asyncio.create_task(_finish_telegram_startup())
         logger.info("TELEGRAM_STARTUP_SCHEDULED")
@@ -208,7 +239,7 @@ async def on_startup() -> None:
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    global bot, _telegram_startup_task, _radio_scheduler_task, _ddx_scheduler_task
+    global bot, _telegram_startup_task, _radio_scheduler_task, _ddx_scheduler_task, _music_broadcast_scheduler_task
     if _telegram_startup_task and not _telegram_startup_task.done():
         _telegram_startup_task.cancel()
         try:
@@ -229,6 +260,13 @@ async def on_shutdown() -> None:
         except asyncio.CancelledError:
             pass
     _ddx_scheduler_task = None
+    if _music_broadcast_scheduler_task and not _music_broadcast_scheduler_task.done():
+        _music_broadcast_scheduler_task.cancel()
+        try:
+            await _music_broadcast_scheduler_task
+        except asyncio.CancelledError:
+            pass
+    _music_broadcast_scheduler_task = None
     await shutdown_telegram_bot()
     if bot:
         await bot.session.close()

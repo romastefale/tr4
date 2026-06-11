@@ -95,7 +95,7 @@ GOVERNANCA_PERFIS: tuple[GovernancaPerfil, ...] = (
     GovernancaPerfil(
         codigo="filtros",
         nome="Governante de filtros",
-        descricao="DDX imediato, DDX 10 minutos e monitor de recém-chegados com link.",
+        descricao="DDX imediato, DDX 10 minutos (legado) e monitor de recém-chegados com link.",
         canais=("ddx.imediato", "ddx.temporario", "novos.ver", "novos.apagar", "novos.silenciar", "novos.banir", "novos.ignorar"),
     ),
     GovernancaPerfil(

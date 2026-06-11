@@ -215,7 +215,7 @@ def build_transmissao_payload(*, palco_id: int, payload: dict[str, Any]) -> dict
     return {
         "chat_id": int(palco_id),
         "text": text,
-        "disable_web_page_preview": bool(payload.get("sem_preview", True)),
+        "link_preview_options": {"is_disabled": bool(payload.get("sem_preview", True))},
         "disable_notification": bool(payload.get("sem_notificacao", False)),
     }
 

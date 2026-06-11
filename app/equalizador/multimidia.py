@@ -411,7 +411,7 @@ async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str,
         if kind == "text":
             if not texto.strip():
                 raise MultimediaError("Mensagem vazia.")
-            payload: dict[str, Any] = {"chat_id": chat_id, "text": texto[:4096], "disable_web_page_preview": True}
+            payload: dict[str, Any] = {"chat_id": chat_id, "text": texto[:4096], "link_preview_options": {"is_disabled": True}}
         else:
             file_id = str(session.get("file_id") or "")
             if not file_id:

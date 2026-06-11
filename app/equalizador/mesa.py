@@ -84,6 +84,7 @@ class MesaActionSpec:
 
 ACTION_SPECS: dict[str, MesaActionSpec] = {
     "mensagens.enviar": MesaActionSpec("mensagens.enviar", "mensagens.enviar", "sendMessage", None, "palco"),
+    "mensagens.enviar_foto": MesaActionSpec("mensagens.enviar_foto", "mensagens.enviar", "sendPhoto", None, "palco"),
     "mensagens.apagar": MesaActionSpec("mensagens.apagar", "mensagens.apagar", "deleteMessage", "can_delete_messages", "mensagem"),
     "membros.silenciar": MesaActionSpec("membros.silenciar", "membros.silenciar", "restrictChatMember", "can_restrict_members", "alvo"),
     "membros.liberar": MesaActionSpec("membros.liberar", "membros.liberar", "restrictChatMember", "can_restrict_members", "alvo"),
@@ -209,7 +210,7 @@ async def send_operator_dm(
         await telegram_api_call(
             bot_token,
             "sendMessage",
-            {"chat_id": int(user_id), "text": _safe_text(text, fallback="Equalizador")[:4096], "disable_web_page_preview": True},
+            {"chat_id": int(user_id), "text": _safe_text(text, fallback="Equalizador")[:4096], "link_preview_options": {"is_disabled": True}},
         )
         return {"enviado": True}
     except MesaError as exc:
@@ -277,6 +278,7 @@ def ensure_phase5_tables(db_engine: Engine = default_engine) -> None:
                     telegram_chat_id INTEGER NOT NULL,
                     telegram_message_id INTEGER NOT NULL,
                     telegram_message_date INTEGER,
+                    autor_ref TEXT,
                     ui_ref TEXT NOT NULL UNIQUE,
                     resumo_publico TEXT,
                     habilitado INTEGER NOT NULL DEFAULT 1,
@@ -306,6 +308,8 @@ def ensure_phase5_tables(db_engine: Engine = default_engine) -> None:
         )
         if not _sqlite_column_exists(conn, "eq_mensagens", "telegram_message_date"):
             conn.execute(text("ALTER TABLE eq_mensagens ADD COLUMN telegram_message_date INTEGER"))
+        if not _sqlite_column_exists(conn, "eq_mensagens", "autor_ref"):
+            conn.execute(text("ALTER TABLE eq_mensagens ADD COLUMN autor_ref TEXT"))
         if not _sqlite_column_exists(conn, "eq_alvos", "username"):
             conn.execute(text("ALTER TABLE eq_alvos ADD COLUMN username TEXT"))
         if not _sqlite_column_exists(conn, "eq_alvos", "telegram_status"):
@@ -370,22 +374,41 @@ def register_mensagem_ref(
     resumo_publico: str,
     alias_secret: str,
     message_unix_time: int | None = None,
+    autor_user_id: int | None = None,
+    autor_nome_publico: str | None = None,
+    autor_username: str | None = None,
     db_engine: Engine = default_engine,
 ) -> str:
-    """Register a message seen internally and return its public alias."""
+    """Register a message seen internally and return its public alias.
+
+    ``autor_ref`` is optional and is only stored when the bot saw the message
+    author directly. This keeps links usable for deletion while allowing ban by
+    message-link only when the author is known safely.
+    """
     ensure_phase5_tables(db_engine)
     ref_seed = f"{int(chat_id)}:{int(message_id)}"
     ui_ref = "msg_" + make_ui_ref("grp", ref_seed, alias_secret).split("_", 1)[1]
+    autor_ref = None
+    if autor_user_id is not None:
+        autor_ref = register_alvo_ref(
+            chat_id=int(chat_id),
+            user_id=int(autor_user_id),
+            nome_publico=_safe_text(autor_nome_publico, fallback="Membro"),
+            username=autor_username,
+            alias_secret=alias_secret,
+            db_engine=db_engine,
+        )
     with db_engine.begin() as conn:
         conn.execute(
             text(
                 """
                 INSERT INTO eq_mensagens (
-                    telegram_chat_id, telegram_message_id, telegram_message_date, ui_ref, resumo_publico, habilitado, updated_at
+                    telegram_chat_id, telegram_message_id, telegram_message_date, autor_ref, ui_ref, resumo_publico, habilitado, updated_at
                 )
-                VALUES (:chat_id, :message_id, :message_date, :ui_ref, :resumo_publico, 1, :updated_at)
+                VALUES (:chat_id, :message_id, :message_date, :autor_ref, :ui_ref, :resumo_publico, 1, :updated_at)
                 ON CONFLICT(telegram_chat_id, telegram_message_id) DO UPDATE SET
                     telegram_message_date=COALESCE(excluded.telegram_message_date, eq_mensagens.telegram_message_date),
+                    autor_ref=COALESCE(excluded.autor_ref, eq_mensagens.autor_ref),
                     ui_ref=excluded.ui_ref,
                     resumo_publico=excluded.resumo_publico,
                     habilitado=1,
@@ -396,6 +419,7 @@ def register_mensagem_ref(
                 "chat_id": int(chat_id),
                 "message_id": int(message_id),
                 "message_date": int(message_unix_time) if message_unix_time else None,
+                "autor_ref": autor_ref,
                 "ui_ref": ui_ref,
                 "resumo_publico": _safe_text(resumo_publico, fallback="Mensagem"),
                 "updated_at": _now_iso(),
@@ -576,6 +600,7 @@ async def resolve_alvo_manual(
     identificador: str,
     bot_token: str,
     alias_secret: str,
+    allow_username: bool = True,
     telegram_api_call: TelegramApiCallable = _telegram_api_call,
     db_engine: Engine = default_engine,
 ) -> dict[str, object]:
@@ -587,12 +612,14 @@ async def resolve_alvo_manual(
     """
     raw = _normalize_manual_target_input(str(identificador or ""))
     if not raw:
-        raise MesaTargetError("Informe ID numérico, @username ou link t.me/username.")
+        raise MesaTargetError("Informe ID numérico ou referência interna.")
     if raw.startswith("usr_"):
         row = resolve_alvo_ref(palco_id=palco_id, alvo_ref=raw, db_engine=db_engine)
         user_id = int(row["telegram_user_id"])
         member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": int(palco_id), "user_id": user_id})
     elif raw.startswith("@") or not re.fullmatch(r"-?\d{4,20}", raw):
+        if not allow_username:
+            raise MesaTargetError("Username não é entrada operacional. Use ID numérico, referência interna ou link de mensagem conhecido.")
         row = resolve_alvo_by_username(palco_id=palco_id, username=raw, db_engine=db_engine)
         user_id = int(row["telegram_user_id"])
         member = await telegram_api_call(bot_token, "getChatMember", {"chat_id": int(palco_id), "user_id": user_id})
@@ -987,10 +1014,30 @@ def build_action_payload(
         telegram_payload: dict[str, Any] = {
             "chat_id": int(palco_id),
             "text": texto,
-            "disable_web_page_preview": bool(payload.get("sem_preview", True)),
+            "link_preview_options": {"is_disabled": bool(payload.get("sem_preview", True))},
             "disable_notification": bool(payload.get("sem_notificacao", False)),
         }
         resumo = _safe_text(texto.replace("\n", " "), fallback="Mensagem enviada")[:80]
+        return telegram_payload, None, resumo
+
+    if ajuste == "mensagens.enviar_foto":
+        foto = str(payload.get("foto") or payload.get("photo") or "").strip()
+        legenda = str(payload.get("legenda") or payload.get("caption") or "").strip()
+        if not foto:
+            raise MesaTargetError("Informe a foto antes de enviar.")
+        if len(legenda) > 1024:
+            raise MesaTargetError("Legenda acima do limite do Telegram.")
+        telegram_payload = {
+            "chat_id": int(palco_id),
+            "photo": foto,
+            "disable_notification": bool(payload.get("sem_notificacao", False)),
+        }
+        if legenda:
+            # Texto do governante deve ser enviado como legenda simples.
+            # Não usar parse_mode aqui evita erro de parsing quando a legenda contém
+            # caracteres como <, > ou &.
+            telegram_payload["caption"] = legenda
+        resumo = _safe_text(legenda.replace("\n", " "), fallback="Foto enviada")[:80]
         return telegram_payload, None, resumo
 
     if ajuste in {"mensagens.apagar", "fixados.criar", "fixados.remover"}:
@@ -1032,24 +1079,21 @@ def build_action_payload(
                 }
             )
         elif ajuste == "membros.remover":
-            telegram_payload["revoke_messages"] = bool(payload.get("revogar_mensagens", False))
+            telegram_payload["revoke_messages"] = True
         elif ajuste == "membros.reintegrar":
             telegram_payload["only_if_banned"] = bool(payload.get("apenas_se_banido", True))
         return telegram_payload, str(target["ui_ref"]), str(target.get("nome_publico") or "Membro")
 
     if ajuste == "convites.criar":
         name = _safe_text(payload.get("nome"), fallback="Equalizador")[:32]
-        telegram_payload = {"chat_id": int(palco_id), "name": name}
+        # Escopo Fase 11: convite do Web App é sempre único/operacional com
+        # solicitação de entrada. A Bot API não permite member_limit junto de
+        # creates_join_request, então o backend ignora limite_membros mesmo se
+        # uma chamada direta tentar enviar o campo.
+        telegram_payload = {"chat_id": int(palco_id), "name": name, "creates_join_request": True}
         expire_seconds = _safe_int(payload.get("expira_em_segundos"), default=0, minimum=0, maximum=30 * 24 * 60 * 60)
         if expire_seconds > 0:
             telegram_payload["expire_date"] = _now_unix() + expire_seconds
-        member_limit = _safe_int(payload.get("limite_membros"), default=0, minimum=0, maximum=99999)
-        if member_limit > 0:
-            telegram_payload["member_limit"] = member_limit
-        if bool(payload.get("solicitar_aprovacao", False)):
-            # Telegram does not allow member_limit together with join-request links.
-            telegram_payload.pop("member_limit", None)
-            telegram_payload["creates_join_request"] = True
         return telegram_payload, None, "Convite"
 
     raise MesaError("ajuste_indisponivel")
@@ -1206,7 +1250,7 @@ async def executar_ajuste(
             )
         result = await telegram_api_call(bot_token, spec.telegram_method, telegram_payload)
         fixacao: dict[str, object] | None = None
-        if ajuste == "mensagens.enviar" and isinstance(result, dict) and result.get("message_id") is not None:
+        if ajuste in {"mensagens.enviar", "mensagens.enviar_foto"} and isinstance(result, dict) and result.get("message_id") is not None:
             message_unix_time = None
             try:
                 message_unix_time = int(result.get("date") or 0) or None
@@ -1283,15 +1327,16 @@ async def executar_ajuste(
             "historico_ref": history["historico_ref"],
             "resumo": history["resumo"],
         }
-        if ajuste in {"mensagens.enviar", "mensagens.apagar", "fixados.criar", "fixados.remover"} and alvo_ref:
+        if ajuste in {"mensagens.enviar", "mensagens.enviar_foto", "mensagens.apagar", "fixados.criar", "fixados.remover"} and alvo_ref:
             estado = {
                 "mensagens.enviar": "enviada",
+                "mensagens.enviar_foto": "foto_enviada",
                 "mensagens.apagar": "apagada",
                 "fixados.criar": "fixada",
                 "fixados.remover": "fixado_removido",
             }.get(ajuste, "ajustada")
             response["mensagem"] = {"msg_ref": alvo_ref, "resumo": alvo_label, "estado": estado}
-        if ajuste == "mensagens.enviar" and fixacao is not None:
+        if ajuste in {"mensagens.enviar", "mensagens.enviar_foto"} and fixacao is not None:
             response["fixacao"] = fixacao
         if spec.target_kind == "alvo" and alvo_ref:
             response["membro"] = {"alvo_ref": alvo_ref, "nome": alvo_label, "estado": membro_estado or "ajustado"}
@@ -1326,6 +1371,39 @@ async def executar_ajuste(
             raise
         raise MesaError("ajuste_falhou") from exc
 
+
+
+def resolve_alvo_from_mensagem_ref(
+    *,
+    palco_id: int,
+    msg_ref: str,
+    db_engine: Engine = default_engine,
+) -> dict[str, object]:
+    """Resolve the known author of a registered message into a public target row."""
+    ensure_phase5_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT autor_ref
+                FROM eq_mensagens
+                WHERE telegram_chat_id=:chat_id AND ui_ref=:ui_ref AND habilitado=1
+                """
+            ),
+            {"chat_id": int(palco_id), "ui_ref": str(msg_ref)},
+        ).mappings().first()
+    if not row:
+        raise MesaNotFoundError("mensagem_indisponivel")
+    autor_ref = str(row.get("autor_ref") or "").strip()
+    if not autor_ref:
+        raise MesaTargetError("Autor da mensagem ainda não reconhecido pelo bot. Use ID numérico validado.")
+    target = resolve_alvo_ref(palco_id=palco_id, alvo_ref=autor_ref, db_engine=db_engine)
+    return _public_target_row(
+        alvo_ref=str(target["ui_ref"]),
+        nome=str(target.get("nome_publico") or "Membro"),
+        username=target.get("username"),
+        situacao=str(target.get("telegram_status") or "desconhecido"),
+    )
 
 def list_mensagens_publicas(
     *,

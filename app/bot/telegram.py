@@ -189,6 +189,9 @@ async def _remember_equalizador_message(message: Message) -> None:
             resumo_publico=resumo,
             alias_secret=alias_secret,
             message_unix_time=int(message.date.timestamp()) if message.date else None,
+            autor_user_id=int(message.from_user.id) if message.from_user and not message.from_user.is_bot else None,
+            autor_nome_publico=_equalizador_safe_label(message.from_user.full_name) if message.from_user and not message.from_user.is_bot else None,
+            autor_username=message.from_user.username if message.from_user and not message.from_user.is_bot else None,
         )
         sender_chat = getattr(message, "sender_chat", None)
         if sender_chat is not None and getattr(sender_chat, "id", None):
@@ -232,6 +235,9 @@ async def _remember_equalizador_message(message: Message) -> None:
                 resumo_publico=(replied.text or replied.caption or "Mensagem respondida")[:140],
                 alias_secret=alias_secret,
                 message_unix_time=int(replied.date.timestamp()) if replied.date else None,
+                autor_user_id=int(replied.from_user.id) if replied.from_user and not replied.from_user.is_bot else None,
+                autor_nome_publico=_equalizador_safe_label(replied.from_user.full_name) if replied.from_user and not replied.from_user.is_bot else None,
+                autor_username=replied.from_user.username if replied.from_user and not replied.from_user.is_bot else None,
             )
             if replied.from_user and not replied.from_user.is_bot:
                 register_alvo_ref(

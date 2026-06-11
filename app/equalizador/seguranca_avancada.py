@@ -20,6 +20,10 @@ from app.equalizador.identity import make_ui_ref
 VALID_SECURITY_MODES = {"normal", "alerta", "restrito"}
 
 
+
+def _stable_ref_number(seed: str) -> int:
+    return int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:15], 16) % (10**12)
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -109,7 +113,7 @@ def record_security_audit(
     ensure_security_tables(db_engine)
     now = _now_iso()
     seed = f"{now}:{tipo}:{area}:{ator_ref}:{palco_ref}:{os.urandom(8).hex()}"
-    event_ref = make_ui_ref("sec", abs(hash((seed, alias_secret))) % (10**12), alias_secret or "seguranca")
+    event_ref = make_ui_ref("sec", _stable_ref_number(f"{seed}:{alias_secret}"), alias_secret or "seguranca")
     row = {
         "event_ref": event_ref,
         "tipo": _safe_text(tipo, limit=80, fallback="evento"),
