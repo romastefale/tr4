@@ -76,14 +76,16 @@ async def _download(url: str | None) -> bytes | None:
     return None
 
 
-def _caption(user_name: str, title: str, artist: str, url: str) -> str:
+def _caption(user_name: str, user_id: int, title: str, artist: str, url: str) -> str:
     user = _html.escape(user_name or "Usuário")
+    user_link = f"tg://user?id={int(user_id)}"
+    user_part = f'<b><a href="{_html.escape(user_link, quote=True)}">{user}</a></b>'
     track_name = _html.escape(title or "")
     artist_name = _html.escape(artist or "")
     track_part = (
         f'<a href="{_html.escape(url, quote=True)}">{track_name}</a>' if url else track_name
     )
-    return f"<b>{user}</b> · {track_part} — <i>{artist_name}</i>"
+    return f"{user_part} · {track_part} — <i>{artist_name}</i>"
 
 
 @router.message(Command("tstory"))
@@ -124,7 +126,7 @@ async def tstory(message: Message) -> None:
     track_id = str(track.get("track_id") or "").strip()
     user_name = message.from_user.full_name or "Usuário"
     listening = f"{user_name} está ouvindo agora"
-    caption = _caption(user_name, title, artist, spotify_url)
+    caption = _caption(user_name, user_id, title, artist, spotify_url)
 
     cover_bytes = await _download(cover_url)
     identity = await get_bot_identity(message.bot)

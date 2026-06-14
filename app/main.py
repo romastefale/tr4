@@ -14,6 +14,10 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import Update
 
+from app.logging_safety import configure_safe_logging
+
+configure_safe_logging()
+
 from app.bot.monthfm import router as monthfm_router
 from app.bot.owner_universal import router as owner_universal_router
 from app.bot.myself import router as myself_router

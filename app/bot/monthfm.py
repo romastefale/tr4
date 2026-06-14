@@ -29,7 +29,7 @@ def _format_caption(card_data, raw_month: str | None, display_name: str, user_id
     else:
         period = "este mês"
     safe_name = html.escape(display_name or "Usuário")
-    return f'♫ {html.escape(period)} de <a href="tg://user?id={user_id}">{safe_name}</a>'
+    return f'♫ {html.escape(period)} de <b><a href="tg://user?id={user_id}">{safe_name}</a></b>'
 
 
 async def _finish_monthfm(message: Message, user_id: int, display_name: str, raw_month: str | None) -> None:

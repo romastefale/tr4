@@ -869,7 +869,7 @@ async def _execute_albnow_dm(message) -> None:
     if not data:
         await message.answer("Nada tocando agora.")
         return
-    caption = _format_albnow(message.from_user.full_name, data)
+    caption = _format_albnow(message.from_user.full_name, message.from_user.id, data)
     cover = data.get("album_image_url") or data.get("cover_url")
     if cover:
         sent = await message.answer_photo(photo=str(cover), caption=caption, parse_mode="HTML")

@@ -16,7 +16,7 @@ from aiogram.types import (
 )
 
 from app.bot.intent import detect_intent
-from app.config.settings import LASTFM_API_KEY
+from app.config.settings import LASTFM_API_KEY, is_code_owner
 from app.services.connection_check import connect_hint_for, is_user_connected
 from app.services.lastfm import lastfm_service
 from app.services.likes import likes_service
@@ -105,7 +105,100 @@ def _user_mention(message: Message) -> str:
     if not message.from_user:
         return "Usuário"
     display_name = html.escape(message.from_user.full_name or "Usuário")
-    return f'<a href="tg://user?id={message.from_user.id}">{display_name}</a>'
+    return f'<b><a href="tg://user?id={message.from_user.id}">{display_name}</a></b>'
+
+
+def _is_owner_message(message: Message) -> bool:
+    return bool(message.from_user and is_code_owner(message.from_user.id))
+
+
+def _start_text(message: Message) -> str:
+    if message.chat.type != "private":
+        return (
+            "♫ ♥ <b>tigraoRADIO no grupo</b>\n\n"
+            "Aqui o bot é somente musical. Ele mostra músicas, capas, canvas, letras, "
+            "mosaicos e rankings Last.fm do grupo.\n\n"
+            "<b>Pra começar:</b> <code>/lastfm seu_username</code>\n"
+            "<b>Buscar música no grupo:</b> <code>/radiofm nome da música</code>\n"
+            "<b>Mosaico do grupo:</b> <code>/tnow</code>\n"
+            "<b>Ranking do grupo:</b> <code>/songcharts</code>\n\n"
+            "Use <code>/help</code> para ver a lista deste grupo."
+        )
+
+    if _is_owner_message(message):
+        return (
+            "♫ ♥ <b>tigraoRADIO — DM do dono</b>\n\n"
+            "Modo musical ativo. Nesta DM você tem os comandos pessoais, o envio para grupos "
+            "e os comandos universais exclusivos do dono do código.\n\n"
+            "<b>Primeiro passo para usuários:</b> <code>/lastfm seu_username</code>\n"
+            "<b>Web player:</b> <code>/player</code> no botão/menu do Telegram, quando configurado.\n\n"
+            "<b>Universais do dono:</b> <code>/tnowall</code>, <code>/songchartsall</code>, "
+            "<code>/weekall</code>, <code>/monthall</code>.\n\n"
+            "Use <code>/help</code> para ver a lista separada por escopo."
+        )
+
+    return (
+        "♫ ♥ <b>Bem-vindo ao tigraoRADIO</b>\n\n"
+        "Conecte seu Last.fm para o bot acompanhar o que você está ouvindo, gerar extratos "
+        "e participar dos mosaicos e rankings dos grupos.\n\n"
+        "<b>Primeiro passo:</b> <code>/lastfm seu_username</code> (sem @)\n"
+        "<b>Spotify opcional:</b> <code>/login</code>\n"
+        "<b>Lista de comandos:</b> <code>/help</code>"
+    )
+
+
+def _help_text(message: Message) -> str:
+    if message.chat.type != "private":
+        return (
+            "<b>COMANDOS VISÍVEIS NO GRUPO</b>\n\n"
+            "<code>/playing</code> — mostra sua música atual no grupo.\n"
+            "<code>/albnow</code> — destaca o álbum da sua música atual.\n"
+            "<code>/tcanvas</code> — envia o Canvas Spotify da música atual.\n"
+            "<code>/tstory</code> — monta story da música atual.\n"
+            "<code>/tly</code> — envia trecho de letra da música atual.\n"
+            "<code>/radiofm</code> — busca uma música no grupo; aceita termo junto ou resposta depois.\n"
+            "<code>/tnow</code> — mosaico de ouvintes do grupo.\n"
+            "<code>/myself</code> — abre seus extratos semanal/mensal.\n"
+            "<code>/weekfm</code> — seu extrato semanal Last.fm.\n"
+            "<code>/monthfm</code> — seu extrato mensal Last.fm.\n"
+            "<code>/songcharts</code> — ranking musical do grupo.\n"
+            "<code>/lastfm</code> — conecta ou mostra seu Last.fm.\n"
+            "<code>/lastfmoff</code> — remove seu Last.fm.\n"
+            "<code>/help</code> — mostra esta lista.\n\n"
+            "<b>Observação:</b> comandos de conexão Spotify e envio remoto ficam na DM."
+        )
+
+    base = (
+        "<b>COMANDOS VISÍVEIS NA DM</b>\n\n"
+        "<code>/start</code> — boas-vindas e instruções.\n"
+        "<code>/help</code> — lista de comandos.\n"
+        "<code>/lastfm</code> — conecta ou mostra seu Last.fm.\n"
+        "<code>/lastfmoff</code> — remove seu Last.fm.\n"
+        "<code>/login</code> — conecta Spotify.\n"
+        "<code>/logout</code> — desconecta Spotify.\n"
+        "<code>/playing</code> — sua música atual.\n"
+        "<code>/albnow</code> — álbum da música atual.\n"
+        "<code>/tcanvas</code> — Canvas Spotify da música atual.\n"
+        "<code>/tstory</code> — story da música atual.\n"
+        "<code>/tly</code> — trecho de letra da música atual.\n"
+        "<code>/radiofm</code> — busca uma música; aceita termo junto ou resposta depois.\n"
+        "<code>/nowp</code> — envia sua música atual para um grupo em comum.\n"
+        "<code>/myself</code> — abre seus extratos semanal/mensal.\n"
+        "<code>/weekfm</code> — seu extrato semanal Last.fm.\n"
+        "<code>/monthfm</code> — seu extrato mensal Last.fm.\n"
+    )
+    if _is_owner_message(message):
+        base += (
+            "\n<b>COMANDOS VISÍVEIS SÓ PARA O DONO DO CÓDIGO</b>\n\n"
+            "<code>/tnowall</code> — mosaico universal por DM.\n"
+            "<code>/songchartsall</code> — ranking universal por DM.\n"
+            "<code>/weekall</code> — ranking universal semanal por DM.\n"
+            "<code>/monthall</code> — ranking universal mensal por DM.\n"
+            "\nEsses comandos não respondem em grupo; se forem chamados fora da DM, o aviso vai para o privado."
+        )
+    else:
+        base += "\n<b>Comandos universais:</b> exclusivos do dono do código e não aparecem para usuários comuns."
+    return base
 
 
 # Negrito unicode (Mathematical Bold) pro nome de exibição no /tly. Telegram
@@ -243,7 +336,9 @@ async def build_tly_payload(
 
     track_name, artist, track_url, cover = _track_label(track)
     track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
-    name_part = html.escape(_bold_unicode(display_name_raw))
+    safe_name = html.escape(display_name_raw or "Usuário")
+    user_link = f"tg://user?id={user_id}"
+    name_part = f'<b><a href="{html.escape(user_link, quote=True)}">{safe_name}</a></b>'
     header = f"{name_part} · ♫ {total_plays} · {track_part} — <i>{artist}</i>"
     if lyric_snippet:
         caption = f"{header}\n<blockquote expandable>{html.escape(lyric_snippet)}</blockquote>"
@@ -367,56 +462,24 @@ def _register_handlers(dp: Dispatcher) -> None:
             await help_command(message)  # type: ignore[name-defined]
             return
 
-        # Sprint 9 (#8): greeting padrão ganha efeito 🎉 (DM only, fallback OK).
+        # Greeting padrão contextual: DM comum, grupo ou dono do código.
         await _answer_with_effect(
             message,
-            "♫ ♥ <b>Bem-vindo ao tigraoRADIO</b>\n\n"
-            "Conecte seu Last.fm e o bot acompanha o que você está ouvindo, "
-            "gera extratos visuais e monta rankings do grupo.\n\n"
-            "<b>Primeiro passo:</b> <code>/lastfm seu_username</code> (sem @)\n"
-            "<b>Lista completa de comandos:</b> /help",
+            _start_text(message),
             _EFFECT_PARTY,
             parse_mode="HTML",
+            disable_web_page_preview=True,
         )
 
     @dp.message(Command("help"))
     async def help_command(message: Message) -> None:
-        # Sprint 10: effect FIRE em DM (toda vez), graceful fallback em grupo.
+        # Effect FIRE em DM; em grupo usa fallback normal. Conteúdo depende do escopo.
         await _answer_with_effect(
             message,
-            "<b>COMANDOS</b>\n\n"
-            "— TOCANDO AGORA —\n\n"
-            "♫ /playing\n"
-            "Mostra a música que VOCÊ está ouvindo agora (capa + nome + artista + álbum). "
-            "Se nada estiver tocando, mostra a última registrada. Tem botões de like/dislike.\n\n"
-            "◐ /albnow\n"
-            "Foco no <b>álbum</b> da sua música atual: capa do álbum, nome, artista e ano. "
-            "Útil quando você quer destacar o disco e não a faixa solta.\n\n"
-            "▶ /tcanvas\n"
-            "Pega o Spotify Canvas (aquele vídeo curto vertical em loop que toca no app do Spotify) "
-            "da sua música atual e manda aqui. Se a faixa não tiver Canvas, cai automaticamente pra capa do álbum.\n\n"
-            "◉ /tnow\n"
-            "Mosaico ao vivo de quem está ouvindo o quê <b>neste grupo</b> agora.\n\n"
-            "✈ /nowp\n"
-            "Envia sua música atual (mesmo formato do /playing) pra um grupo onde "
-            "você e o bot estão juntos, <b>sem precisar entrar no grupo</b>. "
-            "Roda no privado, mostra a lista dos grupos em comum, você escolhe e o bot publica lá. "
-            "Confirma no privado com o nome do grupo onde foi enviado.\n\n"
-            "— EXTRATOS LAST.FM —\n\n"
-            "★ /myself\n"
-            "Porta de entrada do seu extrato pessoal. Abre um menu com dois botões: "
-            "🟢 <b>Semanal</b>  |  🔴 <b>Mensal</b>. Gera um card visual com top artistas e músicas. "
-            "Em grupo, só quem rodou o comando consegue clicar nos botões.\n\n"
-            "— CONEXÃO (LAST.FM) —\n\n"
-            "↻ /lastfm &lt;username&gt;\n"
-            "Conecta seu perfil <b>público</b> do Last.fm ao bot (sem o @). "
-            "Ex.: se sua URL é <code>last.fm/user/romastefale</code>, manda <code>/lastfm romastefale</code>. "
-            "SEM ISSO você não aparece em /tnow nem usa /playing, /tcanvas, /myself. "
-            "Sem argumento, mostra qual username está salvo.\n\n"
-            "⨯ /lastfmoff\n"
-            "Remove o vínculo do seu Last.fm com o bot.",
+            _help_text(message),
             _EFFECT_FIRE,
             parse_mode="HTML",
+            disable_web_page_preview=True,
         )
 
     @dp.message(Command("login"))
@@ -617,8 +680,10 @@ def _register_handlers(dp: Dispatcher) -> None:
             await query.answer([], cache_time=1, is_personal=True)
             return
         who = html.escape(query.from_user.full_name or "Usuário")
+        user_link = f"tg://user?id={query.from_user.id}"
+        who_part = f'<b><a href="{html.escape(user_link, quote=True)}">{who}</a></b>'
         track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
-        caption = f"<i>{who} · {track_part} - {artist}</i>"
+        caption = f"{who_part} · <i>{track_part} - {artist}</i>"
         result = InlineQueryResultPhoto(
             id=str(uuid.uuid4()),
             photo_url=cover,

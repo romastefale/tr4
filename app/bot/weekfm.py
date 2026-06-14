@@ -22,7 +22,7 @@ def _caption(card_data, display_name: str, user_id: int) -> str:
     else:
         period = "esta semana"
     safe_name = html.escape(display_name or "Usuário")
-    return f'♫ {html.escape(period)} de <a href="tg://user?id={user_id}">{safe_name}</a>'
+    return f'♫ {html.escape(period)} de <b><a href="tg://user?id={user_id}">{safe_name}</a></b>'
 
 
 async def _finish_weekfm(message: Message, user_id: int, display_name: str, raw_week: str | None) -> None:

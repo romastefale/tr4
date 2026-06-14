@@ -264,7 +264,10 @@ class LyricsService:
             resp = await self._client().get(url)
         except Exception:
             logger.warning(
-                "LYRICS_FETCH_ERROR artist=%s title=%s", artist, title, exc_info=True
+                "LYRICS_FETCH_ERROR artist=%s title=%s error=%s",
+                artist,
+                title,
+                type(exc).__name__,
             )
             return None
         if resp.status_code != 200:
@@ -303,7 +306,7 @@ class LyricsService:
                     "LRCLIB_GET_MISS artist=%s title=%s status=%s", artist, title, resp.status_code
                 )
         except Exception:
-            logger.warning("LRCLIB_GET_ERROR artist=%s title=%s", artist, title, exc_info=True)
+            logger.warning("LRCLIB_GET_ERROR artist=%s title=%s error=%s", artist, title, type(exc).__name__)
 
         try:
             resp = await client.get(
@@ -312,7 +315,7 @@ class LyricsService:
                 headers=headers,
             )
         except Exception:
-            logger.warning("LRCLIB_SEARCH_ERROR artist=%s title=%s", artist, title, exc_info=True)
+            logger.warning("LRCLIB_SEARCH_ERROR artist=%s title=%s error=%s", artist, title, type(exc).__name__)
             return None
         if resp.status_code != 200:
             logger.info(

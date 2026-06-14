@@ -101,8 +101,10 @@ def _nowp_groups_keyboard(requester_id: int, groups: list[dict]) -> InlineKeyboa
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _format_albnow(user_name: str, data: dict) -> str:
+def _format_albnow(user_name: str, user_id: int, data: dict) -> str:
     safe_user = html.escape(user_name or "Usuário")
+    user_link = f"tg://user?id={int(user_id)}"
+    user_part = f'<b><a href="{html.escape(user_link, quote=True)}">{safe_user}</a></b>'
     album = html.escape(str(data.get("album_name") or ""))
     artist = html.escape(str(data.get("artist") or ""))
     track = html.escape(str(data.get("track_name") or ""))
@@ -110,10 +112,10 @@ def _format_albnow(user_name: str, data: dict) -> str:
 
     if album_url:
         title = album or track or "Música"
-        return f"{safe_user} · <i>♪ <b><a href=\"{album_url}\">{title}</a></b> — {artist}</i>"
+        return f"{user_part} · <i>♪ <b><a href=\"{album_url}\">{title}</a></b> — {artist}</i>"
     if track and artist:
-        return f"{safe_user} · <i>♬ {track} — {artist}</i>"
-    return f"{safe_user} · <i>nada tocando agora</i>"
+        return f"{user_part} · <i>♬ {track} — {artist}</i>"
+    return f"{user_part} · <i>nada tocando agora</i>"
 
 
 def register_music_extra_handlers(dp: Dispatcher) -> None:
@@ -134,7 +136,7 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
         if not data:
             await message.answer("Nada tocando agora.")
             return
-        caption = _format_albnow(message.from_user.full_name, data)
+        caption = _format_albnow(message.from_user.full_name, message.from_user.id, data)
         cover = data.get("album_image_url") or data.get("cover_url")
         if cover:
             sent = await message.answer_photo(photo=str(cover), caption=caption, parse_mode="HTML")

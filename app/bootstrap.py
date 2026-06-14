@@ -6,12 +6,15 @@ import sys
 
 import uvicorn
 
+from app.logging_safety import configure_safe_logging
+
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     stream=sys.stdout,
 )
+configure_safe_logging()
 logger = logging.getLogger("tr4.bootstrap")
 
 
