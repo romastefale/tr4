@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import asyncio
 import hmac
 import logging
@@ -176,6 +178,31 @@ def _db_ready_check() -> tuple[bool, str | None]:
     except SQLAlchemyError as exc:
         return False, f"{type(exc).__name__}: {exc}"
 
+
+
+_INLINE_ICON_DIR = Path(__file__).resolve().parent / "static" / "inline_icons"
+_INLINE_ICON_FILES = {
+    "playing": "playing.png",
+    "tly": "tly.png",
+    "week": "week.png",
+    "month": "month.png",
+    "mosaic": "mosaic.png",
+}
+
+
+@app.get("/inline-icons/{name}.png")
+def inline_icon(name: str) -> Response:
+    filename = _INLINE_ICON_FILES.get(name)
+    if not filename:
+        return Response(status_code=404)
+    path = _INLINE_ICON_DIR / filename
+    if not path.is_file():
+        return Response(status_code=404)
+    return Response(
+        path.read_bytes(),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 @app.get("/healthz", status_code=200)
 def healthz() -> dict[str, object]:

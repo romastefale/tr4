@@ -46,7 +46,7 @@ from app.bot.telegram import (
 from app.bot.tnow import _gather_entries
 from app.bot.weekfm import _caption as _weekfm_caption
 from app.config import settings
-from app.config.settings import CANVAS_CACHE_CHANNEL_ID
+from app.config.settings import BASE_URL, CANVAS_CACHE_CHANNEL_ID
 from app.services.connection_check import connect_hint_for, is_user_connected
 from app.services.lastfm_capsule import lastfm_capsule_service
 from app.services.lastfm_weekly import lastfm_weekly_service
@@ -104,13 +104,13 @@ _KIND_LOADING = {
 
 _INLINE_MENU_KINDS: tuple[str, ...] = ("playing", "tly", "week", "month", "mosaic")
 
-_INLINE_THUMB_URL: dict[str, str] = {
-    "playing": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%99%AB",
-    "tly": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%9C%8E",
-    "week": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%96%A6",
-    "month": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%97%AB",
-    "mosaic": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%9C%A6",
-}
+def _inline_thumb_url(kind: str) -> str | None:
+    base = str(BASE_URL or "").strip().rstrip("/")
+    if not base:
+        return None
+    if kind not in _INLINE_MENU_KINDS:
+        return None
+    return f"{base}/inline-icons/{kind}.png"
 
 
 _LINK_TAG_RE = re.compile(r"<a\s+[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
@@ -571,7 +571,7 @@ async def music_inline_query(query: InlineQuery) -> None:
             id=result_id,
             title=_KIND_TITLE[item_kind],
             description=_result_description(item_kind, allowed),
-            thumbnail_url=_INLINE_THUMB_URL.get(item_kind),
+            thumbnail_url=_inline_thumb_url(item_kind),
             thumbnail_width=96,
             thumbnail_height=96,
             input_message_content=InputTextMessageContent(
