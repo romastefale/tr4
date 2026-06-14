@@ -270,10 +270,20 @@ class SpotifyService:
                 mapped = self._map_track(item, source="spotify_current", played_at=None)
                 if mapped is not None:
                     # Spotify pode responder 200 com is_playing=false quando o
-                    # usuário pausou. Propagamos a flag (default True quando
-                    # ausente, preservando o comportamento legado) para que
-                    # consumidores como /tnow possam filtrar pausados.
+                    # usuário pausou. Propagamos a flag e preservamos o timestamp
+                    # da mudança de estado para consumidores como /tnow exibirem
+                    # a última música recente com cor de recência.
                     mapped["is_playing"] = bool(data.get("is_playing", True))
+                    timestamp_ms = data.get("timestamp")
+                    mapped["player_timestamp_ms"] = timestamp_ms
+                    if not mapped["is_playing"] and timestamp_ms:
+                        try:
+                            mapped["played_at"] = datetime.fromtimestamp(
+                                int(timestamp_ms) / 1000,
+                                tz=timezone.utc,
+                            ).isoformat().replace("+00:00", "Z")
+                        except Exception:
+                            logger.debug("Spotify current timestamp parse failed: %s", timestamp_ms, exc_info=True)
                 return mapped
 
         recent = await fetch_recent(token.access_token)

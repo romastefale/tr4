@@ -24,6 +24,8 @@ class TnowEntry:
     artist: str
     cover_bytes: bytes | None
     source: str  # "spotify" | "lastfm"
+    status: str = "live"
+    age_minutes: int | None = None
 
 
 def _esc(value: object) -> str:
@@ -80,14 +82,21 @@ def _columns_for(n: int) -> int:
     return min(6, max(2, math.ceil(math.sqrt(n))))
 
 
+def _status_class(entry: TnowEntry) -> str:
+    status = entry.status if entry.status in {"live", "recent_15", "recent_30", "stale"} else "stale"
+    return status.replace("_", "-")
+
+
 def _tile_html(entry: TnowEntry) -> str:
     cover = _cover_data_uri(entry.cover_bytes) or FALLBACK_COVER
     badge = "spotify" if entry.source == "spotify" else "last.fm"
+    status_class = _status_class(entry)
     return (
         '<div class="tile">'
         '<div class="cover-wrap">'
         f'<img class="cover" src="{_esc(cover)}" alt=""/>'
         f'<span class="badge">{_esc(badge)}</span>'
+        f'<span class="status-dot status-{_esc(status_class)}"></span>'
         '</div>'
         '<div class="info">'
         f'<div class="who">{_esc(entry.display_name)}</div>'

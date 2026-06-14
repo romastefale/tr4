@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -45,6 +46,109 @@ router = Router(name="tnow")
 MAX_USERS = 60
 MAX_TILES = 30
 COVER_FETCH_TIMEOUT = 8.0
+
+TNOW_RECENT_YELLOW_MINUTES = 15
+TNOW_RECENT_RED_MINUTES = 30
+_TNOW_STATUS_PRIORITY = {
+    "live": 0,
+    "recent_15": 1,
+    "recent_30": 2,
+    "stale": 3,
+}
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _parse_played_at(value: object) -> datetime | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        if raw.isdigit():
+            return datetime.fromtimestamp(int(raw), tz=timezone.utc).replace(tzinfo=None)
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        logger.debug("TNOW_PLAYED_AT_PARSE_FAILED | value=%s", raw, exc_info=True)
+        return None
+
+
+def _classify_tnow_track(track: dict[str, Any] | None, *, source_tag: str, now: datetime) -> dict[str, Any] | None:
+    if not track:
+        return None
+
+    source = str(track.get("source") or "")
+    is_live = source in {"spotify_current", "lastfm_current"}
+    if source == "spotify_current" and not bool(track.get("is_playing", True)):
+        is_live = False
+
+    out = dict(track)
+    out["_source_tag"] = source_tag
+
+    if is_live:
+        out["_tnow_status"] = "live"
+        out["_tnow_age_minutes"] = 0
+        return out
+
+    if source not in {"spotify_last", "lastfm_last", "spotify_current"}:
+        return None
+
+    played_at = _parse_played_at(out.get("played_at"))
+    if played_at is None:
+        return None
+
+    age_seconds = max(0.0, (now - played_at).total_seconds())
+    age_minutes = int(age_seconds // 60)
+    out["_tnow_age_minutes"] = age_minutes
+    out["_tnow_played_at_iso"] = played_at.isoformat()
+
+    if age_seconds <= TNOW_RECENT_YELLOW_MINUTES * 60:
+        out["_tnow_status"] = "recent_15"
+    elif age_seconds <= TNOW_RECENT_RED_MINUTES * 60:
+        out["_tnow_status"] = "recent_30"
+    else:
+        out["_tnow_status"] = "stale"
+    return out
+
+
+def _candidate_sort_key(track: dict[str, Any]) -> tuple[int, int, int]:
+    status = str(track.get("_tnow_status") or "stale")
+    source = str(track.get("_source_tag") or "")
+    age = int(track.get("_tnow_age_minutes") or 0)
+    return (
+        _TNOW_STATUS_PRIORITY.get(status, 9),
+        0 if source == "spotify" else 1,
+        age,
+    )
+
+
+def _entry_sort_key(entry: TnowEntry) -> tuple[int, int, str]:
+    return (
+        _TNOW_STATUS_PRIORITY.get(entry.status, 9),
+        0 if entry.source == "spotify" else 1,
+        entry.display_name.lower(),
+    )
+
+
+def _grid_slots(n: int) -> int:
+    if n <= 0:
+        return 0
+    import math
+
+    if n <= 1:
+        columns = 1
+    elif n == 3:
+        columns = 3
+    elif n == 5:
+        columns = 5
+    else:
+        columns = min(6, max(2, math.ceil(math.sqrt(n))))
+    return columns * math.ceil(n / columns)
+
+
 
 
 def _registered_user_ids() -> list[int]:
@@ -74,30 +178,44 @@ async def _fetch_cover(url: str | None) -> bytes | None:
     return None
 
 
-async def _resolve_now_playing(user_id: int) -> dict[str, Any] | None:
-    """Tenta Spotify primeiro; só aceita se source == 'spotify_current'.
-    Cai pro Last.fm se Spotify não tiver nada tocando NESTE INSTANTE."""
+async def _resolve_now_playing(user_id: int, *, now: datetime) -> dict[str, Any] | None:
+    """Resolve a faixa do mosaico.
+
+    Prioridade:
+    1. ao vivo real;
+    2. última faixa até 15 min;
+    3. última faixa até 30 min;
+    4. antiga, apenas para preencher grade.
+    """
+    candidates: list[dict[str, Any]] = []
+
     try:
         sp = await spotify_service.get_current_or_last_played(user_id)
     except Exception:
         logger.exception("TNOW_SPOTIFY_PROBE_FAILED | user_id=%s", user_id)
         sp = None
-    if sp and sp.get("source") == "spotify_current" and sp.get("is_playing", True):
-        # Spotify devolve 200 + item mesmo quando o usuário pausou
-        # (is_playing=false). /tnow só quer quem está com som rolando agora.
-        sp["_source_tag"] = "spotify"
-        return sp
+    sp_candidate = _classify_tnow_track(sp, source_tag="spotify", now=now)
+    if sp_candidate:
+        if sp_candidate.get("_tnow_status") == "live":
+            return sp_candidate
+        candidates.append(sp_candidate)
 
     try:
         lf = await lastfm_service.get_current_or_last_played(user_id)
     except Exception:
         logger.exception("TNOW_LASTFM_PROBE_FAILED | user_id=%s", user_id)
         lf = None
-    if lf and lf.get("source") == "lastfm_current":
-        lf["_source_tag"] = "lastfm"
-        return lf
+    lf_candidate = _classify_tnow_track(lf, source_tag="lastfm", now=now)
+    if lf_candidate:
+        candidates.append(lf_candidate)
 
-    return None
+    if not candidates:
+        return None
+
+    candidates.sort(key=_candidate_sort_key)
+    return candidates[0]
+
+
 
 
 def _lastfm_display_name(user_id: int) -> str | None:
@@ -137,8 +255,8 @@ async def _display_name(bot: Any, user_id: int) -> str:
     return "Usuário cadastrado"
 
 
-async def _build_entry(bot: Any, user_id: int) -> TnowEntry | None:
-    track = await _resolve_now_playing(user_id)
+async def _build_entry(bot: Any, user_id: int, *, now: datetime) -> TnowEntry | None:
+    track = await _resolve_now_playing(user_id, now=now)
     if not track:
         return None
     cover_bytes = await _fetch_cover(track.get("album_image_url") or track.get("cover"))
@@ -150,7 +268,10 @@ async def _build_entry(bot: Any, user_id: int) -> TnowEntry | None:
         artist=str(track.get("artist") or "—"),
         cover_bytes=cover_bytes,
         source=str(track.get("_source_tag") or "spotify"),
+        status=str(track.get("_tnow_status") or "live"),
+        age_minutes=int(track.get("_tnow_age_minutes") or 0),
     )
+
 
 
 _GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
@@ -185,27 +306,66 @@ async def _filter_to_group_members(bot: Any, chat_id: int, user_ids: list[int]) 
 
 
 async def _gather_entries(bot: Any, chat: Chat | None = None) -> list[TnowEntry]:
-    user_ids = _registered_user_ids()
-    if not user_ids:
+    registered_user_ids = _registered_user_ids()
+    if not registered_user_ids:
+        logger.info("TNOW_GATHER_RESULT | registered=0 | members=0 | fresh=0 | stale=0 | selected=0")
         return []
-    # Em grupo/supergrupo: corta cedo todo mundo que não é membro daquele
-    # chat antes de bater nas APIs do Spotify/Last.fm.
+
+    user_ids = registered_user_ids
     if chat is not None and chat.type in _GROUP_TYPES:
         user_ids = await _filter_to_group_members(bot, chat.id, user_ids)
         if not user_ids:
+            logger.info(
+                "TNOW_GATHER_RESULT | registered=%s | members=0 | fresh=0 | stale=0 | selected=0 | chat_id=%s",
+                len(registered_user_ids),
+                chat.id,
+            )
             return []
-    tasks = [asyncio.create_task(_build_entry(bot, uid)) for uid in user_ids]
+
+    now = _utcnow()
+    tasks = [asyncio.create_task(_build_entry(bot, uid, now=now)) for uid in user_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    entries: list[TnowEntry] = []
+
+    fresh: list[TnowEntry] = []
+    stale: list[TnowEntry] = []
+    raised = 0
+    empty = 0
+
     for item in results:
         if isinstance(item, TnowEntry):
-            entries.append(item)
+            if item.status == "stale":
+                stale.append(item)
+            else:
+                fresh.append(item)
         elif isinstance(item, Exception):
+            raised += 1
             logger.debug("TNOW_BUILD_ENTRY_RAISED", exc_info=item)
-    # Spotify primeiro (mais rico em capa), depois Last.fm; dentro de cada
-    # grupo, ordena por nome p/ deixar o mosaico previsível entre execuções.
-    entries.sort(key=lambda e: (0 if e.source == "spotify" else 1, e.display_name.lower()))
-    return entries[:MAX_TILES]
+        else:
+            empty += 1
+
+    fresh.sort(key=_entry_sort_key)
+    stale.sort(key=_entry_sort_key)
+
+    selected = fresh[:MAX_TILES]
+    if selected and len(selected) < MAX_TILES:
+        missing = min(_grid_slots(len(selected)) - len(selected), MAX_TILES - len(selected))
+        if missing > 0:
+            selected.extend(stale[:missing])
+
+    logger.info(
+        "TNOW_GATHER_RESULT | registered=%s | members=%s | fresh=%s | stale=%s | selected=%s | empty=%s | raised=%s | chat_id=%s",
+        len(registered_user_ids),
+        len(user_ids),
+        len(fresh),
+        len(stale),
+        len(selected),
+        empty,
+        raised,
+        getattr(chat, "id", None),
+    )
+
+    return selected
+
 
 
 
@@ -220,7 +380,7 @@ async def _finish_tnow(status: Message) -> None:
             return
 
         card_bytes = await render_tnow_card(entries)
-        caption = f"♫ <b>tocando agora</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
+        caption = f"♫ <b>ao vivo e recentes</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
         if card_bytes:
             sent = await status.answer_photo(
                 photo=BufferedInputFile(card_bytes, filename="tnow.jpg"),

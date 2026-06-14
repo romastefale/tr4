@@ -125,6 +125,33 @@
       background: rgba(11,10,26,.55);
       color: var(--green);
     }
+    .tile .status-dot {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,.88);
+      background: #9AA0A6;
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 16px rgba(154,160,166,.55);
+    }
+    .tile .status-live {
+      background: #3FE0A6;
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 18px rgba(63,224,166,.9);
+    }
+    .tile .status-recent-15 {
+      background: #FFD84A;
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 18px rgba(255,216,74,.82);
+    }
+    .tile .status-recent-30 {
+      background: #FF4D67;
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 18px rgba(255,77,103,.82);
+    }
+    .tile .status-stale {
+      background: #9AA0A6;
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 14px rgba(154,160,166,.62);
+    }
     .tile .info {
       padding: 18px 20px 22px;
       display: flex;
@@ -185,7 +212,7 @@
     </header>
 
     <div class="period">
-      <span class="label">Tocando agora</span>
+      <span class="label">Ao vivo / recentes</span>
       <span class="value">{{ stamp_value }}</span>
     </div>
 
