@@ -30,6 +30,7 @@ from app.bot.tly import router as tly_router
 from app.bot.tnow import router as tnow_router
 from app.bot.tstory import router as tstory_router
 from app.bot.weekfm import router as weekfm_router
+from app.bot.music_inline import router as music_inline_router
 from app.bot.music_extras import register_music_extra_handlers
 from app.bot.music_groups import ensure_tables as ensure_music_group_tables, remember_group
 from app.config.settings import BASE_URL, TELEGRAM_BOT_TOKEN, telegram_webhook_secret, validate_required_env
@@ -95,13 +96,14 @@ async def _configure_telegram_bot_background() -> None:
             dispatcher.include_router(radiofm_router)
             dispatcher.include_router(myself_router)
             dispatcher.include_router(songcharts_router)
+            dispatcher.include_router(music_inline_router)
             register_music_extra_handlers(dispatcher)
             _register_handlers(dispatcher)
             _telegram_dispatcher_configured = True
         webhook_secret = telegram_webhook_secret()
         await local_bot.set_webhook(
             f"{BASE_URL}/webhook",
-            allowed_updates=dispatcher.resolve_used_update_types(),
+            allowed_updates=sorted(set(dispatcher.resolve_used_update_types()) | {"chosen_inline_result"}),
             secret_token=webhook_secret,
         )
         await setup_bot_commands(local_bot)

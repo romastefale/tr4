@@ -711,6 +711,15 @@ def _register_handlers(dp: Dispatcher) -> None:
             return False
         return all(p.lstrip("-").isdigit() for p in parts)
 
+    def _is_music_inline_v2_format(query: InlineQuery) -> bool:
+        try:
+            from app.bot.music_inline import is_music_inline_query
+
+            return is_music_inline_query(query.query)
+        except Exception:
+            logger.debug("MUSIC_INLINE_V2_FORMAT_CHECK_FAILED", exc_info=True)
+            return False
+
     async def _answer_playing(query: InlineQuery) -> None:
         track = await music_service.get_current_or_last_played(query.from_user.id)
         if not track:
@@ -734,10 +743,16 @@ def _register_handlers(dp: Dispatcher) -> None:
         )
         await query.answer([result], cache_time=2, is_personal=True)
 
-    @dp.inline_query(lambda q: not _is_x9_inline_format(q))
+    @dp.inline_query(lambda q: not _is_x9_inline_format(q) and not _is_music_inline_v2_format(q))
     async def inline_public(query: InlineQuery) -> None:
         raw = (query.query or "").strip()
-        if not raw or raw.lower() == "playing":
+        # Segurança inline musical: query vazia não deve cair no legado /playing,
+        # porque esse fluxo antigo usa photo_url e caption com link. O /playing
+        # seguro agora é explícito: @bot playing.
+        if not raw:
+            await query.answer([], cache_time=1, is_personal=True)
+            return
+        if raw.lower() == "playing":
             await _answer_playing(query)
             return
 
