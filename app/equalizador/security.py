@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Mapping
 from urllib.parse import parse_qsl
 
@@ -18,11 +18,6 @@ class TelegramWebAppIdentity:
     user_id: int
     user: dict[str, object]
     auth_date: int
-    raw_init_data: dict[str, str] = field(default_factory=dict)
-    chat: dict[str, object] | None = None
-    chat_type: str = ""
-    chat_instance: str = ""
-    start_param: str = ""
 
 
 def _parse_init_data(init_data: str) -> dict[str, str]:
@@ -95,25 +90,7 @@ def validate_init_data(
     if user_id <= 0:
         raise InitDataError("missing_user_id")
 
-    chat: dict[str, object] | None = None
-    if data.get("chat"):
-        try:
-            parsed_chat = json.loads(data.get("chat", "{}"))
-            if isinstance(parsed_chat, dict):
-                chat = parsed_chat
-        except json.JSONDecodeError:
-            chat = None
-
-    return TelegramWebAppIdentity(
-        user_id=user_id,
-        user=user,
-        auth_date=auth_date,
-        raw_init_data=dict(data),
-        chat=chat,
-        chat_type=str(data.get("chat_type") or ""),
-        chat_instance=str(data.get("chat_instance") or ""),
-        start_param=str(data.get("start_param") or data.get("startattach") or ""),
-    )
+    return TelegramWebAppIdentity(user_id=user_id, user=user, auth_date=auth_date)
 
 
 def extract_tma_authorization(header_value: str | None) -> str:

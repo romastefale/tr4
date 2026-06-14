@@ -35,7 +35,7 @@ def test_render_show_owner_text_hides_raw_refs_and_lists_capabilities() -> None:
         ],
         config_ok=True,
     )
-    assert "TR4 /town" in text
+    assert "TR4 /show" in text
     assert "Grupo Teste" in text
     assert "apagar" in text
     assert "ban/unban" in text

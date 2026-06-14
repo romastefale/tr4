@@ -51,9 +51,7 @@ def test_broadcast_is_private_command_only_scope():
     source = Path("app/bot/setup_commands.py").read_text()
     private_tail = source.split("_PRIVATE_COMMANDS", 1)[1]
     public_head = source.split("_PRIVATE_COMMANDS", 1)[0]
-    assert "CommandDef(\"tbrd\"" in private_tail
-    assert "CommandDef(\"tbrd\"" not in public_head
-    assert "CommandDef(\"broadcast\"" not in private_tail
+    assert "CommandDef(\"broadcast\"" in private_tail
     assert "CommandDef(\"broadcast\"" not in public_head
 
 

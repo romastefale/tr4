@@ -855,7 +855,7 @@ def _parse_scheduled_for(value: object) -> str:
     except ValueError as exc:
         raise RadioError("Data e hora do agendamento inválidas.") from exc
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=_zoneinfo_or_default("America/Sao_Paulo"))
+        dt = dt.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
     utc_dt = dt.astimezone(timezone.utc)
     if utc_dt <= datetime.now(timezone.utc) + timedelta(seconds=20):
         raise RadioError("Agendamento precisa ficar alguns segundos no futuro.")

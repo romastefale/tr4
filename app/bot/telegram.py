@@ -177,7 +177,8 @@ def _equalizador_safe_label(value: object, *, fallback: str = "Membro") -> str:
 async def _remember_equalizador_message(message: Message) -> None:
     """Register message/member aliases for the Equalizador UI without affecting handlers."""
     try:
-        if not settings.TR4_EQUALIZADOR_ENABLED or message.chat.type not in {"group", "supergroup"}:
+        allowed_palcos = settings.equalizador_allowed_palco_ids()
+        if not settings.TR4_EQUALIZADOR_ENABLED or int(message.chat.id) not in allowed_palcos:
             return
         alias_secret = settings.equalizador_alias_secret()
         text_value = (message.text or message.caption or "").strip()
@@ -271,7 +272,8 @@ class EqualizadorCaptureMiddleware(BaseMiddleware):
 async def _remember_equalizador_join_request(event: ChatJoinRequest) -> None:
     """Register pending join requests for the Equalizador entry queue."""
     try:
-        if not settings.TR4_EQUALIZADOR_ENABLED:
+        allowed_palcos = settings.equalizador_allowed_palco_ids()
+        if not settings.TR4_EQUALIZADOR_ENABLED or int(event.chat.id) not in allowed_palcos:
             return
         invite_link = None
         raw_invite = getattr(event, "invite_link", None)
@@ -714,31 +716,26 @@ async def _send_playing(message: Message) -> None:
 def _multimedia_message_payload(message: Message) -> dict[str, object] | None:
     caption = getattr(message, "caption", None) or ""
     text_value = getattr(message, "text", None) or caption or ""
-    base = {
-        "source_chat_id": int(message.chat.id),
-        "source_message_id": int(message.message_id),
-        "source_media_group_id": str(getattr(message, "media_group_id", "") or ""),
-    }
     if getattr(message, "photo", None):
         photo = message.photo[-1]
-        return {**base, "media_kind": "photo", "file_id": photo.file_id, "file_unique_id": photo.file_unique_id, "texto": caption}
+        return {"media_kind": "photo", "file_id": photo.file_id, "file_unique_id": photo.file_unique_id, "texto": caption}
     if getattr(message, "video", None):
         video = message.video
-        return {**base, "media_kind": "video", "file_id": video.file_id, "file_unique_id": video.file_unique_id, "file_name": getattr(video, "file_name", "") or "video", "mime_type": getattr(video, "mime_type", "") or "video/mp4", "texto": caption}
+        return {"media_kind": "video", "file_id": video.file_id, "file_unique_id": video.file_unique_id, "file_name": getattr(video, "file_name", "") or "video", "mime_type": getattr(video, "mime_type", "") or "video/mp4", "texto": caption}
     if getattr(message, "animation", None):
         animation = message.animation
-        return {**base, "media_kind": "animation", "file_id": animation.file_id, "file_unique_id": animation.file_unique_id, "file_name": getattr(animation, "file_name", "") or "animacao", "mime_type": getattr(animation, "mime_type", "") or "video/mp4", "texto": caption}
+        return {"media_kind": "animation", "file_id": animation.file_id, "file_unique_id": animation.file_unique_id, "file_name": getattr(animation, "file_name", "") or "animacao", "mime_type": getattr(animation, "mime_type", "") or "video/mp4", "texto": caption}
     if getattr(message, "document", None):
         document = message.document
-        return {**base, "media_kind": "document", "file_id": document.file_id, "file_unique_id": document.file_unique_id, "file_name": getattr(document, "file_name", "") or "documento", "mime_type": getattr(document, "mime_type", "") or "application/octet-stream", "texto": caption}
+        return {"media_kind": "document", "file_id": document.file_id, "file_unique_id": document.file_unique_id, "file_name": getattr(document, "file_name", "") or "documento", "mime_type": getattr(document, "mime_type", "") or "application/octet-stream", "texto": caption}
     if getattr(message, "audio", None):
         audio = message.audio
-        return {**base, "media_kind": "audio", "file_id": audio.file_id, "file_unique_id": audio.file_unique_id, "file_name": getattr(audio, "file_name", "") or "audio", "mime_type": getattr(audio, "mime_type", "") or "audio/mpeg", "texto": caption}
+        return {"media_kind": "audio", "file_id": audio.file_id, "file_unique_id": audio.file_unique_id, "file_name": getattr(audio, "file_name", "") or "audio", "mime_type": getattr(audio, "mime_type", "") or "audio/mpeg", "texto": caption}
     if getattr(message, "voice", None):
         voice = message.voice
-        return {**base, "media_kind": "voice", "file_id": voice.file_id, "file_unique_id": voice.file_unique_id, "mime_type": getattr(voice, "mime_type", "") or "audio/ogg", "texto": caption}
+        return {"media_kind": "voice", "file_id": voice.file_id, "file_unique_id": voice.file_unique_id, "mime_type": getattr(voice, "mime_type", "") or "audio/ogg", "texto": caption}
     if text_value.strip():
-        return {**base, "media_kind": "text", "texto": text_value.strip()}
+        return {"media_kind": "text", "texto": text_value.strip()}
     return None
 
 
@@ -1442,14 +1439,8 @@ def _register_handlers(dp: Dispatcher) -> None:
             return
         if not sessao:
             return
-        try:
-            await message.bot.copy_message(chat_id=message.chat.id, from_chat_id=message.chat.id, message_id=message.message_id, disable_notification=True)
-        except Exception:
-            logger.debug("MULTIMEDIA_NATIVE_PREVIEW_COPY_FAILED", exc_info=True)
         keyboard = _multimedia_return_keyboard()
-        album = int(sessao.get("album_itens") or 0) if isinstance(sessao, dict) else 0
-        aviso_album = f" Álbum em coleta: {album} item(ns) recebido(s)." if album else ""
-        await message.answer("Prévia copiada acima." + aviso_album + " Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
+        await message.answer("Conteúdo recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
 
     @dp.message(
         StateFilter(None),
@@ -1472,12 +1463,8 @@ def _register_handlers(dp: Dispatcher) -> None:
             return
         if not sessao:
             return
-        try:
-            await message.bot.copy_message(chat_id=message.chat.id, from_chat_id=message.chat.id, message_id=message.message_id, disable_notification=True)
-        except Exception:
-            logger.debug("MULTIMEDIA_NATIVE_PREVIEW_COPY_FAILED", exc_info=True)
         keyboard = _multimedia_return_keyboard()
-        await message.answer("Prévia copiada acima. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
+        await message.answer("Texto recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
 
 
     @dp.message(
@@ -1506,12 +1493,8 @@ def _register_handlers(dp: Dispatcher) -> None:
             return None
         if not sessao:
             return None  # phase133: aiogram handler fallback sem NameError
-        try:
-            await message.bot.copy_message(chat_id=message.chat.id, from_chat_id=message.chat.id, message_id=message.message_id, disable_notification=True)
-        except Exception:
-            logger.debug("MULTIMEDIA_NATIVE_PREVIEW_COPY_FAILED", exc_info=True)
         keyboard = _multimedia_return_keyboard()
-        await message.answer("Prévia copiada acima. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
+        await message.answer("Texto recebido. Volte ao Web App para confirmar a publicação no grupo.", reply_markup=keyboard)
         return None
 
     # IMPORTANTE: o filtro `~F.text.startswith("/")` impede que este handler

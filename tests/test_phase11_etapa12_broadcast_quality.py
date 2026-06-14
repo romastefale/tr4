@@ -61,7 +61,7 @@ def test_manual_and_governante_broadcast_are_lastfm_current_only() -> None:
     assert "get_current_lastfm_track" in BROADCAST
     assert "manual não usa última música nem fallback Spotify" in BROADCAST
     assert "Nada está tocando agora no Last.fm." in BROADCAST
-    manual_section = BROADCAST.split('@router.message(Command("tbrd", "broadcast"))', 1)[1]
+    manual_section = BROADCAST.split('@router.message(Command("broadcast"))', 1)[1]
     governante_section = BROADCAST.split("async def execute_governante_current_music_broadcast", 1)[1]
     assert "get_current_or_last_played(user_id)" not in manual_section
     assert "get_current_or_last_played(int(actor_user_id))" not in governante_section

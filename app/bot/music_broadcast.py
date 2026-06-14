@@ -1,4 +1,4 @@
-"""Broadcast musical TR4 — owner /tbrd e Web App governante."""
+"""Broadcast musical TR4 — owner /broadcast e Web App governante."""
 from __future__ import annotations
 
 import html
@@ -55,7 +55,7 @@ router = Router(name="music_broadcast")
 async def get_current_lastfm_track(user_id: int) -> dict[str, Any] | None:
     """Return only the track that is currently playing on Last.fm.
 
-    Manual /tbrd and governante Web App broadcast must not fall back to
+    Manual /broadcast and governante Web App broadcast must not fall back to
     last played tracks or Spotify history. If Last.fm does not report
     ``nowplaying=true``, the caller must not send anything.
     """
@@ -318,8 +318,8 @@ def _render_preview(track: dict[str, Any], groups: list[BroadcastTarget], pendin
     info = track_identity(track)
     group_lines = [f"{idx}. {html.escape(target.title)}" for idx, target in enumerate(groups[:10], start=1)]
     text_value = (
-        "<b>/tbrd — prévia owner</b>\n"
-        "Envio manual da música atual. Escolha por botão ou envie /tbrd all ou /tbrd 1,3.\n\n"
+        "<b>/broadcast — prévia owner</b>\n"
+        "Envio manual da música atual. Escolha por botão ou envie /broadcast all ou /broadcast 1,3.\n\n"
         f"Música: <b>{html.escape(info['track_name'] or 'indisponível')}</b> — <i>{html.escape(info['artist'] or 'indisponível')}</i>\n"
         f"Grupos conhecidos: {len(groups)}\n"
         + ("\n".join(group_lines) if group_lines else "Nenhum grupo conhecido.")
@@ -355,8 +355,8 @@ def _render_catalog_text() -> str:
         lines.append(f"• {html.escape(row['catalog_ref'])} · {html.escape(row.get('artist') or '')} — {html.escape(row.get('track_name') or '')} · {status}")
     lines.extend([
         "",
-        "Adicionar: /tbrd catalog add Artista - Música | https://capa | https://spotify",
-        "Remover: /tbrd catalog delete mbcat_xxx",
+        "Adicionar: /broadcast catalog add Artista - Música | https://capa | https://spotify",
+        "Remover: /broadcast catalog delete mbcat_xxx",
     ])
     return "\n".join(lines)[:3900]
 
@@ -403,7 +403,7 @@ async def _handle_broadcast_owner_subcommand(message: Message, user_id: int, arg
             item = add_manual_music_catalog_item(created_by=user_id, **payload)
             await message.answer(f"Catálogo manual salvo: {html.escape(item['catalog_ref'])}", parse_mode="HTML")
         except Exception:
-            await message.answer("Não consegui salvar. Use: /tbrd catalog add Artista - Música | https://capa | https://spotify")
+            await message.answer("Não consegui salvar. Use: /broadcast catalog add Artista - Música | https://capa | https://spotify")
         return True
     if lower.startswith("catalog delete "):
         ref = args[len("catalog delete "):].strip()
@@ -424,7 +424,7 @@ async def _handle_broadcast_owner_subcommand(message: Message, user_id: int, arg
         try:
             block_id = int(args.split(maxsplit=1)[1])
         except Exception:
-            await message.answer("Use /tbrd unblock ID.")
+            await message.answer("Use /broadcast unblock ID.")
             return True
         ok = remove_music_broadcast_block(block_id=block_id)
         await message.answer("Bloqueio removido." if ok else "Bloqueio não encontrado.")
@@ -443,15 +443,15 @@ async def _handle_broadcast_owner_subcommand(message: Message, user_id: int, arg
         await message.answer("Agendamento removido." if ok else "Agendamento não encontrado.")
         return True
     if lower.startswith("schedule "):
-        # /tbrd schedule 1 09:00,18:00 [fixar] [silent] confirmar
+        # /broadcast schedule 1 09:00,18:00 [fixar] [silent] confirmar
         parts = args.split()
         if len(parts) < 3:
-            await message.answer("Use /tbrd schedule 1 09:00,18:00 confirmar")
+            await message.answer("Use /broadcast schedule 1 09:00,18:00 confirmar")
             return True
         groups = targets_from_music_groups(list_groups(limit=25))
         targets = selection_from_arg(parts[1], groups)
         if not targets:
-            await message.answer("Grupo inválido. Gere /tbrd para ver a numeração ou use all.")
+            await message.answer("Grupo inválido. Gere /broadcast para ver a numeração ou use all.")
             return True
         flags = {part.lower() for part in parts[3:]}
         preview_track = await select_automatic_broadcast_track(preferred_user_id=user_id)
@@ -485,12 +485,12 @@ async def _handle_broadcast_owner_subcommand(message: Message, user_id: int, arg
     return False
 
 
-@router.message(Command("tbrd", "broadcast"))
+@router.message(Command("broadcast"))
 async def broadcast_command(message: Message) -> None:
     if not message.from_user:
         return
     if message.chat.type != "private":
-        await message.answer("Use /tbrd no privado do owner.")
+        await message.answer("Use /broadcast no privado do owner.")
         return
     user_id = int(message.from_user.id)
     if not _is_owner(user_id):
@@ -507,18 +507,18 @@ async def broadcast_command(message: Message) -> None:
     if args:
         pending = next((item for item in reversed(list(_PENDING.values())) if int(item.get("user_id") or 0) == user_id), None)
         if not pending:
-            await message.answer("Gere a prévia primeiro com /tbrd.")
+            await message.answer("Gere a prévia primeiro com /broadcast.")
             return
         targets = selection_from_arg(args, pending["groups"])
         if not targets:
-            await message.answer("Seleção vazia. Use /tbrd all ou números como /tbrd 1,3.")
+            await message.answer("Seleção vazia. Use /broadcast all ou números como /broadcast 1,3.")
             return
         result = await execute_music_broadcast(message.bot, actor_user_id=user_id, actor_kind="owner", track=pending["track"], targets=targets, silent=bool(pending.get("silent", False)), fixar=bool(pending.get("fixar", False)))
         await message.answer(html.escape(str(result.get("resumo") or "Broadcast concluído.")), parse_mode="HTML")
         return
     track = await get_current_lastfm_track(user_id)
     if not track:
-        await message.answer("Nada está tocando agora no Last.fm. O /tbrd manual não usa última música nem fallback Spotify.")
+        await message.answer("Nada está tocando agora no Last.fm. O /broadcast manual não usa última música nem fallback Spotify.")
         return
     blocked, reason = is_music_broadcast_blocked(track)
     if blocked:

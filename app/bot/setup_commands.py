@@ -42,14 +42,8 @@ _PUBLIC_COMMANDS: tuple[CommandDef, ...] = (
 )
 
 _PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PUBLIC_COMMANDS + (
-    CommandDef("tmod", "Moderate by private X9"),
-    CommandDef("tgrp", "Group settings by DM"),
-    CommandDef("tadd", "Add DDX rule"),
-    CommandDef("tdel", "Delete DDX rule"),
-    CommandDef("town", "Owner control"),
-    CommandDef("tctl", "Owner control center"),
-    CommandDef("tbrd", "Broadcast music tools"),
-    CommandDef("tgov", "Owner group governance"),
+    CommandDef("show", "Painel owner do Equalizador"),
+    CommandDef("broadcast", "Broadcast musical owner"),
 )
 
 

@@ -8,13 +8,14 @@ def _router() -> str:
     return ROUTER.read_text(encoding="utf-8")
 
 
-def test_equalizador_root_is_player_only_after_contextual_fsm() -> None:
+def test_panel_route_uses_denied_shell_and_cookie_session_guard() -> None:
     source = _router()
     assert "_EQUALIZADOR_DENIED_HTML" in source
     assert "data-equalizador-denied-shell" in source
-    assert "Web App é player musical" in source
-    assert "return _equalizador_html_response(_PUBLIC_MUSIC_HTML)" in source
-    assert "Moderação e governança ficam no FSM privado/X9" in source
+    assert "tr4_equalizador_eqs: str | None = Cookie" in source
+    assert 'auth_header = "eqs " + cookie_token' in source
+    assert '_require_identity(auth_header, rate_kind="bootstrap")' in source
+    assert "_equalizador_html_response(_EQUALIZADOR_DENIED_HTML" in source
 
 
 def test_public_panel_navigation_sets_cookie_before_get_equalizador() -> None:

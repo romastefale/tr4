@@ -14,12 +14,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
-    existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}
-    if column not in existing:
-        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
-
-
 def ensure_session_tables(db_engine: Engine = default_engine) -> None:
     with db_engine.begin() as conn:
         conn.execute(
@@ -32,13 +26,11 @@ def ensure_session_tables(db_engine: Engine = default_engine) -> None:
                     auth_date INTEGER NOT NULL,
                     issued_at INTEGER NOT NULL,
                     expires_at INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    context_json TEXT
+                    updated_at TEXT NOT NULL
                 )
                 """
             )
         )
-        _ensure_column(conn, "eq_private_sessions", "context_json", "context_json TEXT")
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_private_sessions_expires ON eq_private_sessions(expires_at)"))
 
 
@@ -55,16 +47,15 @@ def save_session(
         conn.execute(
             text(
                 """
-                INSERT INTO eq_private_sessions (token, telegram_user_id, user_json, auth_date, issued_at, expires_at, updated_at, context_json)
-                VALUES (:token, :telegram_user_id, :user_json, :auth_date, :issued_at, :expires_at, :updated_at, :context_json)
+                INSERT INTO eq_private_sessions (token, telegram_user_id, user_json, auth_date, issued_at, expires_at, updated_at)
+                VALUES (:token, :telegram_user_id, :user_json, :auth_date, :issued_at, :expires_at, :updated_at)
                 ON CONFLICT(token) DO UPDATE SET
                     telegram_user_id=excluded.telegram_user_id,
                     user_json=excluded.user_json,
                     auth_date=excluded.auth_date,
                     issued_at=excluded.issued_at,
                     expires_at=excluded.expires_at,
-                    updated_at=excluded.updated_at,
-                    context_json=excluded.context_json
+                    updated_at=excluded.updated_at
                 """
             ),
             {
@@ -75,13 +66,6 @@ def save_session(
                 "issued_at": int(issued_at),
                 "expires_at": int(expires_at),
                 "updated_at": _now_iso(),
-                "context_json": json.dumps({
-                    "raw_init_data": identity.raw_init_data,
-                    "chat": identity.chat,
-                    "chat_type": identity.chat_type,
-                    "chat_instance": identity.chat_instance,
-                    "start_param": identity.start_param,
-                }, ensure_ascii=False, separators=(",", ":")),
             },
         )
 
@@ -99,20 +83,7 @@ def load_session(token: str, *, db_engine: Engine = default_engine) -> tuple[Tel
         user = json.loads(str(row["user_json"] or "{}"))
     except json.JSONDecodeError:
         user = {"id": int(row["telegram_user_id"])}
-    try:
-        context = json.loads(str(row.get("context_json") or "{}"))
-    except json.JSONDecodeError:
-        context = {}
-    identity = TelegramWebAppIdentity(
-        user_id=int(row["telegram_user_id"]),
-        user=user,
-        auth_date=int(row["auth_date"]),
-        raw_init_data=dict(context.get("raw_init_data") or {}),
-        chat=context.get("chat") if isinstance(context.get("chat"), dict) else None,
-        chat_type=str(context.get("chat_type") or ""),
-        chat_instance=str(context.get("chat_instance") or ""),
-        start_param=str(context.get("start_param") or ""),
-    )
+    identity = TelegramWebAppIdentity(user_id=int(row["telegram_user_id"]), user=user, auth_date=int(row["auth_date"]))
     return identity, int(row["issued_at"]), int(row["expires_at"])
 
 
