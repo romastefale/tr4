@@ -1,7 +1,7 @@
 [project]
-name = "tr3-month"
-version = "10.0.0"
-description = "Telegram bot with moderation, governance, Radio postings and operational safety"
+name = "tr4-music-only"
+version = "10.1.0"
+description = "Telegram music bot focused on Last.fm, Spotify, cards and public music commands"
 requires-python = ">=3.11"
 dependencies = [
     "aiogram==3.27.0",
@@ -11,7 +11,6 @@ dependencies = [
     "uvicorn==0.35.0",
     "Pillow==11.3.0",
     "playwright==1.56.0",
-    "cryptography==46.0.4",
 ]
 
 [tool.pytest.ini_options]

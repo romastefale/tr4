@@ -107,8 +107,8 @@ class LastfmService:
         # "sabidamente sem Last.fm" pra evitar SELECT idêntico repetido
         # (hot path: /songcharts agrega N membros do grupo, cada um
         # passava por get_username; /tnow chama uma vez por execução).
-        # Sem TTL — invalidação acontece nas 3 rotas de mutação
-        # (set_username, manual_register, clear_username). Single-process
+        # Sem TTL — invalidação acontece nas rotas de mutação
+        # (set_username, clear_username). Single-process
         # no Railway, então cache fica coerente. Cap em 4096 entradas
         # com eviction simples dos mais antigos pra bounded memory.
         self._username_cache: dict[int, str | None] = {}
@@ -161,36 +161,6 @@ class LastfmService:
         self._username_cache_set(user_id, clean)
         return clean, previous
 
-    async def manual_register(self, user_id: int, username: str) -> tuple[str, int]:
-        """Cadastro manual (admin) do Last.fm de um terceiro.
-
-        Apaga TODAS as linhas de `lastfm_profiles` daquele `user_id` (defesa
-        em profundidade contra qualquer sujeira de tentativa anterior) e
-        cria uma linha nova. Tudo numa única transação — ou tudo entra ou
-        nada muda.
-
-        Retorna `(novo_username, qtd_de_linhas_apagadas)`.
-        """
-        clean = _clean_username(username)
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        with SessionLocal() as db:
-            deleted = (
-                db.query(LastfmProfile).filter_by(user_id=user_id).delete(synchronize_session=False)
-            )
-            db.add(
-                LastfmProfile(
-                    user_id=user_id,
-                    username=clean,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            db.commit()
-        # Sprint 4 (S4.5): write-through. manual_register substitui tudo
-        # do user_id, então gravar `clean` direto é seguro.
-        self._username_cache_set(user_id, clean)
-        return clean, int(deleted or 0)
-
     async def clear_username(self, user_id: int) -> bool:
         with SessionLocal() as db:
             profile = db.query(LastfmProfile).filter_by(user_id=user_id).first()
@@ -224,7 +194,7 @@ class LastfmService:
 
         Usado pelo ranking do grupo (`/songcharts`) pra enumerar a base e,
         em seguida, filtrar por presença no chat (no fluxo do grupo) ou
-        agregar globalmente (no fluxo do owner em DM).
+        agregar globalmente.
         """
         with SessionLocal() as db:
             rows = (

@@ -2,15 +2,13 @@
 
 Fluxo: `/radiofm <termo>` busca candidatos (Deezer) e mostra uma lista de
 botões (título - artista). Ao escolher, o bot envia o card final (capa +
-"título - artista") e apaga sozinho as mensagens de processo (o comando e a
-lista de escolha), deixando só o card.
+"título - artista") e envia o card final sem apagar mensagens do grupo.
 
 Sem contador de play/like e sem registro de reações (diferente de /playing e
 /tcanvas). ZERO emojis na interface.
 """
 from __future__ import annotations
 
-import asyncio
 import html
 import logging
 import time
@@ -33,18 +31,7 @@ router = Router(name="radiofm")
 
 _MAX_RESULTS = 8
 _CACHE_BOUND = 500
-_AUTOCLEAN_DELAY = 6.0
 _PENDING_TTL = 300.0  # 5min: tempo de sobra pra escolher; depois expira.
-
-# Tasks de autolimpeza: ref forte pra o GC não coletar antes de rodar.
-_BG_TASKS: set[asyncio.Task] = set()
-
-
-def _spawn(coro) -> asyncio.Task:
-    task = asyncio.create_task(coro)
-    _BG_TASKS.add(task)
-    task.add_done_callback(_BG_TASKS.discard)
-    return task
 
 
 @dataclass
@@ -75,17 +62,6 @@ def _card_caption(hit: TrackHit) -> str:
     return f"<b>{title}</b> - <i>{artist}</i>"
 
 
-async def _autoclean(bot, chat_id: int, message_ids: list[int], delay: float = _AUTOCLEAN_DELAY) -> None:
-    await asyncio.sleep(delay)
-    for mid in message_ids:
-        if mid is None:
-            continue
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception:
-            logger.debug("RADIOFM_AUTOCLEAN_DELETE_FAILED chat=%s msg=%s", chat_id, mid)
-
-
 @router.message(Command("radiofm"))
 async def radiofm(message: Message, command: CommandObject) -> None:
     if not message.from_user or not message.bot:
@@ -109,8 +85,7 @@ async def radiofm(message: Message, command: CommandObject) -> None:
 
     hits = await search_tracks(term, limit=_MAX_RESULTS)
     if not hits:
-        sent = await message.answer(f'Nada encontrado para "{html.escape(term)}".')
-        _spawn(_autoclean(message.bot, message.chat.id, [message.message_id, sent.message_id]))
+        await message.answer(f'Nada encontrado para "{html.escape(term)}".')
         return
 
     token = uuid.uuid4().hex[:10]
@@ -186,12 +161,4 @@ async def radiofm_pick(query: CallbackQuery) -> None:
             chat_id, caption, parse_mode="HTML", disable_web_page_preview=True
         )
 
-    # Autolimpeza: apaga a lista de escolha e o comando original, deixa só o card.
-    try:
-        await query.message.delete()
-    except Exception:
-        logger.debug("RADIOFM_LIST_DELETE_FAILED chat=%s", chat_id, exc_info=True)
-    try:
-        await bot.delete_message(pending.command_chat_id, pending.command_msg_id)
-    except Exception:
-        logger.debug("RADIOFM_COMMAND_DELETE_FAILED chat=%s", pending.command_chat_id, exc_info=True)
+    # Music-only clean: não apaga comando/lista no grupo; evita exigir permissão de apagar mensagens.

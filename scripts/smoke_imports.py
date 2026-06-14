@@ -22,7 +22,6 @@ def main() -> None:
     scopes = command_scope_summary()
     assert "playing" in scopes["public"]
     assert "tigrao" not in scopes["public"]
-    assert "owner" not in scopes["public"]
     assert "radio" not in scopes["public"]
     reset_rate_limits()
     assert check_command_rate_limit("playing", 1, 1).allowed

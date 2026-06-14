@@ -3,60 +3,24 @@ from __future__ import annotations
 import logging
 import os
 
-from sqlalchemy import create_engine, event, text
-from sqlalchemy.engine import make_url
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config.settings import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
-def _prepare_sqlite_directory() -> None:
-    """Create the actual SQLite parent directory before SQLAlchemy opens it."""
-    if not DATABASE_URL.startswith("sqlite"):
-        return
-    try:
-        database_path = make_url(DATABASE_URL).database
-    except Exception as exc:
-        logger.warning("Could not parse SQLite DATABASE_URL: %s", exc)
-        return
-    if not database_path or database_path == ":memory:":
-        return
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(database_path)), exist_ok=True)
-        logger.info("Database directory ready: %s", os.path.dirname(os.path.abspath(database_path)))
-    except Exception as exc:
-        logger.warning("Could not prepare SQLite database directory: %s", exc)
-
-
-_prepare_sqlite_directory()
+try:
+    os.makedirs("/data", exist_ok=True)
+    logger.info("Database directory /data ready.")
+except Exception as exc:
+    logger.warning("Could not prepare /data: %s", exc)
 
 connect_args: dict = {}
 if DATABASE_URL.startswith("sqlite"):
-    # check_same_thread=False is required because FastAPI can use worker threads.
-    # timeout gives SQLite time to wait for a writer instead of failing instantly.
-    connect_args = {"check_same_thread": False, "timeout": 10.0}
+    connect_args = {"check_same_thread": False}
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
-
-
-if DATABASE_URL.startswith("sqlite"):
-    @event.listens_for(engine, "connect")
-    def _set_sqlite_pragmas(dbapi_connection, connection_record) -> None:  # pragma: no cover - SQLAlchemy hook
-        """Make SQLite safer under concurrent Equalizador/Webhook load.
-
-        WAL allows readers to continue while a writer is active. busy_timeout
-        prevents transient writer contention from surfacing as immediate
-        OperationalError and being misreported as an authentication failure.
-        """
-        cursor = dbapi_connection.cursor()
-        try:
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.execute("PRAGMA busy_timeout=10000;")
-            cursor.execute("PRAGMA synchronous=NORMAL;")
-        finally:
-            cursor.close()
-
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -223,6 +187,7 @@ def run_migrations(engine) -> None:
                 logger.info("Sprint 12: migrated %d track_likes → track_reactions", migrated)
         except Exception:
             logger.warning("Sprint 12 likes→reactions migration failed", exc_info=True)
+
 
         # Cache de Canvas por file_id (/tcanvas e /tly). Colunas são todas
         # texto (sem BigInteger), então CREATE TABLE IF NOT EXISTS serve igual

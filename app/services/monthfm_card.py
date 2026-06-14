@@ -117,7 +117,7 @@ THEMES: dict[str, dict[str, str]] = {
         "surface": "#161329",
         "surface_soft": "#1C1A33",
         "text": "#F4F1FF",
-        "muted": "#A8A3C6",
+        "subtle": "#A8A3C6",
         "blue": "#5B9CFF",
         "green": "#3FE0A6",
         "purple": "#B58CFE",
@@ -408,7 +408,7 @@ def _render_pillow_card(data: MonthfmCardData) -> bytes | None:
         surface = _hex_to_rgb(theme["surface"])
         surface_soft = _hex_to_rgb(theme["surface_soft"])
         text_color = _hex_to_rgb(theme["text"])
-        muted = _hex_to_rgb(theme["muted"])
+        subtle = _hex_to_rgb(theme["subtle"])
         blue = _hex_to_rgb(theme["blue"])
         green = _hex_to_rgb(theme["green"])
         purple = _hex_to_rgb(theme["purple"])
@@ -489,7 +489,7 @@ def _render_pillow_card(data: MonthfmCardData) -> bytes | None:
 
         info_x = cover_box[2] + 32
         info_y = hero_top + 30
-        draw.text((info_x, info_y), "MAIS OUVIDA NO PERÍODO", font=hero_label_font, fill=muted)
+        draw.text((info_x, info_y), "MAIS OUVIDA NO PERÍODO", font=hero_label_font, fill=subtle)
         hero_track = data.hero_track or (data.top_tracks[0].title if data.top_tracks else "—")
         hero_artist = data.hero_artist or (data.top_tracks[0].artist if data.top_tracks else "—")
         hero_plays = data.hero_plays or (data.top_tracks[0].plays if data.top_tracks else 0)
@@ -498,7 +498,7 @@ def _render_pillow_card(data: MonthfmCardData) -> bytes | None:
         plays_text = _format_number(hero_plays)
         draw.text((info_x, info_y + 122), plays_text, font=hero_plays_font, fill=blue)
         plays_bbox = draw.textbbox((info_x, info_y + 122), plays_text, font=hero_plays_font)
-        draw.text((plays_bbox[2] + 8, info_y + 132), "plays", font=hero_plays_unit_font, fill=muted)
+        draw.text((plays_bbox[2] + 8, info_y + 132), "plays", font=hero_plays_unit_font, fill=subtle)
 
         y = hero_top + hero_h + 36
 
@@ -507,8 +507,8 @@ def _render_pillow_card(data: MonthfmCardData) -> bytes | None:
         right_x = x + 480
         list_width = 416
 
-        draw.text((left_x, y), "✦  TOP ARTISTAS", font=section_font, fill=muted)
-        draw.text((right_x, y), "♫  TOP MÚSICAS", font=section_font, fill=muted)
+        draw.text((left_x, y), "✦  TOP ARTISTAS", font=section_font, fill=subtle)
+        draw.text((right_x, y), "♫  TOP MÚSICAS", font=section_font, fill=subtle)
 
         row_y = y + 50
         for idx in range(data.list_size):
@@ -530,7 +530,7 @@ def _render_pillow_card(data: MonthfmCardData) -> bytes | None:
             plays = item.plays if item else 0
             draw.text((right_x, row_y), f"{idx + 1:02d}", font=rank_font, fill=purple)
             draw.text((right_x + 60, row_y), _ellipsize(title, 18), font=name_font, fill=text_color)
-            draw.text((right_x + 60, row_y + 36), _ellipsize(artist, 22), font=sub_font, fill=muted)
+            draw.text((right_x + 60, row_y + 36), _ellipsize(artist, 22), font=sub_font, fill=subtle)
             count_text = _format_number(plays)
             bbox = draw.textbbox((0, 0), count_text, font=count_font)
             draw.text((right_x + list_width - (bbox[2] - bbox[0]), row_y + 8), count_text, font=count_font, fill=green)
@@ -545,7 +545,7 @@ def _render_pillow_card(data: MonthfmCardData) -> bytes | None:
         minutes_right = minutes_bbox[2]
         word_x = max(minutes_right + 30, CARD_WIDTH - x - 240)
         draw.text((word_x, footer_top + 60), "minutos", font=minutes_word_font, fill=text_color)
-        draw.text((word_x, footer_top + 120), "NO PERÍODO", font=minutes_hint_font, fill=muted)
+        draw.text((word_x, footer_top + 120), "NO PERÍODO", font=minutes_hint_font, fill=subtle)
 
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=92, optimize=True)

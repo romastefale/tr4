@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import os
 from pathlib import Path
 from typing import Iterable
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-# TR3_* names are the canonical server variables from Phase 1 onward.
-# Legacy names remain supported so the current deployment can migrate
-# without changing every Railway/Replit variable at once.
+# TR3_* names remain supported for deployment compatibility.
 
 
 def _env(name: str, default: str = "", *, legacy: Iterable[str] = ()) -> str:
@@ -55,85 +52,6 @@ def _bool_env(name: str, default: bool, *, legacy: Iterable[str] = ()) -> bool:
         return False
     raise RuntimeError(f"Invalid boolean environment variable {name}={value!r}")
 
-
-
-
-def _int_set_env(name: str, default: str = "", *, legacy: Iterable[str] = ()) -> set[int]:
-    raw = _env(name, default, legacy=legacy).strip()
-    if not raw:
-        return set()
-    values: set[int] = set()
-    for part in raw.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        try:
-            values.add(int(token))
-        except ValueError as exc:
-            raise RuntimeError(f"Invalid integer item in environment variable {name}={token!r}") from exc
-    return values
-
-
-_EQUALIZADOR_CONFIG_ERRORS: list[str] = []
-
-
-def _record_equalizador_config_error(message: str) -> None:
-    _EQUALIZADOR_CONFIG_ERRORS.append(message[:200])
-
-
-def _equalizador_bool_env(name: str, default: bool) -> bool:
-    try:
-        return _bool_env(name, default)
-    except RuntimeError as exc:
-        _record_equalizador_config_error(str(exc))
-        return default
-
-
-def _equalizador_int_env(name: str, default: int) -> int:
-    try:
-        return _int_env(name, default)
-    except RuntimeError as exc:
-        _record_equalizador_config_error(str(exc))
-        return default
-
-
-def _equalizador_int_set_env(name: str) -> set[int]:
-    raw = _env(name, "").strip()
-    if not raw:
-        return set()
-    values: set[int] = set()
-    for part in raw.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        try:
-            values.add(int(token))
-        except ValueError:
-            _record_equalizador_config_error(f"Invalid integer item in environment variable {name}={token!r}")
-    return values
-
-
-
-def _json_int_mapping_env(name: str) -> dict[str, int]:
-    raw = _env(name, "").strip()
-    if not raw:
-        return {}
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    mapping: dict[str, int] = {}
-    for key, value in data.items():
-        label = str(key or "").strip()
-        if not label:
-            continue
-        try:
-            mapping[label] = int(value)
-        except (TypeError, ValueError):
-            continue
-    return mapping
 
 def _is_sqlite_url(value: str) -> bool:
     lowered = value.strip().lower()
@@ -253,46 +171,7 @@ HTTP_TIMEOUT_SECONDS = _float_env(
     legacy=("HTTP_TIMEOUT_SECONDS",),
 )
 
-def _path_is_writable_dir(path: Path) -> bool:
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        probe = path / ".tr4_persistence_probe"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink(missing_ok=True)
-        return True
-    except Exception:
-        return False
-
-
-def _data_dir() -> Path:
-    """Return the runtime data directory, with /data as production truth.
-
-    Railway mounts the persistent volume at /data for this service. Earlier
-    deployments could still carry DATA_DIR=/app/data or a host-like
-    RAILWAY_VOLUME_MOUNT_PATH value, causing SQLite to use the ephemeral
-    container directory. The production rule is therefore explicit:
-
-    * if /data is writable, use /data;
-    * an explicit TR3_DATA_DIR/DATA_DIR is honored only when /data is not
-      writable or the explicit path itself points under /data;
-    * /app/data remains a local-development fallback only.
-    """
-    explicit = _env("TR3_DATA_DIR", "", legacy=("DATA_DIR",)).strip()
-    data_path = Path("/data")
-    data_writable = _path_is_writable_dir(data_path)
-    if data_writable:
-        if explicit and str(Path(explicit)).startswith("/data"):
-            return Path(explicit)
-        return data_path
-    if explicit:
-        return Path(explicit)
-    railway_volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
-    if railway_volume and _path_is_writable_dir(Path(railway_volume)):
-        return Path(railway_volume)
-    return Path("/app/data")
-
-
-DATA_DIR = _data_dir()
+DATA_DIR = Path(_env("TR3_DATA_DIR", "/app/data", legacy=("DATA_DIR",)))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -318,6 +197,7 @@ def _database_url() -> str:
 
 DATABASE_URL = _database_url()
 
+# Music-only runtime keeps only command rate limits and music services.
 
 COMMAND_RATE_LIMIT_ENABLED = _bool_env(
     "TR3_COMMAND_RATE_LIMIT_ENABLED",
@@ -357,65 +237,16 @@ RADIO_SCHEDULER_MAX_DUE_PER_TICK = _int_env(
     legacy=("RADIO_SCHEDULER_MAX_DUE_PER_TICK",),
 )
 
-
-GROUP_ALIASES = _json_int_mapping_env("GROUP_ALIASES")
-
-def group_aliases() -> dict[str, int]:
-    return dict(GROUP_ALIASES)
-
-def group_alias_for_chat(chat_id: int) -> str | None:
-    for label, configured_chat_id in GROUP_ALIASES.items():
-        if int(configured_chat_id) == int(chat_id):
-            return label
-    return None
-
-# Equalizador Mini App — disabled by default. These variables are parsed in
-# failure-tolerant mode so a bad Equalizador value never prevents /healthz from
-# coming up. Invalid items are reported through equalizador_config_errors() and
-# /readyz, matching the release rule that Equalizador failures must not kill the
-# musical TR4 process.
-TR4_EQUALIZADOR_ENABLED = _equalizador_bool_env("TR4_EQUALIZADOR_ENABLED", False)
-TR4_EQUALIZADOR_APP_NAME = _env("TR4_EQUALIZADOR_APP_NAME", "equalizador").strip() or "equalizador"
-TR4_EQUALIZADOR_MAESTRO_IDS_SET = _equalizador_int_set_env("TR4_EQUALIZADOR_MAESTRO_IDS")
-TR4_EQUALIZADOR_OPERADOR_IDS_SET = _equalizador_int_set_env("TR4_EQUALIZADOR_OPERADOR_IDS")
-TR4_EQUALIZADOR_PALCO_IDS_SET = _equalizador_int_set_env("TR4_EQUALIZADOR_PALCO_IDS")
-TR4_EQUALIZADOR_CANAIS_RAW = _env("TR4_EQUALIZADOR_CANAIS", "")
-TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS = _equalizador_bool_env("TR4_EQUALIZADOR_HIDE_TECHNICAL_IDS", True)
-TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS = _equalizador_int_env("TR4_EQUALIZADOR_INITDATA_MAX_AGE_SECONDS", 600)
-TR4_EQUALIZADOR_SESSION_TTL_SECONDS = _equalizador_int_env("TR4_EQUALIZADOR_SESSION_TTL_SECONDS", 2592000)
-TR4_EQUALIZADOR_SESSION_GRACE_SECONDS = _equalizador_int_env("TR4_EQUALIZADOR_SESSION_GRACE_SECONDS", 7776000)
-TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE = _equalizador_int_env("TR4_EQUALIZADOR_RATE_LIMIT_PER_MINUTE", 120)
-TR4_MUSIC_REACTIONS_ENABLED = _bool_env("TR4_MUSIC_REACTIONS_ENABLED", False, legacy=("MUSIC_REACTIONS_ENABLED",))
-TR4_MUSIC_LEGACY_LIKES_DISPLAY_ENABLED = _bool_env("TR4_MUSIC_LEGACY_LIKES_DISPLAY_ENABLED", False, legacy=("MUSIC_LEGACY_LIKES_DISPLAY_ENABLED",))
-
-
-def equalizador_user_is_allowed(user_id: int) -> bool:
-    return user_id in TR4_EQUALIZADOR_MAESTRO_IDS_SET or user_id in TR4_EQUALIZADOR_OPERADOR_IDS_SET
-
-
-def equalizador_allowed_palco_ids() -> set[int]:
-    return set(TR4_EQUALIZADOR_PALCO_IDS_SET)
-
-
-def equalizador_canais_raw() -> str:
-    return TR4_EQUALIZADOR_CANAIS_RAW
-
-
-def equalizador_config_errors() -> tuple[str, ...]:
-    return tuple(_EQUALIZADOR_CONFIG_ERRORS)
-
-
-def equalizador_config_ok() -> bool:
-    return not _EQUALIZADOR_CONFIG_ERRORS
-
-
-def equalizador_alias_secret() -> str:
-    # Validation requires TELEGRAM_BOT_TOKEN. Reuse it as a server-side secret
-    # for stable UI aliases without exposing Telegram numeric identifiers.
-    if TELEGRAM_BOT_TOKEN:
-        return TELEGRAM_BOT_TOKEN
-    return "tr4-equalizador-alias-development-only"
-
+SESSION_PERSISTENCE_ENABLED = _bool_env(
+    "TR3_SESSION_PERSISTENCE_ENABLED",
+    True,
+    legacy=("SESSION_PERSISTENCE_ENABLED",),
+)
+OPERATIONAL_LOCK_TTL_SECONDS = _int_env(
+    "TR3_OPERATIONAL_LOCK_TTL_SECONDS",
+    90,
+    legacy=("OPERATIONAL_LOCK_TTL_SECONDS",),
+)
 
 REQUIRED_ENV_VARS = (
     ("TR3_TELEGRAM_BOT_TOKEN/TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),

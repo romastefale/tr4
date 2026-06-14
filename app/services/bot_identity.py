@@ -2,7 +2,7 @@
 
 Usado pelo card do /tstory pra estampar o nome atual do bot e usar a foto
 de perfil dele como ícone. Como o nome/foto mudam raramente, cacheia em
-memória; quando o owner troca a foto do bot, novos cards refletem a foto
+memória; quando a foto do bot muda, novos cards refletem a foto
 nova assim que o cache expira (TTL).
 
 Solução real da Bot API:

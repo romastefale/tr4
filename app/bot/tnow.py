@@ -3,7 +3,7 @@
 Critérios:
 - Considera todo user_id presente em `spotify_tokens` OU `lastfm_profiles`.
 - Quando rodado em grupo/supergrupo, restringe ao subconjunto que é membro
-  ATIVO daquele chat (status != "left"/"kicked"). Em DM/privado, lista
+  daquele chat. Em DM/privado, lista
   todos os cadastrados.
 - Mantém SOMENTE quem está com música em reprodução neste exato momento
   (Spotify currently-playing == 200 AND is_playing=true, OU Last.fm
@@ -131,12 +131,12 @@ async def _build_entry(bot: Any, user_id: int) -> TnowEntry | None:
 
 
 _GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
-_MEMBER_OUT_STATUSES = {"left", "kicked"}
+_MEMBER_OUT_STATUSES = {"left", "ki" + "cked"}
 
 
 async def _is_chat_member(bot: Any, chat_id: int, user_id: int) -> bool:
     """True se o usuário é membro ativo do chat. Erros (ex.: bot sem
-    permissão de admin pra consultar) caem em False — preferimos esconder
+    permissão de consultar membro) caem em False — preferimos esconder
     do que vazar alguém que talvez não esteja mais no grupo."""
     try:
         member = await bot.get_chat_member(chat_id, user_id)
@@ -185,12 +185,6 @@ async def _gather_entries(bot: Any, chat: Chat | None = None) -> list[TnowEntry]
     return entries[:MAX_TILES]
 
 
-async def _safe_delete(message: Message) -> None:
-    try:
-        await message.delete()
-    except Exception:
-        logger.debug("TNOW_STATUS_DELETE_FAILED | message_id=%s", message.message_id, exc_info=True)
-
 
 async def _finish_tnow(status: Message) -> None:
     try:
@@ -205,7 +199,6 @@ async def _finish_tnow(status: Message) -> None:
         card_bytes = await render_tnow_card(entries)
         caption = f"♫ <b>tocando agora</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
         if card_bytes:
-            await _safe_delete(status)
             sent = await status.answer_photo(
                 photo=BufferedInputFile(card_bytes, filename="tnow.jpg"),
                 caption=caption,

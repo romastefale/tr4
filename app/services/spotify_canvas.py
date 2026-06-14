@@ -654,7 +654,7 @@ async def fetch_canvas_video_bytes(
     track_name: str | None = None,
 ) -> bytes | None:
     """Resolve track_id Last.fm -> Spotify ID se preciso, busca Canvas URL,
-    baixa bytes. Centraliza o fluxo usado por /tcanvas e fluxos musicais avançados.
+    baixa bytes. Centraliza o fluxo usado por /tcanvas e /tly.
 
     Retorna `bytes` do mp4 se tudo deu certo, ou `None` em qualquer falha
     (sem Canvas, download falhou, resolução Last.fm->Spotify falhou).
