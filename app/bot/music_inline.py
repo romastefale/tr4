@@ -104,6 +104,15 @@ _KIND_LOADING = {
 
 _INLINE_MENU_KINDS: tuple[str, ...] = ("playing", "tly", "week", "month", "mosaic")
 
+_INLINE_THUMB_URL: dict[str, str] = {
+    "playing": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%99%AB",
+    "tly": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%9C%8E",
+    "week": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%96%A6",
+    "month": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%97%AB",
+    "mosaic": "https://dummyimage.com/96x96/ffffff/000000.png&text=%E2%9C%A6",
+}
+
+
 _LINK_TAG_RE = re.compile(r"<a\s+[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
 _HREF_ATTR_RE = re.compile(r"\s+href\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL)
 _URL_RE = re.compile(r"(?i)\b(?:https?://|tg://|t\.me/)\S+")
@@ -562,6 +571,9 @@ async def music_inline_query(query: InlineQuery) -> None:
             id=result_id,
             title=_KIND_TITLE[item_kind],
             description=_result_description(item_kind, allowed),
+            thumbnail_url=_INLINE_THUMB_URL.get(item_kind),
+            thumbnail_width=96,
+            thumbnail_height=96,
             input_message_content=InputTextMessageContent(
                 message_text=html.escape(_KIND_LOADING[item_kind]),
                 parse_mode="HTML",
