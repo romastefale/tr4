@@ -452,7 +452,7 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     _ = _pick_card_emoji(total_plays, plays_source)
     track_name, artist, _track_url, cover = _track_label(track)
     name_part = _inline_name_style(item.display_name or "Usuário")
-    header = f"{name_part} · ♫ {track_name} — {artist}"
+    header = f"{name_part}\n♫ {track_name} — {artist}"
     caption = header
     safe_caption = _strip_links(caption)
     return _InlineRender(
