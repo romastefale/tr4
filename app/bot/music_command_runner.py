@@ -561,6 +561,111 @@ async def _execute_songcharts_web(
         logger.debug("WEB_SONGCHARTS_COPY_DM_FAILED user=%s", requester_id, exc_info=True)
 
 
+async def _run_universal_tnow_task(
+    bot: Bot,
+    *,
+    requester_id: int,
+) -> None:
+    """Build and send the global live mosaic to the code owner DM only.
+
+    The source is the same music base used by /tnow: every user_id found in
+    spotify_tokens or lastfm_profiles. No group is used and nothing is posted
+    publicly.
+    """
+    from app.bot.tnow import _gather_entries
+    from app.services.tnow_card import render_tnow_card
+    from app.bot.telegram import _react_to_own_card, _CARD_EMOJI_TNOW
+
+    status = None
+    try:
+        status = await bot.send_message(
+            requester_id,
+            "Gerando mosaico universal com todos os usuários musicais importados...",
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.debug("WEB_UNIVERSAL_TNOW_STATUS_DM_FAILED user=%s", requester_id, exc_info=True)
+
+    try:
+        entries = await _gather_entries(bot)
+    except Exception:
+        logger.exception("WEB_UNIVERSAL_TNOW_BUILD_FAILED user=%s", requester_id)
+        try:
+            if status is not None:
+                await status.edit_text("Não consegui montar o mosaico universal agora. Tente em alguns instantes.")
+            else:
+                await bot.send_message(requester_id, "Não consegui montar o mosaico universal agora. Tente em alguns instantes.")
+        except Exception:
+            pass
+        return
+
+    try:
+        if not entries:
+            message = (
+                "Nenhum usuário musical importado está com música tocando agora.\n"
+                "Base usada: spotify_tokens ∪ lastfm_profiles."
+            )
+            if status is not None:
+                await status.edit_text(message)
+            else:
+                await bot.send_message(requester_id, message)
+            return
+
+        card_bytes = await render_tnow_card(entries)
+        caption = f"♫ <b>mosaico universal</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
+        if card_bytes:
+            sent = await bot.send_photo(
+                chat_id=requester_id,
+                photo=BufferedInputFile(card_bytes, filename="tnow-universal.jpg"),
+                caption=caption,
+                parse_mode="HTML",
+            )
+        else:
+            lines = [caption]
+            for entry in entries:
+                lines.append(
+                    f"• <b>{html.escape(entry.display_name)}</b> — "
+                    f"{html.escape(entry.track_name)} <i>({html.escape(entry.artist)})</i>"
+                )
+            sent = await bot.send_message(chat_id=requester_id, text="\n".join(lines), parse_mode="HTML")
+        try:
+            await _react_to_own_card(bot, sent.chat.id, sent.message_id, _CARD_EMOJI_TNOW)
+        except Exception:
+            logger.debug("WEB_UNIVERSAL_TNOW_REACTION_FAILED user=%s", requester_id, exc_info=True)
+        try:
+            if status is not None:
+                await status.edit_text("✓ Mosaico universal enviado aqui na sua DM.")
+        except Exception:
+            pass
+    except Exception:
+        logger.exception("WEB_UNIVERSAL_TNOW_SEND_FAILED user=%s", requester_id)
+        try:
+            if status is not None:
+                await status.edit_text("Não consegui enviar o mosaico universal na sua DM.")
+        except Exception:
+            pass
+
+
+async def execute_universal_tnow(
+    bot: Bot,
+    *,
+    requester_id: int,
+    requester_name: str,
+) -> MusicCommandResult:
+    """Accept a code-owner-only global mosaic request.
+
+    Authorization is enforced at the entrypoints. This function only schedules
+    the DM-only musical delivery.
+    """
+    _spawn_web_task(_run_universal_tnow_task(bot, requester_id=requester_id))
+    return MusicCommandResult(
+        ok=True,
+        code="accepted",
+        message="Mosaico universal aceito. O resultado será enviado na sua DM.",
+        group_title=None,
+    )
+
+
 async def _run_universal_songcharts_task(
     bot: Bot,
     *,

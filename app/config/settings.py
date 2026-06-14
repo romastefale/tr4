@@ -58,6 +58,28 @@ def _bool_env(name: str, default: bool, *, legacy: Iterable[str] = ()) -> bool:
     return default
 
 
+def _int_set_env(name: str, *, legacy: Iterable[str] = ()) -> frozenset[int]:
+    values: set[int] = set()
+    raw_values: list[str] = []
+    primary = os.getenv(name)
+    if primary is not None:
+        raw_values.append(primary)
+    for old_name in legacy:
+        value = os.getenv(old_name)
+        if value is not None:
+            raw_values.append(value)
+    for raw in raw_values:
+        for part in str(raw).replace(";", ",").split(","):
+            item = part.strip()
+            if not item:
+                continue
+            try:
+                values.add(int(item))
+            except ValueError:
+                logger.warning("CONFIG_VALUE_IGNORED name=%s expected=int_list", name)
+    return frozenset(values)
+
+
 def _is_sqlite_url(value: str) -> bool:
     lowered = value.strip().lower()
     return lowered.startswith("sqlite:")
@@ -211,6 +233,19 @@ def _database_url() -> str:
 
 
 DATABASE_URL = _database_url()
+
+CODE_OWNER_IDS = _int_set_env(
+    "TR4_CODE_OWNER_IDS",
+    legacy=("CODE_OWNER_IDS", "TR3_OWNER_IDS", "OWNER_IDS", "TR3_OWNER_ID", "OWNER_ID"),
+)
+
+
+def is_code_owner(user_id: int | str | None) -> bool:
+    try:
+        parsed = int(user_id)
+    except Exception:
+        return False
+    return parsed in CODE_OWNER_IDS
 
 # Music-only runtime keeps only command rate limits and music services.
 

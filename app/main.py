@@ -15,6 +15,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import Update
 
 from app.bot.monthfm import router as monthfm_router
+from app.bot.owner_universal import router as owner_universal_router
 from app.bot.myself import router as myself_router
 from app.bot.radiofm import router as radiofm_router
 from app.bot.setup_commands import setup_bot_commands
@@ -81,6 +82,7 @@ async def _configure_telegram_bot_background() -> None:
         local_bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         if not _telegram_dispatcher_configured:
             dispatcher.include_router(monthfm_router)
+            dispatcher.include_router(owner_universal_router)
             dispatcher.include_router(weekfm_router)
             dispatcher.include_router(tnow_router)
             dispatcher.include_router(tcanvas_router)

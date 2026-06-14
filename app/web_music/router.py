@@ -16,8 +16,10 @@ from app.bot.music_command_runner import (
     execute_nowp_publish,
     execute_story_music_command,
     execute_universal_songcharts,
+    execute_universal_tnow,
     list_common_music_groups,
 )
+from app.config.settings import is_code_owner
 from app.web_music.auth import authenticate_web_music_request
 from app.web_music.state import get_web_music_bot
 
@@ -60,6 +62,14 @@ def _error_response(exc: MusicCommandError) -> JSONResponse:
     )
 
 
+def _require_code_owner(user_id: int) -> None:
+    if not is_code_owner(user_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "code_owner_required", "message": "Função musical exclusiva do dono do código."},
+        )
+
+
 @router.get("/player", response_class=HTMLResponse)
 def player() -> HTMLResponse:
     return HTMLResponse(_PLAYER_HTML.read_text(encoding="utf-8"))
@@ -89,7 +99,8 @@ async def public_me(request: Request) -> dict[str, Any]:
     return {
         "ok": True,
         "user": user.public_dict(),
-        "can_open_universal_songcharts": True,
+        "can_open_universal_songcharts": is_code_owner(user.id),
+        "can_open_universal_tnow": is_code_owner(user.id),
     }
 
 
@@ -235,9 +246,26 @@ async def execute_command_copy(request: Request, payload: GroupCommandPayload) -
     return {"ok": True, "code": result.code, "message": result.message, "group_title": result.group_title}
 
 
+@router.post("/api/public/tnow-universal")
+async def tnow_universal(request: Request) -> Any:
+    user = authenticate_web_music_request(request)
+    _require_code_owner(user.id)
+    bot = _bot_or_503()
+    try:
+        result = await execute_universal_tnow(
+            bot,
+            requester_id=user.id,
+            requester_name=user.full_name,
+        )
+    except MusicCommandError as exc:
+        return _error_response(exc)
+    return {"ok": True, "code": result.code, "message": result.message, "group_title": result.group_title}
+
+
 @router.post("/api/public/songcharts-universal")
 async def songcharts_universal(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
+    _require_code_owner(user.id)
     bot = _bot_or_503()
     try:
         result = await execute_universal_songcharts(
