@@ -325,7 +325,11 @@ async def _render_playing(item: _PendingInline) -> _InlineRender:
     payload = await build_playing_payload_for_user(item.user_id, item.display_name, track)
     if not payload:
         return _InlineRender(caption="Erro ao identificar a música.", fallback_text="Erro ao identificar a música.")
-    _track_id, caption, cover, _keyboard, _card_emoji = payload
+    _track_id, _caption, cover, _keyboard, _card_emoji = payload
+    artist = html.escape(str(track.get("artist") or "").strip() or "Artista")
+    track_name = html.escape(str(track.get("track_name") or "").strip() or "Música")
+    name_part = _inline_name_style(item.display_name or "Usuário")
+    caption = f"{name_part} · ♫ {track_name} — {artist}"
     safe_caption = _strip_links(caption)
     return _InlineRender(caption=safe_caption, photo=cover, filename="playing-inline.jpg", fallback_text=safe_caption)
 
