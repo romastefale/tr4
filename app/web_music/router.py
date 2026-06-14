@@ -15,6 +15,7 @@ from app.bot.music_command_runner import (
     execute_group_music_command,
     execute_nowp_publish,
     execute_story_music_command,
+    execute_universal_songcharts,
     list_common_music_groups,
 )
 from app.web_music.auth import authenticate_web_music_request
@@ -88,7 +89,7 @@ async def public_me(request: Request) -> dict[str, Any]:
     return {
         "ok": True,
         "user": user.public_dict(),
-        "can_open_universal_songcharts": False,
+        "can_open_universal_songcharts": True,
     }
 
 
@@ -234,15 +235,30 @@ async def execute_command_copy(request: Request, payload: GroupCommandPayload) -
     return {"ok": True, "code": result.code, "message": result.message, "group_title": result.group_title}
 
 
-@router.post("/api/public/download-result")
 @router.post("/api/public/songcharts-universal")
-async def reserved_public_endpoint(request: Request) -> JSONResponse:
+async def songcharts_universal(request: Request, payload: GroupCommandPayload) -> Any:
+    user = authenticate_web_music_request(request)
+    bot = _bot_or_503()
+    try:
+        result = await execute_universal_songcharts(
+            bot,
+            requester_id=user.id,
+            requester_name=user.full_name,
+            period=payload.period,
+        )
+    except MusicCommandError as exc:
+        return _error_response(exc)
+    return {"ok": True, "code": result.code, "message": result.message, "group_title": result.group_title}
+
+
+@router.post("/api/public/download-result")
+async def reserved_download_result(request: Request) -> JSONResponse:
     authenticate_web_music_request(request)
     return JSONResponse(
         {
             "ok": False,
             "code": "endpoint_not_available_music_only",
-            "message": "Este endpoint não faz parte da conexão musical segura desta etapa.",
+            "message": "Download direto não faz parte desta etapa musical.",
         },
         status_code=501,
     )

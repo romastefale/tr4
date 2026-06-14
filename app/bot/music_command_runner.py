@@ -11,6 +11,8 @@ from aiogram.types import BufferedInputFile
 
 from app.bot.music_groups import list_groups
 from app.services.connection_check import is_user_connected
+from app.services.lastfm import lastfm_service
+from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service
 
@@ -559,6 +561,120 @@ async def _execute_songcharts_web(
         logger.debug("WEB_SONGCHARTS_COPY_DM_FAILED user=%s", requester_id, exc_info=True)
 
 
+async def _run_universal_songcharts_task(
+    bot: Bot,
+    *,
+    requester_id: int,
+    period: str | None,
+) -> None:
+    """Build and send the global musical chart to the requester DM.
+
+    Universal charts are based on every valid row in lastfm_profiles. This is
+    intentionally independent from /start and from group membership: imported
+    Last.fm profiles are part of the global music base automatically.
+    """
+    from app.services.lastfm import lastfm_service
+    from app.services.lastfm_group import lastfm_group_service
+    from app.services.monthfm_card import render_monthfm_card
+    from app.bot.telegram import _react_to_own_card, _CARD_EMOJI_EXTRACT
+
+    period_kind = "month" if str(period or "").lower().startswith("m") else "week"
+    label = "mês" if period_kind == "month" else "semana"
+    status = None
+    try:
+        status = await bot.send_message(
+            requester_id,
+            f"Gerando Songcharts universal do {label} com todos os Last.fm importados...",
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.debug("WEB_UNIVERSAL_SONGCHARTS_STATUS_DM_FAILED user=%s", requester_id, exc_info=True)
+
+    try:
+        profiles = await lastfm_service.get_all_profiles()
+        result = await lastfm_group_service.build_group_capsule(
+            chat_title="Todos conectados",
+            members=profiles,
+            period_kind=period_kind,
+        )
+    except Exception:
+        logger.exception("WEB_UNIVERSAL_SONGCHARTS_BUILD_FAILED user=%s", requester_id)
+        try:
+            if status is not None:
+                await status.edit_text("Não consegui montar o Songcharts universal agora. Tente em alguns instantes.")
+            else:
+                await bot.send_message(requester_id, "Não consegui montar o Songcharts universal agora. Tente em alguns instantes.")
+        except Exception:
+            pass
+        return
+
+    card_bytes = await render_monthfm_card(result.card_data) if result.card_data else None
+    period_value = ""
+    if result.card_data is not None and result.card_data.period_value:
+        period_value = result.card_data.period_value.lower()
+    caption = "Top 10 universal" + (f" · {html.escape(period_value)}" if period_value else "")
+
+    try:
+        if card_bytes:
+            sent = await bot.send_photo(
+                chat_id=requester_id,
+                photo=BufferedInputFile(card_bytes, filename="songcharts-universal.jpg"),
+                caption=caption,
+                parse_mode="HTML",
+            )
+        else:
+            sent = await bot.send_message(
+                chat_id=requester_id,
+                text=result.text,
+                parse_mode="HTML",
+            )
+        try:
+            await _react_to_own_card(bot, sent.chat.id, sent.message_id, _CARD_EMOJI_EXTRACT)
+        except Exception:
+            logger.debug("WEB_UNIVERSAL_SONGCHARTS_REACTION_FAILED user=%s", requester_id, exc_info=True)
+        try:
+            if status is not None:
+                await status.edit_text("✓ Songcharts universal enviado aqui na sua DM.")
+        except Exception:
+            pass
+    except Exception:
+        logger.exception("WEB_UNIVERSAL_SONGCHARTS_SEND_FAILED user=%s", requester_id)
+        try:
+            if status is not None:
+                await status.edit_text("Não consegui enviar o Songcharts universal na sua DM.")
+        except Exception:
+            pass
+
+
+async def execute_universal_songcharts(
+    bot: Bot,
+    *,
+    requester_id: int,
+    requester_name: str,
+    period: str | None = None,
+) -> MusicCommandResult:
+    """Accept a universal chart request from the web music interface.
+
+    The chart source is every valid Last.fm profile in lastfm_profiles. The
+    requester only needs a valid Telegram WebApp session to receive the DM; the
+    chart itself includes imported musical users automatically.
+    """
+    period_kind = "month" if str(period or "").lower().startswith("m") else "week"
+    _spawn_web_task(
+        _run_universal_songcharts_task(
+            bot,
+            requester_id=requester_id,
+            period=period_kind,
+        )
+    )
+    return MusicCommandResult(
+        ok=True,
+        code="accepted",
+        message="Songcharts universal aceito. O resultado será enviado na sua DM.",
+        group_title=None,
+    )
+
+
 async def execute_group_music_command(
     bot: Bot,
     *,
@@ -742,6 +858,35 @@ async def _run_dm_tstory_task(bot: Bot, *, requester_id: int, requester_name: st
             pass
 
 
+async def _resolve_preview_user_plays(user_id: int, track: dict[str, Any]) -> tuple[int, str]:
+    """Resolve o contador exibido no card principal do Web App.
+
+    Fonte preferida: Last.fm `track.getInfo` com `userplaycount`, porque
+    representa quantas vezes aquele usuário ouviu aquela faixa no histórico
+    real do Last.fm. Para usuários apenas Spotify, cai para o contador local
+    do bot por usuário/faixa. A prévia não registra nova play; ela só mostra
+    o que já existe.
+    """
+    track_name = _normalize_optional_text(track.get("track_name"))
+    artist = _normalize_optional_text(track.get("artist"))
+    if artist and track_name:
+        try:
+            lastfm_count = await lastfm_service.get_user_track_playcount(user_id, artist, track_name)
+        except Exception:
+            logger.exception("WEB_PREVIEW_LASTFM_PLAYCOUNT_FAILED user=%s artist=%s track=%s", user_id, artist, track_name)
+        else:
+            if lastfm_count is not None:
+                return int(lastfm_count), "lastfm"
+
+    track_id = _normalize_optional_text(track.get("track_id"))
+    if track_id:
+        try:
+            return await likes_service.get_user_play_count(user_id, track_id), "local"
+        except Exception:
+            logger.exception("WEB_PREVIEW_LOCAL_PLAYCOUNT_FAILED user=%s track_id=%s", user_id, track_id)
+    return 0, "none"
+
+
 async def current_track_preview(user_id: int) -> dict[str, Any]:
     if not is_user_connected(user_id):
         return {
@@ -756,11 +901,13 @@ async def current_track_preview(user_id: int) -> dict[str, Any]:
             "code": "no_track",
             "message": "Nada tocando agora.",
         }
+    user_plays, plays_source = await _resolve_preview_user_plays(user_id, track)
     return {
         "available": True,
         "track_name": str(track.get("track_name") or ""),
         "artist": str(track.get("artist") or ""),
         "spotify_url": str(track.get("spotify_url") or track.get("track_url") or ""),
         "cover_url": str(track.get("album_image_url") or track.get("cover_url") or ""),
-        "user_plays": 0,
+        "user_plays": user_plays,
+        "plays_source": plays_source,
     }

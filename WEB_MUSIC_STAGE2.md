@@ -27,3 +27,8 @@ Etapa de ampliação da conexão entre a interface web musical e o código music
 ## Fonte da verdade
 
 A interface web não recria cards nem respostas. Ela chama funções/handlers do código musical já existente, usando uma camada adaptadora que simula a entrada do comando e preserva o envio real pelo Telegram.
+
+
+## Songcharts universal
+
+Todos os usuários importados em `lastfm_profiles` entram automaticamente no ranking universal. O mosaico `/tnow` usa a união de `spotify_tokens` e `lastfm_profiles`.

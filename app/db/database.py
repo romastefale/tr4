@@ -24,6 +24,67 @@ engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+def _table_columns(conn, dialect_name: str, table_name: str) -> set[str]:
+    """Return existing column names for a hardcoded table.
+
+    Used only by boot migrations. Table names are controlled by code, not user
+    input. Supports SQLite in Railway and PostgreSQL compatibility.
+    """
+    try:
+        if dialect_name == "sqlite":
+            rows = conn.execute(text(f"PRAGMA table_info({table_name})")).mappings().all()
+            return {str(row.get("name") or "") for row in rows if row.get("name")}
+        rows = conn.execute(
+            text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :table_name
+                """
+            ),
+            {"table_name": table_name},
+        ).mappings().all()
+        return {str(row.get("column_name") or "") for row in rows if row.get("column_name")}
+    except Exception:
+        logger.debug("DB column introspection skipped | table=%s", table_name, exc_info=True)
+        return set()
+
+
+def _reactivate_legacy_music_login_rows(conn, dialect_name: str) -> None:
+    """Mark every persisted music-login row as active.
+
+    This is a compatibility backfill for databases carried from older TR4/TR3
+    builds. Some historical schemas may contain an active/enabled flag; the
+    current music-only code treats the presence of Last.fm or Spotify rows as
+    the connection, so this migration must not require users to run /login or
+    /lastfm again.
+    """
+    tables = ("lastfm_profiles", "spotify_tokens")
+    flag_columns = ("active", "is_active", "enabled", "habilitado")
+    total_changed = 0
+    for table_name in tables:
+        columns = _table_columns(conn, dialect_name, table_name)
+        if not columns:
+            continue
+        if "active" not in columns:
+            try:
+                conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN active INTEGER DEFAULT 1"))
+                columns.add("active")
+            except Exception:
+                logger.debug("DB active column add skipped | table=%s", table_name, exc_info=True)
+        for column in flag_columns:
+            if column not in columns:
+                continue
+            try:
+                result = conn.execute(
+                    text(f"UPDATE {table_name} SET {column}=1 WHERE {column} IS NULL OR {column} != 1")
+                )
+                changed = getattr(result, "rowcount", 0) or 0
+                total_changed += int(changed)
+            except Exception:
+                logger.debug("DB login activation backfill skipped | table=%s column=%s", table_name, column, exc_info=True)
+    logger.info("DB music login activation backfill complete | changed=%s", total_changed)
+
 
 def run_migrations(engine) -> None:
     dialect_name = engine.dialect.name
@@ -72,6 +133,11 @@ def run_migrations(engine) -> None:
             # morta, schema corrompido). WARNING com traceback pra Railway
             # logs mostrarem rápido sem mascarar.
             logger.warning("DB lastfm_profiles ensure failed", exc_info=True)
+
+        try:
+            _reactivate_legacy_music_login_rows(conn, dialect_name)
+        except Exception:
+            logger.warning("DB music login activation backfill failed", exc_info=True)
 
         try:
             index_rows = conn.execute(text("PRAGMA index_list(track_likes)")).all()
