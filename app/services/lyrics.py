@@ -1,15 +1,15 @@
 """Serviço de letra pro /tly.
 
-Busca a letra completa no lyrics.ovh (grátis, sem chave/auth) e extrai uma
-estrofe pro quote do Telegram. Estratégia:
+Busca a letra completa no lyrics.ovh e, se falhar, no LRCLIB; depois
+extrai uma estrofe pro quote do Telegram. Estratégia:
 - Refrão = a estrofe (ou linha) que mais se repete na letra.
 - Sem repetição detectável, cai na primeira estrofe.
 
 Sai uma estrofe inteira (refrão de preferência) — não a letra completa. O
 quote expansível do Telegram colapsa em ~3 linhas e abre no toque, então cabe a
 estrofe toda. Toda falha de rede/parse degrada pra None (o caller manda só o
-cabeçalho, sem quote). lyrics.ovh é instável; cache em memória com TTL evita
-martelar e o negativo tem TTL curto pra dar nova chance.
+cabeçalho, sem quote). As fontes de letra são instáveis; cache em memória
+com TTL evita martelar e o negativo tem TTL curto pra dar nova chance.
 """
 from __future__ import annotations
 
@@ -24,6 +24,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 LYRICS_API_URL = "https://api.lyrics.ovh/v1"
+LRCLIB_API_URL = "https://lrclib.net/api"
+LRCLIB_USER_AGENT = "tr4-music-bot/1.0 (+https://github.com/romastefale/tr4)"
 LYRICS_TIMEOUT_SECONDS = 8.0
 LYRICS_CACHE_TTL_SECONDS = 24 * 3600
 LYRICS_NEGATIVE_TTL_SECONDS = 6 * 3600
@@ -49,6 +51,7 @@ _FEAT_RE = re.compile(
     r"\s*[\(\[]?\s*(feat\.?|ft\.?|featuring|with)\b.*$", re.IGNORECASE
 )
 _PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
+_LRC_TIMESTAMP_RE = re.compile(r"\[[0-9:.]+\]")
 
 
 def _clean_title(value: str) -> str:
@@ -73,6 +76,27 @@ def _clean_artist(value: str) -> str:
 
 def _norm(line: str) -> str:
     return _PUNCT_RE.sub("", line.lower()).strip()
+
+def _lyrics_from_lrclib_payload(data) -> str | None:
+    """Extrai letra do payload do LRCLIB sem registrar a letra em log."""
+    if not isinstance(data, dict):
+        return None
+    if data.get("instrumental") is True:
+        return None
+    plain = data.get("plainLyrics")
+    if isinstance(plain, str) and plain.strip():
+        return plain.strip()[:LYRICS_MAX_CHARS]
+    synced = data.get("syncedLyrics")
+    if isinstance(synced, str) and synced.strip():
+        lines: list[str] = []
+        for raw in synced.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+            line = _LRC_TIMESTAMP_RE.sub("", raw).strip()
+            if line:
+                lines.append(line)
+        text = "\n".join(lines).strip()
+        if text:
+            return text[:LYRICS_MAX_CHARS]
+    return None
 
 
 def _trim_lines(lines: list[str]) -> str | None:
@@ -212,10 +236,21 @@ class LyricsService:
                 candidates.append((artist, title))
 
             result: str | None = None
+            source = ""
             for a, t in candidates:
                 result = await self._fetch(a, t)
                 if result:
+                    source = "lyrics_ovh"
                     break
+                result = await self._fetch_lrclib(a, t)
+                if result:
+                    source = "lrclib"
+                    break
+
+            if result:
+                logger.info("LYRICS_HIT source=%s artist=%s title=%s", source, artist, title)
+            else:
+                logger.info("LYRICS_MISS_ALL artist=%s title=%s candidates=%s", artist, title, len(candidates))
 
             ttl = LYRICS_CACHE_TTL_SECONDS if result else LYRICS_NEGATIVE_TTL_SECONDS
             if len(self._cache) >= LYRICS_CACHE_BOUND:
@@ -248,6 +283,53 @@ class LyricsService:
         if not lyrics:
             return None
         return lyrics[:LYRICS_MAX_CHARS]
+
+    async def _fetch_lrclib(self, artist: str, title: str) -> str | None:
+        """Fallback de letra via LRCLIB. Retorna só texto puro, sem timestamps."""
+        headers = {"User-Agent": LRCLIB_USER_AGENT}
+        client = self._client()
+        try:
+            resp = await client.get(
+                f"{LRCLIB_API_URL}/get",
+                params={"artist_name": artist, "track_name": title},
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                text = _lyrics_from_lrclib_payload(resp.json())
+                if text:
+                    return text
+            elif resp.status_code not in (404, 400):
+                logger.info(
+                    "LRCLIB_GET_MISS artist=%s title=%s status=%s", artist, title, resp.status_code
+                )
+        except Exception:
+            logger.warning("LRCLIB_GET_ERROR artist=%s title=%s", artist, title, exc_info=True)
+
+        try:
+            resp = await client.get(
+                f"{LRCLIB_API_URL}/search",
+                params={"artist_name": artist, "track_name": title},
+                headers=headers,
+            )
+        except Exception:
+            logger.warning("LRCLIB_SEARCH_ERROR artist=%s title=%s", artist, title, exc_info=True)
+            return None
+        if resp.status_code != 200:
+            logger.info(
+                "LRCLIB_SEARCH_MISS artist=%s title=%s status=%s", artist, title, resp.status_code
+            )
+            return None
+        try:
+            data = resp.json()
+        except Exception:
+            return None
+        if not isinstance(data, list):
+            return None
+        for item in data[:5]:
+            text = _lyrics_from_lrclib_payload(item)
+            if text:
+                return text
+        return None
 
     async def shutdown(self) -> None:
         if self._http is not None:
