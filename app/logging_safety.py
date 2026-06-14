@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Iterable
+from typing import Iterable, Mapping, Any
 
 _AUTHORIZATION_RE = re.compile(
     r"(?i)\b(authorization)\s*[:=]\s*(?:Bearer\s+)?([^&\s\"']+)"
@@ -53,11 +53,37 @@ def redact_secrets(text: object) -> str:
     return value
 
 
+def _redact_arg(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_secrets(value)
+    if isinstance(value, bytes):
+        try:
+            return redact_secrets(value.decode("utf-8", errors="replace"))
+        except Exception:
+            return value
+    return value
+
+
+def _redact_args(args: Any) -> Any:
+    """Redact logging args without changing their container shape.
+
+    Uvicorn's access formatter expects record.args to contain exactly five
+    elements. Earlier hardening replaced args with an empty tuple after calling
+    getMessage(), which broke every access log with:
+    ValueError: not enough values to unpack (expected 5, got 0).
+    """
+    if isinstance(args, tuple):
+        return tuple(_redact_arg(item) for item in args)
+    if isinstance(args, Mapping):
+        return {key: _redact_arg(value) for key, value in args.items()}
+    return _redact_arg(args)
+
+
 def _redacting_record_factory(*args, **kwargs) -> logging.LogRecord:
     record = _ORIGINAL_RECORD_FACTORY(*args, **kwargs)
     try:
-        record.msg = redact_secrets(record.getMessage())
-        record.args = ()
+        record.msg = redact_secrets(record.msg)
+        record.args = _redact_args(record.args)
         if record.exc_info:
             formatter = logging.Formatter()
             record.exc_text = redact_secrets(formatter.formatException(record.exc_info))
@@ -91,8 +117,8 @@ def _wrap_handler_formatter(handler: logging.Handler) -> None:
 class SecretRedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            record.msg = redact_secrets(record.getMessage())
-            record.args = ()
+            record.msg = redact_secrets(record.msg)
+            record.args = _redact_args(record.args)
         except Exception:
             record.msg = "[LOG_REDACTION_FAILED]"
             record.args = ()

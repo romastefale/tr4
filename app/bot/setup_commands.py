@@ -60,10 +60,10 @@ _GROUP_COMMANDS: tuple[CommandDef, ...] = (
 )
 
 _OWNER_ONLY_COMMANDS: tuple[CommandDef, ...] = (
-    CommandDef("tnowall", "Mosaico universal por DM"),
-    CommandDef("songchartsall", "Ranking universal por DM"),
-    CommandDef("weekall", "Ranking universal semanal"),
-    CommandDef("monthall", "Ranking universal mensal"),
+    CommandDef("tnowall", "Mosaico consolidado por DM"),
+    CommandDef("songchartsall", "Ranking consolidado por DM"),
+    CommandDef("weekall", "Ranking semanal consolidado"),
+    CommandDef("monthall", "Ranking mensal consolidado"),
 )
 
 _OWNER_PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PRIVATE_COMMANDS + _OWNER_ONLY_COMMANDS

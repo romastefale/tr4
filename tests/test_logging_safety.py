@@ -75,3 +75,36 @@ def test_redact_known_legacy_env_secret_values(monkeypatch) -> None:
     assert "legacy_lastfm_secret" not in text
     assert "legacy_spotify_secret" not in text
     assert text.count("[REDACTED_SECRET]") == 2
+
+
+def test_secret_redaction_preserves_uvicorn_access_args_shape() -> None:
+    import io
+    from uvicorn.logging import AccessFormatter
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(AccessFormatter('%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'))
+
+    logger = logging.getLogger("tr4.audit.uvicorn.access.test")
+    logger.handlers[:] = [handler]
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    configure_safe_logging()
+    if not any(isinstance(item, SecretRedactionFilter) for item in handler.filters):
+        handler.addFilter(SecretRedactionFilter())
+
+    logger.info(
+        '%s - "%s %s HTTP/%s" %d',
+        "100.64.0.2:52221",
+        "GET",
+        "/healthz?api_key=lastfmsecretvalue",
+        "1.1",
+        200,
+    )
+
+    output = stream.getvalue()
+    assert "ValueError" not in output
+    assert "lastfmsecretvalue" not in output
+    assert "api_key=[REDACTED]" in output
+    assert "/healthz" in output
