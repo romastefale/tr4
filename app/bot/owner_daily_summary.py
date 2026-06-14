@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aiogram import Bot
 from sqlalchemy.engine import Engine
@@ -20,12 +20,20 @@ from app.equalizador.governante_scope import (
 logger = logging.getLogger(__name__)
 
 
+def _sao_paulo_tz():
+    try:
+        return ZoneInfo("America/Sao_Paulo")
+    except ZoneInfoNotFoundError:
+        return timezone.utc
+
+
 def _local_now(now: datetime | None = None) -> datetime:
+    tz = _sao_paulo_tz()
     if now is None:
-        return datetime.now(ZoneInfo("America/Sao_Paulo"))
+        return datetime.now(tz)
     if now.tzinfo is None:
-        return now.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
-    return now.astimezone(ZoneInfo("America/Sao_Paulo"))
+        return now.replace(tzinfo=tz)
+    return now.astimezone(tz)
 
 
 async def send_daily_limit_summary_to_owners(

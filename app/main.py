@@ -20,6 +20,8 @@ from app.bot.myself import router as myself_router
 from app.bot.radiofm import router as radiofm_router
 from app.bot.setup_commands import setup_bot_commands
 from app.bot.show_owner import router as show_owner_router
+from app.bot.tgov_owner import router as tgov_owner_router
+from app.fsm_tigrao.router import router as fsm_tigrao_router
 from app.bot.songcharts import router as songcharts_router
 from app.bot.tcanvas import router as tcanvas_router
 from app.bot.telegram import _register_handlers, bot_dispatcher, shutdown_telegram_bot
@@ -50,6 +52,7 @@ from app.equalizador.ddx import equalizador_ddx_preprocess_update, process_due_d
 from app.equalizador.reacoes import record_reaction_update_payload
 from app.equalizador.novos_membros import equalizador_novos_membros_preprocess_update
 from app.equalizador.persistencia import ensure_persistence_state
+from app.fsm_tigrao.x9 import record_x9_update_context
 
 app = FastAPI(title="TR4 Music Only")
 if TR4_EQUALIZADOR_ENABLED:
@@ -102,6 +105,8 @@ def _configure_dispatcher_once() -> None:
     dispatcher.include_router(myself_router)
     dispatcher.include_router(songcharts_router)
     dispatcher.include_router(show_owner_router)
+    dispatcher.include_router(tgov_owner_router)
+    dispatcher.include_router(fsm_tigrao_router)
     register_music_extra_handlers(dispatcher)
     _register_handlers(dispatcher)
     _telegram_dispatcher_configured = True
@@ -342,6 +347,10 @@ async def telegram_webhook(request: Request):
         record_reaction_update_payload(payload, alias_secret=settings.equalizador_alias_secret())
         update = Update.model_validate(payload, context={"bot": bot})
         _remember_music_group_from_update(update)
+        # Fase 12D: X9 de contexto apenas alimenta o FSM privado.
+        # O X9/DDX automático continua independente logo abaixo e pode agir
+        # como antes, apagando/registrando/avisando quando houver regra ativa.
+        record_x9_update_context(update)
         await equalizador_novos_membros_preprocess_update(bot, update, alias_secret=settings.equalizador_alias_secret())
         if await equalizador_ddx_preprocess_update(bot, update, alias_secret=settings.equalizador_alias_secret()):
             return {"ok": True}

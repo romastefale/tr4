@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import re
 from typing import Any
 
@@ -16,7 +17,7 @@ class MultimediaError(RuntimeError):
     """Raised when a native Telegram multimedia flow cannot continue."""
 
 
-ALLOWED_KINDS = {"text", "photo", "video", "document", "audio", "voice", "animation"}
+ALLOWED_KINDS = {"text", "photo", "video", "document", "audio", "voice", "animation", "album"}
 MULTIMEDIA_KIND_LABELS = {
     "text": "texto",
     "photo": "foto",
@@ -25,6 +26,7 @@ MULTIMEDIA_KIND_LABELS = {
     "audio": "áudio",
     "voice": "voz",
     "animation": "animação",
+    "album": "álbum",
 }
 
 
@@ -58,6 +60,10 @@ def ensure_multimedia_tables(db_engine: Engine = default_engine) -> None:
                     mime_type TEXT,
                     msg_ref TEXT,
                     error_public TEXT,
+                    source_chat_id INTEGER,
+                    source_message_id INTEGER,
+                    source_message_ids TEXT,
+                    source_media_group_id TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -73,12 +79,17 @@ def ensure_multimedia_tables(db_engine: Engine = default_engine) -> None:
             ("mime_type", "ALTER TABLE eq_multimedia_sessions ADD COLUMN mime_type TEXT"),
             ("msg_ref", "ALTER TABLE eq_multimedia_sessions ADD COLUMN msg_ref TEXT"),
             ("error_public", "ALTER TABLE eq_multimedia_sessions ADD COLUMN error_public TEXT"),
+            ("source_chat_id", "ALTER TABLE eq_multimedia_sessions ADD COLUMN source_chat_id INTEGER"),
+            ("source_message_id", "ALTER TABLE eq_multimedia_sessions ADD COLUMN source_message_id INTEGER"),
+            ("source_message_ids", "ALTER TABLE eq_multimedia_sessions ADD COLUMN source_message_ids TEXT"),
+            ("source_media_group_id", "ALTER TABLE eq_multimedia_sessions ADD COLUMN source_media_group_id TEXT"),
         ):
             if not _sqlite_column_exists(conn, "eq_multimedia_sessions", column):
                 conn.execute(text(ddl))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_multimedia_owner ON eq_multimedia_sessions(telegram_user_id, status, updated_at)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_multimedia_palco ON eq_multimedia_sessions(palco_ref, status, updated_at)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_multimedia_ref ON eq_multimedia_sessions(session_ref)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_eq_multimedia_album ON eq_multimedia_sessions(telegram_user_id, source_media_group_id, updated_at)"))
 
 
 def _session_ref(*, palco_ref: str, ator_ref: str, user_id: int, alias_secret: str) -> str:
@@ -101,6 +112,78 @@ def _status_public_label(status: str) -> str:
 def _tipo_public_label(kind: str) -> str:
     return MULTIMEDIA_KIND_LABELS.get(str(kind or ""), str(kind or "conteúdo"))
 
+
+
+def _json_message_ids(value: object) -> list[int]:
+    if isinstance(value, list):
+        raw = value
+    else:
+        try:
+            raw = json.loads(str(value or "[]"))
+        except Exception:
+            raw = []
+    ids: list[int] = []
+    for item in raw if isinstance(raw, list) else []:
+        try:
+            ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return sorted(dict.fromkeys(ids))
+
+
+def _append_message_id(existing: object, message_id: object) -> str:
+    ids = _json_message_ids(existing)
+    try:
+        ids.append(int(message_id))
+    except (TypeError, ValueError):
+        pass
+    return json.dumps(sorted(dict.fromkeys(ids)))
+
+
+def _copy_result_ids(result: object) -> list[int]:
+    if isinstance(result, dict):
+        result = [result]
+    ids: list[int] = []
+    if isinstance(result, list):
+        for item in result:
+            value = getattr(item, "message_id", None)
+            if value is None and isinstance(item, dict):
+                value = item.get("message_id")
+            try:
+                ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+    return ids
+
+
+def _source_ids_from_session(session: dict[str, Any]) -> list[int]:
+    ids = _json_message_ids(session.get("source_message_ids"))
+    if not ids and session.get("source_message_id") is not None:
+        try:
+            ids.append(int(session["source_message_id"]))
+        except (TypeError, ValueError):
+            pass
+    return sorted(dict.fromkeys(ids))
+
+
+def _album_session_for_user(*, telegram_user_id: int, source_media_group_id: str, db_engine: Engine = default_engine) -> dict[str, Any] | None:
+    if not source_media_group_id:
+        return None
+    ensure_multimedia_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT * FROM eq_multimedia_sessions
+                WHERE telegram_user_id=:user_id AND source_media_group_id=:media_group_id
+                  AND status IN ('awaiting','ready')
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """
+            ),
+            {"user_id": int(telegram_user_id), "media_group_id": str(source_media_group_id)},
+        ).mappings().first()
+    return dict(row) if row else None
 
 def _session_next_step(status: str, kind: str, row: dict[str, Any]) -> tuple[str, bool, str]:
     status = str(status or "awaiting")
@@ -125,17 +208,20 @@ def public_multimedia_session(row: dict[str, Any]) -> dict[str, object]:
     kind = str(row.get("media_kind") or ("text" if row.get("texto") else ""))
     next_step, pode_publicar, codigo_estado = _session_next_step(status, kind, row)
     tem_conteudo = bool(row.get("texto") or row.get("file_id"))
+    source_ids = _source_ids_from_session(row)
     return {
         "session_ref": str(row.get("session_ref") or ""),
         "status": status,
         "estado": _status_public_label(status),
         "tipo": kind,
         "tipo_label": _tipo_public_label(kind),
-        "tem_conteudo": tem_conteudo,
+        "tem_conteudo": tem_conteudo or bool(source_ids),
+        "modo": "copia_nativa" if source_ids else "envio_legado",
+        "album_itens": len(source_ids) if str(row.get("source_media_group_id") or "") else 0,
         "pode_publicar": pode_publicar,
         "codigo_estado": codigo_estado,
         "proximo_passo": next_step,
-        "resumo": _safe_text(row.get("texto"), fallback=_safe_text(row.get("file_name"), fallback="Aguardando conteúdo"))[:160],
+        "resumo": _safe_text(row.get("texto"), fallback=_safe_text(row.get("file_name"), fallback=(f"Álbum com {len(source_ids)} item(ns)" if str(row.get("source_media_group_id") or "") else "Aguardando conteúdo")))[:160],
         "arquivo": _safe_text(row.get("file_name"), fallback=""),
         "mime": _safe_text(row.get("mime_type"), fallback=""),
         "msg_ref": str(row.get("msg_ref") or ""),
@@ -263,16 +349,30 @@ def mark_session_waiting(*, session_ref: str, telegram_user_id: int, db_engine: 
 
 
 def attach_telegram_message_to_session(*, telegram_user_id: int, message_data: dict[str, Any], session_ref_hint: str = "", db_engine: Engine = default_engine) -> dict[str, object] | None:
+    source_media_group_id = _safe_text(message_data.get("source_media_group_id"), fallback="")[:120]
     session = session_for_incoming_message(telegram_user_id=int(telegram_user_id), session_ref_hint=session_ref_hint, db_engine=db_engine)
+    if not session and source_media_group_id:
+        session = _album_session_for_user(telegram_user_id=int(telegram_user_id), source_media_group_id=source_media_group_id, db_engine=db_engine)
     if not session:
         return None
     kind = str(message_data.get("media_kind") or "text")
+    if source_media_group_id:
+        kind = "album"
     if kind not in ALLOWED_KINDS:
         raise MultimediaError("Tipo de mídia indisponível.")
-    texto = _safe_text(message_data.get("texto"), fallback="")[:1024 if kind != "text" else 4096]
+    texto = _safe_text(message_data.get("texto"), fallback="")[:1024 if kind not in {"text", "album"} else 4096]
     file_id = _safe_text(message_data.get("file_id"), fallback="")[:260]
-    if kind != "text" and not file_id:
+    source_chat_id = message_data.get("source_chat_id")
+    source_message_id = message_data.get("source_message_id")
+    try:
+        source_chat_id_int = int(source_chat_id) if source_chat_id is not None else None
+        source_message_id_int = int(source_message_id) if source_message_id is not None else None
+    except (TypeError, ValueError) as exc:
+        raise MultimediaError("Origem da mensagem indisponível.") from exc
+    if kind != "text" and not file_id and not source_message_id_int:
         raise MultimediaError("Arquivo não recebido pelo bot.")
+    existing_ids = session.get("source_message_ids")
+    source_message_ids = _append_message_id(existing_ids, source_message_id_int) if source_message_id_int else str(existing_ids or "[]")
     with db_engine.begin() as conn:
         conn.execute(
             text(
@@ -280,17 +380,23 @@ def attach_telegram_message_to_session(*, telegram_user_id: int, message_data: d
                 UPDATE eq_multimedia_sessions
                 SET status='ready', texto=:texto, media_kind=:media_kind, file_id=:file_id,
                     file_unique_id=:file_unique_id, file_name=:file_name, mime_type=:mime_type,
+                    source_chat_id=:source_chat_id, source_message_id=COALESCE(source_message_id, :source_message_id),
+                    source_message_ids=:source_message_ids, source_media_group_id=COALESCE(source_media_group_id, :source_media_group_id),
                     error_public=NULL, updated_at=:updated_at
                 WHERE session_ref=:session_ref
                 """
             ),
             {
-                "texto": texto,
+                "texto": texto or _safe_text(session.get("texto"), fallback=""),
                 "media_kind": kind,
-                "file_id": file_id or None,
-                "file_unique_id": _safe_text(message_data.get("file_unique_id"), fallback="")[:260] or None,
-                "file_name": _safe_text(message_data.get("file_name"), fallback="")[:180] or None,
-                "mime_type": _safe_text(message_data.get("mime_type"), fallback="")[:120] or None,
+                "file_id": file_id or session.get("file_id"),
+                "file_unique_id": _safe_text(message_data.get("file_unique_id"), fallback="")[:260] or session.get("file_unique_id"),
+                "file_name": _safe_text(message_data.get("file_name"), fallback="")[:180] or session.get("file_name"),
+                "mime_type": _safe_text(message_data.get("mime_type"), fallback="")[:120] or session.get("mime_type"),
+                "source_chat_id": source_chat_id_int,
+                "source_message_id": source_message_id_int,
+                "source_message_ids": source_message_ids,
+                "source_media_group_id": source_media_group_id or None,
                 "updated_at": _now_iso(),
                 "session_ref": str(session["session_ref"]),
             },
@@ -331,7 +437,7 @@ def multimedia_center_public(*, palco_ref: str, db_engine: Engine = default_engi
         "sessoes": sessoes,
         "tipos_suportados": [
             {"tipo": key, "label": MULTIMEDIA_KIND_LABELS[key]}
-            for key in ("text", "photo", "video", "document", "audio", "voice", "animation")
+            for key in ("text", "photo", "video", "document", "audio", "voice", "animation", "album")
         ],
         "instrucoes": [
             "Crie a sessão no Web App.",
@@ -377,7 +483,7 @@ def _method_for_kind(kind: str) -> tuple[str, str, str | None]:
     return "sendMessage", "text", None
 
 
-async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str, session_ref: str, bot_token: str, alias_secret: str, db_engine: Engine = default_engine) -> dict[str, object]:
+async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str, session_ref: str, bot_token: str, alias_secret: str, fixar_silencio: bool = False, db_engine: Engine = default_engine) -> dict[str, object]:
     session = get_multimedia_session(session_ref=session_ref, db_engine=db_engine)
     if str(session.get("palco_ref")) != str(palco["ui_ref"]):
         raise MultimediaError("Sessão fora do grupo selecionado.")
@@ -405,20 +511,45 @@ async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str,
     kind = str(session.get("media_kind") or "text")
     method, field_name, required_right = _method_for_kind(kind)
     chat_id = int(palco["telegram_chat_id"])
+    published_ids: list[int] = []
+    source_ids = _source_ids_from_session(session)
     try:
         await ensure_bot_right(bot_token=bot_token, chat_id=chat_id, required_right=required_right)
+        if fixar_silencio:
+            await ensure_bot_right(bot_token=bot_token, chat_id=chat_id, required_right="can_pin_messages")
         texto = str(session.get("texto") or "")
-        if kind == "text":
+        source_chat_id = session.get("source_chat_id")
+        if source_chat_id and source_ids:
+            if len(source_ids) > 1:
+                method = "copyMessages"
+                result = await telegram_api_call(
+                    bot_token,
+                    method,
+                    {"chat_id": chat_id, "from_chat_id": int(source_chat_id), "message_ids": source_ids, "disable_notification": True},
+                )
+                published_ids = _copy_result_ids(result)
+            else:
+                method = "copyMessage"
+                result = await telegram_api_call(
+                    bot_token,
+                    method,
+                    {"chat_id": chat_id, "from_chat_id": int(source_chat_id), "message_id": int(source_ids[0]), "disable_notification": True},
+                )
+                published_ids = _copy_result_ids(result)
+        elif kind == "text":
             if not texto.strip():
                 raise MultimediaError("Mensagem vazia.")
             payload: dict[str, Any] = {"chat_id": chat_id, "text": texto[:4096], "link_preview_options": {"is_disabled": True}}
+            result = await telegram_api_call(bot_token, method, payload)
+            published_ids = _copy_result_ids(result)
         else:
             file_id = str(session.get("file_id") or "")
             if not file_id:
                 raise MultimediaError("Arquivo da sessão indisponível.")
             payload = {"chat_id": chat_id, field_name: file_id, "caption": texto[:1024] if texto else None}
-        result = await telegram_api_call(bot_token, method, payload)
-        if not isinstance(result, dict) or not result.get("message_id"):
+            result = await telegram_api_call(bot_token, method, payload)
+            published_ids = _copy_result_ids(result)
+        if not published_ids:
             raise MultimediaError("Telegram não retornou a mensagem publicada.")
     except (MesaError, MultimediaError) as exc:
         public_error = _safe_text(exc, fallback="Publicação multimídia não concluída.")[:180]
@@ -428,14 +559,30 @@ async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str,
                 {"error": public_error, "updated_at": _now_iso(), "ref": str(session_ref)},
             )
         raise
-    msg_ref = register_mensagem_ref(
-        chat_id=chat_id,
-        message_id=int(result["message_id"]),
-        resumo_publico=_safe_text(str(session.get("texto") or ""), fallback="Publicação multimídia"),
-        alias_secret=alias_secret,
-        message_unix_time=int(result.get("date") or 0) or None,
-        db_engine=db_engine,
-    )
+    pin_status = "nao_solicitado"
+    pin_error = ""
+    if fixar_silencio:
+        try:
+            await telegram_api_call(
+                bot_token,
+                "pinChatMessage",
+                {"chat_id": chat_id, "message_id": int(published_ids[0]), "disable_notification": True},
+            )
+            pin_status = "ok"
+        except Exception as exc:  # publicação já aconteceu; não marca a sessão como falha para evitar duplicidade em retry.
+            pin_status = "falhou"
+            pin_error = _safe_text(exc, fallback="Falha ao fixar silenciosamente.")[:180]
+    msg_refs: list[str] = []
+    for idx, published_id in enumerate(published_ids, start=1):
+        msg_refs.append(register_mensagem_ref(
+            chat_id=chat_id,
+            message_id=int(published_id),
+            resumo_publico=_safe_text(str(session.get("texto") or ""), fallback="Publicação multimídia")[:140] + (f" ({idx}/{len(published_ids)})" if len(published_ids) > 1 else ""),
+            alias_secret=alias_secret,
+            message_unix_time=None,
+            db_engine=db_engine,
+        ))
+    msg_ref = msg_refs[0]
     now = _now_iso()
     with db_engine.begin() as conn:
         conn.execute(
@@ -447,10 +594,25 @@ async def publish_multimedia_session(*, palco: dict[str, object], ator_ref: str,
         palco_ref=str(palco["ui_ref"]),
         alvo_ref=msg_ref,
         ajuste="multimidia.publicar",
-        status="ok",
-        resumo_publico="Publicação multimídia enviada pelo bot.",
-        payload_tecnico={"tipo": kind},
+        status="ok" if pin_status != "falhou" else "parcial",
+        resumo_publico="Publicação multimídia enviada pelo bot." if pin_status != "ok" else "Publicação multimídia enviada e fixada silenciosamente.",
+        payload_tecnico={
+            "tipo": kind,
+            "method": method,
+            "source_message_ids": source_ids,
+            "published_message_ids": published_ids,
+            "msg_refs": msg_refs,
+            "fixar_silencio": bool(fixar_silencio),
+            "pin_status": pin_status,
+            "pin_error": pin_error,
+        },
         alias_secret=alias_secret,
         db_engine=db_engine,
     )
-    return {"ok": True, "sessao": public_multimedia_session(get_multimedia_session(session_ref=session_ref, db_engine=db_engine)), "mensagem": {"msg_ref": msg_ref}, "historico": historico}
+    return {
+        "ok": True,
+        "sessao": public_multimedia_session(get_multimedia_session(session_ref=session_ref, db_engine=db_engine)),
+        "mensagem": {"msg_ref": msg_ref, "msg_refs": msg_refs},
+        "fixacao": {"solicitada": bool(fixar_silencio), "status": pin_status, "erro": pin_error},
+        "historico": historico,
+    }

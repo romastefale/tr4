@@ -34,7 +34,7 @@ def test_governante_gate_covers_legacy_action_families() -> None:
     assert 'action="reacoes.reactor.silenciar"' in ROUTER
     assert '_require_owner_only_module(identity, module="radio")' in ROUTER
     assert ROUTER.count('_require_owner_only_module(identity, module="radio")') >= 10
-    assert '"radio_view", "novos_view"' in ROUTER
+    assert 'const loadOwnerPanels = false;' in ROUTER
 
 
 def test_reaction_audit_removed_from_runtime_app_release_surface() -> None:

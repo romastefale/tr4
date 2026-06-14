@@ -49,7 +49,7 @@ def test_load_palco_data_does_not_call_owner_only_reads_for_governante() -> None
     for path in owner_only_paths:
         idx = block.index(path)
         prefix = block[max(0, idx - 80):idx]
-        assert "modoMaestroPermitido ?" in prefix
+        assert "loadOwnerPanels ?" in prefix or "modoMaestroPermitido ?" in prefix
 
 
 def test_convites_export_primary_no_longer_uses_create_channel() -> None:

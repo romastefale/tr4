@@ -6,6 +6,9 @@ python -m py_compile \
   app/bot/music_broadcast.py \
   app/bot/owner_daily_summary.py \
   app/bot/show_owner.py \
+  app/fsm_tigrao/context.py \
+  app/fsm_tigrao/keyboards.py \
+  app/fsm_tigrao/router.py \
   app/main.py \
   app/equalizador/router.py \
   app/equalizador/governante_scope.py \
@@ -34,6 +37,12 @@ python -m pytest -q \
   tests/test_phase11_etapa17_alinhamento_final.py \
   tests/test_phase11_etapa18_bot_api_compat.py \
   tests/test_phase11_etapa19_security_hardening.py \
+  tests/test_phase11_etapa21_context_auto.py \
+  tests/test_phase11_etapa22_show_fsm_redesign.py \
+  tests/test_phase11_etapa23_moderator_panel_clean.py \
+  tests/test_fsm_tr3_to_tr4_architecture.py \
+  tests/test_fsm_private_x9_architecture.py \
+  tests/test_fsm_private_x9_hardening.py \
   tests/test_music_only_build.py
 
 python scripts/equalizador_release_check.py

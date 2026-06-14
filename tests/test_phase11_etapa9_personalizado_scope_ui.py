@@ -43,4 +43,4 @@ def test_router_accepts_custom_actions_payload_and_shows_limit_status():
     assert "let governanteScopeRowsPorPalco = new Map();" in source
     assert "const renderGovernanteScopeStatus = () =>" in source
     assert "daily_remaining" in source
-    assert "ownerOnlyViews.has(id)" in source
+    assert "if (!moderatorPanelViews.has(id))" in source

@@ -286,6 +286,28 @@ def get_palco_internal_by_ref(
     return dict(row) if row else None
 
 
+
+
+def get_palco_internal_by_chat_id(
+    *,
+    chat_id: int,
+    db_engine: Engine = default_engine,
+) -> dict[str, object] | None:
+    ensure_equalizador_tables(db_engine)
+    with db_engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT telegram_chat_id, titulo, ui_ref, habilitado, bot_rights_json, last_synced_at
+                FROM eq_palcos
+                WHERE telegram_chat_id=:telegram_chat_id AND habilitado=1
+                """
+            ),
+            {"telegram_chat_id": int(chat_id)},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
 def persist_afinacao_snapshot(
     *,
     grp_ref: str,

@@ -1,70 +1,85 @@
-# FASE 11 — ESTADO FINAL CONSOLIDADO
+# FASE 11 — ESTADO FINAL CONSOLIDADO APÓS ETAPA 26
 
-## Estado geral
+## Separação final do produto
 
-A Fase 11 consolidou a separação entre:
+A Fase 11 ficou organizada em duas superfícies:
 
-- **owner/maestro**, com controle estratégico via `/show`, painel owner, DDX, logs, configuração de governantes, pacotes, limites, exceções, broadcast musical e catálogo manual;
-- **governante**, com Web App operacional, unitário, limitado por pacote, grupo, ação e limite diário;
-- **backend**, como fronteira real de segurança, sem confiar apenas em botão escondido.
+- **/show** é o Owner Center completo. Fica na DM do owner/maestro e concentra configuração, diagnóstico, DDX, logs, música automática, catálogo, bloqueios, limites, exceções e segurança.
+- **Painel do Moderador** é operacional e simples. Serve para atuar no grupo atual com três abas: Mensagens, Pessoas e Música.
 
-## Entregue no acumulado
+O termo visível para delegação é **Moderador**. Os nomes internos `governante_*` permanecem no código por compatibilidade com tabelas, testes e rotas já criadas.
 
-- Guard HTML/JS/IDs.
-- Shell negado para `/equalizador` sem sessão válida.
-- `/show` owner com navegação por botões.
-- Editor visual owner no painel para governantes, pacotes, ações, limites e exceções.
-- Pacotes Básico, Moderador, Avançado e Personalizado.
-- Gate backend por pacote governante.
-- Limite diário real com bloqueio HTTP 429.
-- Exceção de 24h por ação específica.
-- Aviso best-effort ao owner quando limite é atingido.
-- Postagem texto/foto com legenda.
-- Apagar mensagem por link.
-- Ban/unban unitário.
-- Convite único com solicitação.
-- DDX owner-only.
-- Broadcast manual owner por `/broadcast`.
-- Broadcast musical governante pelo Web App no grupo autorizado.
-- Broadcast automático por horários.
-- Bloqueio global de artista/faixa.
-- Catálogo manual de músicas do owner.
-- Resumo diário consolidado de limites.
-- Auditoria corretiva final de JS/HTML/Python.
+## Painel do Moderador
 
-## Fora do escopo governante
+O painel não deve ser Owner Center. Ele deve mostrar apenas:
 
-- Logs e histórico.
-- DDX.
-- Entradas.
-- Tópicos/fóruns.
-- Rádio legado.
-- Multimídia nativa.
-- Apagar lote.
-- Exportar link primário.
-- Kick.
+1. **Mensagens**
+   - postar texto;
+   - postar foto por URL HTTPS ou file_id com legenda;
+   - apagar mensagem por link;
+   - fixar/desfixar quando liberado.
 
-## Observações finais
+2. **Pessoas**
+   - silenciar/liberar;
+   - banir/reintegrar;
+   - convite rápido com solicitação de entrada.
 
-O código interno ainda mantém nomes históricos como `membros.remover` por compatibilidade, mas o rótulo operacional correto é **Banir membro**.
+3. **Música**
+   - enviar música atual do moderador no grupo atual.
 
-O item `ddx.temporario` fica como legado para dados antigos, mas não deve ser usado para novas configurações no escopo atual.
+Se o grupo atual não for resolvido automaticamente, o painel deve listar grupos disponíveis por nome/foto. Se houver apenas um grupo possível, deve abrir direto nele.
 
-Antes do deploy real, deve ser feita validação no ambiente completo com dependências instaladas e teste real no Telegram/Railway.
+## /show Owner Center
 
-## Atualização Etapa 17
+O `/show` concentra:
 
-A auditoria ampliada identificou que algumas ações estavam liberáveis em pacote governante, mas dependiam de listagens ou referências owner-only. Para evitar capacidade sem caminho visual seguro, a Etapa 17 voltou a tratar reações, canais remetentes e edição/revogação de convites como recursos owner/maestro até que haja uma UI governante própria para eles.
+- escolher grupo;
+- configurar moderadores;
+- pacotes e ações;
+- limites;
+- exceções 24h;
+- DDX;
+- logs;
+- diagnóstico;
+- segurança;
+- música automática;
+- catálogo manual;
+- bloqueios de artista/faixa;
+- agendamentos musicais.
 
-O pacote governante atual permanece operacional: postagem, foto com legenda, apagar por link, fixar/desfixar, silenciar/liberar, banir/reintegrar, criar convite com solicitação e broadcast musical do governante.
+DDX, logs, segurança, catálogo, agendamentos, bloqueios e configuração de moderadores ficam fora do painel operacional.
 
+## Segurança consolidada
 
+- `/equalizador` sem sessão válida não entrega painel operacional completo.
+- Backend valida sessão, perfil, grupo, pacote, ação, limite e permissão real do bot.
+- Ações sensíveis exigem confirmação backend.
+- HTML/JS/IDs têm guard estático.
+- Callbacks do `/show` são validados por allowlist.
+- Entrada DDX digitada é limitada e rejeita HTML bruto.
+- URLs públicas do player são filtradas para `http/https`.
 
-## Etapa 19 — Segurança de entrada e callbacks
+## Escopo fora do Moderador
 
-- Endureceu pontos de `innerHTML` restantes com `escapeHtml`.
-- Validou URLs públicas do player antes de usar em atributos HTML.
-- Limitou payload de `/api/client-error`.
-- Adicionou allowlist para `callback_data` do `/show`.
-- Impediu gravação de grupo/governante inexistente no estado do FSM.
-- Limitou palavra/frase DDX digitada antes de persistir.
+Ficam com owner/maestro:
+
+- DDX;
+- logs/histórico;
+- tópicos/fóruns;
+- rádio legado;
+- Multimídia nativa;
+- apagar lote;
+- exportar link primário;
+- edição/revogação de convites antigos;
+- reações/canais remetentes até existir UI segura própria;
+- kick.
+
+## Observações de compatibilidade
+
+O código interno ainda mantém nomes históricos como `governante_scope`, `eq_governante_*` e `membros.remover`. Esses nomes são compatibilidade interna; a interface deve exibir **Moderador** e **Banir membro**.
+
+O item `ddx.temporario` fica como legado para dados antigos e não deve ser usado para novas configurações.
+
+## Validação antes de deploy
+
+Antes do deploy real, aplicar o ZIP completo mais recente no repositório real, instalar `requirements.txt`, rodar os checks, subir para GitHub e testar no Telegram/Railway.

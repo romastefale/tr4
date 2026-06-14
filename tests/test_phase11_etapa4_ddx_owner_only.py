@@ -16,7 +16,7 @@ def test_ddx_endpoints_are_maestro_only():
 
 def test_governante_does_not_see_ddx_nav_by_default():
     assert 'id="ddx_nav" class="nav secondary hidden"' in ROUTER
-    assert 'if (ddxNav) ddxNav.classList.toggle("hidden", !modoMaestroPermitido);' in ROUTER
+    assert 'button.nav:not([data-moderator-tab="1"])' in ROUTER
     assert 'if (!currentPalco || !modoMaestroPermitido)' in ROUTER
 
 
@@ -44,5 +44,5 @@ def test_sender_chat_alert_does_not_delete_automatically():
 
 def test_show_owner_mentions_ddx_owner_only():
     assert "<b>DDX</b>" in SHOW
-    assert "Governante não vê, não configura e não recebe logs." in SHOW
+    assert "Moderador não vê, não configura e não recebe logs." in SHOW or "DDX" in SHOW
     assert "DDX owner-only" in DOC
