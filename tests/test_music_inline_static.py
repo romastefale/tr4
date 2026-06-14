@@ -60,3 +60,20 @@ def test_inline_final_edit_removes_loading_keyboard():
     assert "edit_message_reply_markup" in INLINE
     assert "reply_markup=None" in INLINE
     assert "_edit_inline_rendered" in INLINE
+
+def test_inline_render_button_is_inert_against_accidental_clicks():
+    assert "MUSIC_INLINE_RENDER_BUTTON_TAPPED_IGNORED" in INLINE
+    callback_block = INLINE.split("async def music_inline_render_callback", 1)[1].split("@router.chosen_inline_result", 1)[0]
+    assert "await _render(" not in callback_block
+    assert "await _edit_inline_rendered" not in callback_block
+
+
+def test_inline_edit_ignores_message_not_modified():
+    assert "message is not modified" in INLINE
+    assert "MUSIC_INLINE_EDIT_MEDIA_NOT_MODIFIED" in INLINE
+    assert "MUSIC_INLINE_EDIT_TEXT_NOT_MODIFIED" in INLINE
+
+
+def test_tly_lyrics_failure_is_warning_fallback():
+    assert "MUSIC_INLINE_TLY_LYRICS_SKIPPED" in INLINE
+    assert "lyric_snippet = None" in INLINE

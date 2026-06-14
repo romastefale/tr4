@@ -206,21 +206,35 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
     if rendered.photo:
         file_id = await _cache_photo_file_id(bot, rendered.photo, filename=rendered.filename)
         if file_id:
-            await bot.edit_message_media(
-                inline_message_id=inline_message_id,
-                media=InputMediaPhoto(media=file_id, caption=caption[:1024], parse_mode="HTML"),
-                reply_markup=None,
-            )
+            try:
+                await bot.edit_message_media(
+                    inline_message_id=inline_message_id,
+                    media=InputMediaPhoto(media=file_id, caption=caption[:1024], parse_mode="HTML"),
+                    reply_markup=None,
+                )
+                await _clear_inline_markup(bot, inline_message_id)
+                return
+            except Exception as exc:
+                if "message is not modified" in str(exc).casefold():
+                    logger.info("MUSIC_INLINE_EDIT_MEDIA_NOT_MODIFIED inline_message_id=%s", inline_message_id)
+                    await _clear_inline_markup(bot, inline_message_id)
+                    return
+                logger.warning("MUSIC_INLINE_EDIT_MEDIA_FAILED_FALLBACK_TEXT inline_message_id=%s", inline_message_id, exc_info=True)
+    text = _strip_links(rendered.fallback_text or caption or "Resultado indisponível.")[:3900]
+    try:
+        await bot.edit_message_text(
+            inline_message_id=inline_message_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+        await _clear_inline_markup(bot, inline_message_id)
+    except Exception as exc:
+        if "message is not modified" in str(exc).casefold():
+            logger.info("MUSIC_INLINE_EDIT_TEXT_NOT_MODIFIED inline_message_id=%s", inline_message_id)
             await _clear_inline_markup(bot, inline_message_id)
             return
-    text = _strip_links(rendered.fallback_text or caption or "Resultado indisponível.")[:3900]
-    await bot.edit_message_text(
-        inline_message_id=inline_message_id,
-        text=text,
-        parse_mode="HTML",
-        reply_markup=None,
-    )
-    await _clear_inline_markup(bot, inline_message_id)
+        raise
 
 
 async def _cache_photo_file_id(bot: Bot, photo: bytes | str | None, *, filename: str) -> str | None:
@@ -273,8 +287,14 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     if artist_raw and track_name_raw:
         try:
             lyric_snippet = await lyrics_service.get_snippet(artist_raw, track_name_raw)
-        except Exception:
-            logger.exception("MUSIC_INLINE_TLY_LYRICS_FAILED artist=%s track=%s", artist_raw, track_name_raw)
+        except Exception as exc:
+            logger.warning(
+                "MUSIC_INLINE_TLY_LYRICS_SKIPPED artist=%s track=%s error=%s",
+                artist_raw,
+                track_name_raw,
+                type(exc).__name__,
+            )
+            lyric_snippet = None
 
     track_id = str(track.get("track_id") or "").strip()
     if not track_id:
@@ -422,39 +442,22 @@ async def music_inline_query(query: InlineQuery) -> None:
 
 @router.callback_query(lambda query: str(query.data or "").startswith("mi:render:"))
 async def music_inline_render_callback(query: CallbackQuery, bot: Bot) -> None:
-    inline_message_id = getattr(query, "inline_message_id", None)
+    """Botão técnico: só responde ao clique acidental.
+
+    O botão existe para o Telegram anexar inline keyboard e assim entregar
+    inline_message_id. A renderização oficial continua no chosen_inline_result.
+    Se o usuário clicar sem querer, não renderiza uma segunda vez e não gera erro.
+    """
     result_id = str(query.data or "").removeprefix("mi:render:")
-    await query.answer()
+    inline_message_id = getattr(query, "inline_message_id", None)
+    try:
+        await query.answer("Gerando…", show_alert=False)
+    except Exception:
+        logger.debug("MUSIC_INLINE_CALLBACK_ANSWER_FAILED result_id=%s", result_id, exc_info=True)
     if not inline_message_id:
         logger.info("MUSIC_INLINE_CALLBACK_WITHOUT_INLINE_MESSAGE_ID result_id=%s", result_id)
         return
-
-    item = _PENDING.pop(result_id, None)
-    if item is None:
-        parts = result_id.split(":", 2)
-        kind = parts[1] if len(parts) >= 2 else ""
-        item = _PendingInline(
-            kind=kind,
-            user_id=int(query.from_user.id),
-            display_name=query.from_user.full_name or "Usuário",
-            username=query.from_user.username,
-            arg=None,
-            created_at=time.monotonic(),
-        )
-
-    try:
-        rendered = await _render(bot, item)
-        await _edit_inline_rendered(bot, inline_message_id, rendered)
-    except Exception:
-        logger.exception("MUSIC_INLINE_CALLBACK_RENDER_FAILED result_id=%s kind=%s", result_id, item.kind)
-        try:
-            await bot.edit_message_text(
-                inline_message_id=inline_message_id,
-                text="Não consegui gerar esse inline agora. Tente novamente em instantes.",
-                reply_markup=None,
-            )
-        except Exception:
-            logger.exception("MUSIC_INLINE_CALLBACK_FAILURE_EDIT_FAILED result_id=%s", result_id)
+    logger.info("MUSIC_INLINE_RENDER_BUTTON_TAPPED_IGNORED result_id=%s", result_id)
 
 
 @router.chosen_inline_result(lambda result: str(result.result_id or "").startswith("mi:"))
