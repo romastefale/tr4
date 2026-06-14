@@ -40,3 +40,23 @@ def test_empty_inline_query_does_not_use_legacy_playing_photo_url():
     assert "if not raw:" in TELEGRAM
     assert "await query.answer([], cache_time=1, is_personal=True)" in TELEGRAM
     assert "query vazia não deve cair no legado /playing" in TELEGRAM
+
+def test_empty_inline_query_shows_clickable_menu():
+    assert "_INLINE_MENU_KINDS" in INLINE
+    assert 'if not kind:' in INLINE
+    assert "await query.answer(results, cache_time=1, is_personal=True)" in INLINE
+    for token in ('"playing"', '"tly"', '"week"', '"month"', '"mosaic"'):
+        assert token in INLINE
+
+
+def test_inline_loading_result_forces_inline_message_id():
+    assert "InlineKeyboardButton" in INLINE
+    assert "InlineKeyboardMarkup" in INLINE
+    assert "reply_markup=_build_loading_markup(result_id)" in INLINE
+    assert "mi:render:" in INLINE
+
+
+def test_inline_final_edit_removes_loading_keyboard():
+    assert "edit_message_reply_markup" in INLINE
+    assert "reply_markup=None" in INLINE
+    assert "_edit_inline_rendered" in INLINE

@@ -24,7 +24,10 @@ from dataclasses import dataclass
 from aiogram import Bot, Router
 from aiogram.types import (
     BufferedInputFile,
+    CallbackQuery,
     ChosenInlineResult,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     InlineQuery,
     InlineQueryResultArticle,
     InputMediaPhoto,
@@ -97,6 +100,8 @@ _KIND_LOADING = {
     "mosaic": "Gerando mosaico musical...",
 }
 
+_INLINE_MENU_KINDS: tuple[str, ...] = ("playing", "tly", "week", "month", "mosaic")
+
 _LINK_TAG_RE = re.compile(r"<a\s+[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
 _HREF_ATTR_RE = re.compile(r"\s+href\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL)
 _URL_RE = re.compile(r"(?i)\b(?:https?://|tg://|t\.me/)\S+")
@@ -143,6 +148,8 @@ def _split_query(raw: str | None) -> tuple[str | None, str | None]:
 
 
 def is_music_inline_query(raw: str | None) -> bool:
+    if not (raw or "").strip():
+        return True
     kind, _arg = _split_query(raw)
     return kind is not None
 
@@ -172,6 +179,48 @@ def _result_description(kind: str, allowed: bool) -> str:
     if kind == "mosaic":
         return "Owner-only, sem detectar o grupo destino."
     return "Resultado final com legenda sem links."
+
+
+def _build_loading_markup(result_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Atualizar",
+                    callback_data=f"mi:render:{result_id}",
+                )
+            ]
+        ]
+    )
+
+
+async def _clear_inline_markup(bot: Bot, inline_message_id: str) -> None:
+    try:
+        await bot.edit_message_reply_markup(inline_message_id=inline_message_id, reply_markup=None)
+    except Exception:
+        logger.debug("MUSIC_INLINE_CLEAR_MARKUP_FAILED inline_message_id=%s", inline_message_id, exc_info=True)
+
+
+async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _InlineRender) -> None:
+    caption = _strip_links(rendered.caption)
+    if rendered.photo:
+        file_id = await _cache_photo_file_id(bot, rendered.photo, filename=rendered.filename)
+        if file_id:
+            await bot.edit_message_media(
+                inline_message_id=inline_message_id,
+                media=InputMediaPhoto(media=file_id, caption=caption[:1024], parse_mode="HTML"),
+                reply_markup=None,
+            )
+            await _clear_inline_markup(bot, inline_message_id)
+            return
+    text = _strip_links(rendered.fallback_text or caption or "Resultado indisponível.")[:3900]
+    await bot.edit_message_text(
+        inline_message_id=inline_message_id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=None,
+    )
+    await _clear_inline_markup(bot, inline_message_id)
 
 
 async def _cache_photo_file_id(bot: Bot, photo: bytes | str | None, *, filename: str) -> str | None:
@@ -327,35 +376,85 @@ async def _render(bot: Bot, item: _PendingInline) -> _InlineRender:
 @router.inline_query(lambda query: is_music_inline_query(query.query))
 async def music_inline_query(query: InlineQuery) -> None:
     kind, arg = _split_query(query.query)
-    if not kind:
-        await query.answer([], cache_time=1, is_personal=True)
-        return
-    allowed = kind != "mosaic" or _is_owner(query.from_user.id)
-    if not allowed:
-        await query.answer([], cache_time=1, is_personal=True)
-        return
+
+    def _make_result(item_kind: str, item_arg: str | None) -> InlineQueryResultArticle | None:
+        allowed = item_kind != "mosaic" or _is_owner(query.from_user.id)
+        if not allowed:
+            return None
+        result_id = f"mi:{item_kind}:{uuid.uuid4().hex[:12]}"
+        _PENDING[result_id] = _PendingInline(
+            kind=item_kind,
+            user_id=int(query.from_user.id),
+            display_name=query.from_user.full_name or "Usuário",
+            username=query.from_user.username,
+            arg=item_arg,
+            created_at=time.monotonic(),
+        )
+        return InlineQueryResultArticle(
+            id=result_id,
+            title=_KIND_TITLE[item_kind],
+            description=_result_description(item_kind, allowed),
+            input_message_content=InputTextMessageContent(
+                message_text=html.escape(_KIND_LOADING[item_kind]),
+                parse_mode="HTML",
+            ),
+            reply_markup=_build_loading_markup(result_id),
+        )
 
     _purge_pending()
-    result_id = f"mi:{kind}:{uuid.uuid4().hex[:12]}"
-    _PENDING[result_id] = _PendingInline(
-        kind=kind,
-        user_id=int(query.from_user.id),
-        display_name=query.from_user.full_name or "Usuário",
-        username=query.from_user.username,
-        arg=arg,
-        created_at=time.monotonic(),
-    )
-    loading = _KIND_LOADING[kind]
-    result = InlineQueryResultArticle(
-        id=result_id,
-        title=_KIND_TITLE[kind],
-        description=_result_description(kind, allowed),
-        input_message_content=InputTextMessageContent(
-            message_text=html.escape(loading),
-            parse_mode="HTML",
-        ),
-    )
+
+    if not kind:
+        results = [
+            result
+            for item_kind in _INLINE_MENU_KINDS
+            for result in [_make_result(item_kind, None)]
+            if result is not None
+        ]
+        await query.answer(results, cache_time=1, is_personal=True)
+        return
+
+    result = _make_result(kind, arg)
+    if result is None:
+        await query.answer([], cache_time=1, is_personal=True)
+        return
     await query.answer([result], cache_time=1, is_personal=True)
+
+
+@router.callback_query(lambda query: str(query.data or "").startswith("mi:render:"))
+async def music_inline_render_callback(query: CallbackQuery, bot: Bot) -> None:
+    inline_message_id = getattr(query, "inline_message_id", None)
+    result_id = str(query.data or "").removeprefix("mi:render:")
+    await query.answer()
+    if not inline_message_id:
+        logger.info("MUSIC_INLINE_CALLBACK_WITHOUT_INLINE_MESSAGE_ID result_id=%s", result_id)
+        return
+
+    item = _PENDING.pop(result_id, None)
+    if item is None:
+        parts = result_id.split(":", 2)
+        kind = parts[1] if len(parts) >= 2 else ""
+        item = _PendingInline(
+            kind=kind,
+            user_id=int(query.from_user.id),
+            display_name=query.from_user.full_name or "Usuário",
+            username=query.from_user.username,
+            arg=None,
+            created_at=time.monotonic(),
+        )
+
+    try:
+        rendered = await _render(bot, item)
+        await _edit_inline_rendered(bot, inline_message_id, rendered)
+    except Exception:
+        logger.exception("MUSIC_INLINE_CALLBACK_RENDER_FAILED result_id=%s kind=%s", result_id, item.kind)
+        try:
+            await bot.edit_message_text(
+                inline_message_id=inline_message_id,
+                text="Não consegui gerar esse inline agora. Tente novamente em instantes.",
+                reply_markup=None,
+            )
+        except Exception:
+            logger.exception("MUSIC_INLINE_CALLBACK_FAILURE_EDIT_FAILED result_id=%s", result_id)
 
 
 @router.chosen_inline_result(lambda result: str(result.result_id or "").startswith("mi:"))
@@ -379,17 +478,7 @@ async def music_inline_chosen(result: ChosenInlineResult, bot: Bot) -> None:
 
     try:
         rendered = await _render(bot, item)
-        caption = _strip_links(rendered.caption)
-        if rendered.photo:
-            file_id = await _cache_photo_file_id(bot, rendered.photo, filename=rendered.filename)
-            if file_id:
-                await bot.edit_message_media(
-                    inline_message_id=inline_message_id,
-                    media=InputMediaPhoto(media=file_id, caption=caption[:1024], parse_mode="HTML"),
-                )
-                return
-        text = _strip_links(rendered.fallback_text or caption or "Resultado indisponível.")[:3900]
-        await bot.edit_message_text(inline_message_id=inline_message_id, text=text, parse_mode="HTML")
+        await _edit_inline_rendered(bot, inline_message_id, rendered)
     except Exception:
         logger.exception("MUSIC_INLINE_RENDER_FAILED result_id=%s kind=%s", result.result_id, item.kind)
         try:
