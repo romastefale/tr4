@@ -94,6 +94,24 @@ async def _answer_with_effect(message: Message, text: str, effect_id: str, **kwa
     return await message.answer(text, **kwargs)
 
 
+_SANS_BOLD_ITALIC_UPPER_OFFSET = 0x1D63C - ord("A")
+_SANS_BOLD_ITALIC_LOWER_OFFSET = 0x1D656 - ord("a")
+
+
+def _inline_public_name_style(value: str | None) -> str:
+    raw = (value or "Usuário").strip() or "Usuário"
+    out: list[str] = []
+    for ch in raw:
+        if "A" <= ch <= "Z":
+            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_UPPER_OFFSET))
+        elif "a" <= ch <= "z":
+            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_LOWER_OFFSET))
+        else:
+            out.append(ch)
+    return html.escape("".join(out))
+
+
+
 def _track_label(track: dict) -> tuple[str, str, str, str | None]:
     track_name = html.escape(str(track.get("track_name") or ""))
     artist = html.escape(str(track.get("artist") or ""))
@@ -763,7 +781,8 @@ def _register_handlers(dp: Dispatcher) -> None:
         for hit in hits:
             if not hit.cover_big:
                 continue
-            caption = f"<b>{html.escape(hit.title)}</b> - <i>{html.escape(hit.artist)}</i>"
+            name_part = _inline_public_name_style(query.from_user.full_name or "Usuário")
+            caption = f"{name_part}\n♫ {html.escape(hit.title)} — {html.escape(hit.artist)}"
             results.append(
                 InlineQueryResultPhoto(
                     id=str(uuid.uuid4()),
