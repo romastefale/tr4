@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 from pathlib import Path
 from typing import Iterable
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 
 # TR3_* names remain supported for deployment compatibility.
 
@@ -28,8 +30,9 @@ def _int_env(name: str, default: int, *, legacy: Iterable[str] = ()) -> int:
         return default
     try:
         return int(raw)
-    except ValueError as exc:
-        raise RuntimeError(f"Invalid integer environment variable {name}={raw!r}") from exc
+    except ValueError:
+        logger.warning("CONFIG_VALUE_IGNORED name=%s expected=int", name)
+        return default
 
 
 def _float_env(name: str, default: float, *, legacy: Iterable[str] = ()) -> float:
@@ -38,8 +41,9 @@ def _float_env(name: str, default: float, *, legacy: Iterable[str] = ()) -> floa
         return default
     try:
         return float(raw)
-    except ValueError as exc:
-        raise RuntimeError(f"Invalid float environment variable {name}={raw!r}") from exc
+    except ValueError:
+        logger.warning("CONFIG_VALUE_IGNORED name=%s expected=float", name)
+        return default
 
 
 def _bool_env(name: str, default: bool, *, legacy: Iterable[str] = ()) -> bool:
@@ -50,7 +54,8 @@ def _bool_env(name: str, default: bool, *, legacy: Iterable[str] = ()) -> bool:
         return True
     if value in {"0", "false", "no", "off"}:
         return False
-    raise RuntimeError(f"Invalid boolean environment variable {name}={value!r}")
+    logger.warning("CONFIG_VALUE_IGNORED name=%s expected=bool", name)
+    return default
 
 
 def _is_sqlite_url(value: str) -> bool:
@@ -58,13 +63,11 @@ def _is_sqlite_url(value: str) -> bool:
     return lowered.startswith("sqlite:")
 
 
-def _require_sqlite_url(value: str) -> str:
-    if not _is_sqlite_url(value):
-        raise RuntimeError(
-            "TR3 is configured as SQLite-only. Set TR3_DATABASE_URL/DATABASE_URL "
-            "to a sqlite URL such as sqlite:////data/app.db."
-        )
-    return value
+def _sqlite_or_empty(value: str, *, source: str) -> str:
+    if _is_sqlite_url(value):
+        return value
+    logger.warning("DATABASE_URL_IGNORED source=%s reason=not_sqlite", source)
+    return ""
 
 
 TELEGRAM_BOT_TOKEN = _env(
@@ -171,26 +174,38 @@ HTTP_TIMEOUT_SECONDS = _float_env(
     legacy=("HTTP_TIMEOUT_SECONDS",),
 )
 
-DATA_DIR = Path(_env("TR3_DATA_DIR", "/app/data", legacy=("DATA_DIR",)))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+def _resolve_data_dir() -> Path:
+    raw = _env("TR3_DATA_DIR", "/data", legacy=("DATA_DIR",)).strip() or "/data"
+    candidates = [Path(raw), Path("/app/data"), Path("/tmp/tr4-data")]
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / ".write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return candidate
+        except OSError:
+            logger.warning("DATA_DIR_UNAVAILABLE path=%s", candidate)
+    fallback = Path("/tmp/tr4-data")
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+DATA_DIR = _resolve_data_dir()
 
 
 def _database_url() -> str:
-    """Return a SQLite URL without crashing on Railway's legacy DATABASE_URL.
-
-    Music-only TR4 is SQLite-only. Railway projects migrated from older TR3
-    deployments may still have a Postgres DATABASE_URL injected by a previous
-    database plugin. Treat TR3_DATABASE_URL as explicit and strict, but ignore a
-    non-SQLite legacy DATABASE_URL so the app can boot with the local/volume
-    SQLite path.
-    """
     explicit = os.getenv("TR3_DATABASE_URL")
     if explicit is not None and explicit.strip():
-        return _require_sqlite_url(explicit.strip())
+        sqlite_url = _sqlite_or_empty(explicit.strip(), source="TR3_DATABASE_URL")
+        if sqlite_url:
+            return sqlite_url
 
     legacy = os.getenv("DATABASE_URL")
-    if legacy is not None and legacy.strip() and _is_sqlite_url(legacy):
-        return legacy.strip()
+    if legacy is not None and legacy.strip():
+        sqlite_url = _sqlite_or_empty(legacy.strip(), source="DATABASE_URL")
+        if sqlite_url:
+            return sqlite_url
 
     return f"sqlite:///{DATA_DIR / 'app.db'}"
 

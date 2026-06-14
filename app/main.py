@@ -43,6 +43,8 @@ _telegram_dispatcher_configured = False
 _telegram_startup_task: asyncio.Task | None = None
 _telegram_startup_status = "pending"
 _telegram_startup_error: str | None = None
+_db_startup_status = "pending"
+_db_startup_error: str | None = None
 
 
 def _message_from_update(update: Update):
@@ -111,15 +113,29 @@ async def _configure_telegram_bot_background() -> None:
         bot = None
 
 
+def _initialize_database_safely() -> None:
+    global _db_startup_status, _db_startup_error
+    _db_startup_status = "starting"
+    _db_startup_error = None
+    try:
+        init_db()
+        run_migrations(engine)
+        ensure_music_group_tables()
+        _db_startup_status = "ready"
+        logger.info("DATABASE_STARTUP_READY")
+    except Exception as exc:
+        _db_startup_status = "failed"
+        _db_startup_error = f"{type(exc).__name__}: {exc}"
+        logger.exception("DATABASE_STARTUP_FAILED")
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     global _telegram_startup_task, _telegram_startup_status, _telegram_startup_error
     missing_env = validate_required_env()
     if missing_env:
         logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
-    init_db()
-    run_migrations(engine)
-    ensure_music_group_tables()
+    _initialize_database_safely()
     if not TELEGRAM_BOT_TOKEN:
         _telegram_startup_status = "skipped_missing_token"
         logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
@@ -160,6 +176,7 @@ def healthz() -> dict[str, object]:
         "mode": "music_only",
         "rate_limit": rate_limit_status(),
         "telegram_startup": _telegram_startup_status,
+        "database_startup": _db_startup_status,
     }
 
 
@@ -172,7 +189,7 @@ def readyz() -> JSONResponse:
             "status": "ready" if ok else "not_ready",
             "mode": "music_only",
             "checks": {
-                "database": {"ok": db_ok, "error": db_error},
+                "database": {"ok": db_ok, "error": db_error, "startup_status": _db_startup_status, "startup_error": _db_startup_error},
                 "bot_token_configured": bool(TELEGRAM_BOT_TOKEN),
                 "dispatcher_configured": _telegram_dispatcher_configured,
                 "telegram_startup": {
