@@ -86,11 +86,11 @@ _ALIAS_TO_KIND: dict[str, str] = {
 }
 
 _KIND_TITLE = {
-    "playing": "Música atual",
-    "tly": "Trecho da letra",
-    "week": "Extrato semanal",
-    "month": "Extrato mensal",
-    "mosaic": "Mosaico musical",
+    "playing": "♫ Música atual",
+    "tly": "✎ Trecho da letra",
+    "week": "▦ Extrato semanal",
+    "month": "◫ Extrato mensal",
+    "mosaic": "✦ Mosaico musical",
 }
 
 _KIND_LOADING = {
