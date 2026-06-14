@@ -330,6 +330,23 @@ async def _render_playing(item: _PendingInline) -> _InlineRender:
     return _InlineRender(caption=safe_caption, photo=cover, filename="playing-inline.jpg", fallback_text=safe_caption)
 
 
+_SANS_BOLD_ITALIC_UPPER_OFFSET = 0x1D63C - ord("A")
+_SANS_BOLD_ITALIC_LOWER_OFFSET = 0x1D656 - ord("a")
+
+
+def _inline_name_style(value: str | None) -> str:
+    raw = (value or "Usuário").strip() or "Usuário"
+    out: list[str] = []
+    for ch in raw:
+        if "A" <= ch <= "Z":
+            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_UPPER_OFFSET))
+        elif "a" <= ch <= "z":
+            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_LOWER_OFFSET))
+        else:
+            out.append(ch)
+    return html.escape("".join(out))
+
+
 async def _render_tly(item: _PendingInline) -> _InlineRender:
     if not is_user_connected(item.user_id):
         text = _strip_links(connect_hint_for("private"))
@@ -365,8 +382,8 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     total_plays, plays_source = await _resolve_play_button_count(item.user_id, track_id, artist_raw, track_name_raw)
     _ = _pick_card_emoji(total_plays, plays_source)
     track_name, artist, _track_url, cover = _track_label(track)
-    name_part = html.escape(_bold_unicode(item.display_name or "Usuário"))
-    header = f"{name_part} · ♫ {total_plays} · {track_name} — <i>{artist}</i>"
+    name_part = _inline_name_style(item.display_name or "Usuário")
+    header = f"{name_part} · ♫ {track_name} — {artist}"
     if lyric_snippet:
         caption = f"{header}\n<blockquote expandable>{html.escape(lyric_snippet)}</blockquote>"
     else:
