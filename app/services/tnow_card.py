@@ -5,7 +5,7 @@ import html
 import io
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PIL import Image
@@ -106,7 +106,6 @@ def build_tnow_card_html(entries: list[TnowEntry], *, now: datetime | None = Non
     # Stamp visual: "23/05 • 18:42 BRT" usando hora local Brasília (UTC-3).
     local = now
     try:
-        from datetime import timezone, timedelta
         local = now.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=-3)))
     except Exception:
         # Sprint 4 (S4.2): fallback usa `now` cru (UTC) — só perde o ajuste
