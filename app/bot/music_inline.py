@@ -54,6 +54,7 @@ from app.services.likes import likes_service
 from app.services.lyrics import lyrics_service
 from app.services.monthfm_card import render_monthfm_card
 from app.services.music import music_service
+from app.services.spotify import spotify_service
 from app.services.tnow_card import render_tnow_card
 
 logger = logging.getLogger(__name__)
@@ -191,6 +192,7 @@ async def _edit_inline_caption_when_lyrics_ready(
     base_caption: str,
     artist: str,
     title: str,
+    as_media: bool = True,
 ) -> None:
     if not artist or not title:
         return
@@ -203,12 +205,20 @@ async def _edit_inline_caption_when_lyrics_ready(
     if not new_caption:
         return
     try:
-        await bot.edit_message_caption(
-            inline_message_id=inline_message_id,
-            caption=new_caption,
-            parse_mode="HTML",
-            reply_markup=None,
-        )
+        if as_media:
+            await bot.edit_message_caption(
+                inline_message_id=inline_message_id,
+                caption=new_caption,
+                parse_mode="HTML",
+                reply_markup=None,
+            )
+        else:
+            await bot.edit_message_text(
+                inline_message_id=inline_message_id,
+                text=new_caption,
+                parse_mode="HTML",
+                reply_markup=None,
+            )
     except Exception as exc:
         if "message is not modified" in str(exc).lower():
             return
@@ -261,6 +271,17 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                     reply_markup=None,
                 )
                 await _clear_inline_markup(bot, inline_message_id)
+                if rendered.deferred_artist and rendered.deferred_title:
+                    asyncio.create_task(
+                        _edit_inline_caption_when_lyrics_ready(
+                            bot,
+                            inline_message_id,
+                            base_caption=caption,
+                            artist=rendered.deferred_artist,
+                            title=rendered.deferred_title,
+                            as_media=True,
+                        )
+                    )
                 return
             except Exception as exc:
                 if "message is not modified" in str(exc).casefold():
@@ -277,6 +298,17 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
             reply_markup=None,
         )
         await _clear_inline_markup(bot, inline_message_id)
+        if rendered.deferred_artist and rendered.deferred_title:
+            asyncio.create_task(
+                _edit_inline_caption_when_lyrics_ready(
+                    bot,
+                    inline_message_id,
+                    base_caption=caption,
+                    artist=rendered.deferred_artist,
+                    title=rendered.deferred_title,
+                    as_media=False,
+                )
+            )
     except Exception as exc:
         if "message is not modified" in str(exc).casefold():
             logger.info("MUSIC_INLINE_EDIT_TEXT_NOT_MODIFIED inline_message_id=%s", inline_message_id)
@@ -289,6 +321,7 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                         base_caption=caption,
                         artist=rendered.deferred_artist,
                         title=rendered.deferred_title,
+                        as_media=False,
                     )
                 )
             return
@@ -325,11 +358,7 @@ async def _render_playing(item: _PendingInline) -> _InlineRender:
     payload = await build_playing_payload_for_user(item.user_id, item.display_name, track)
     if not payload:
         return _InlineRender(caption="Erro ao identificar a música.", fallback_text="Erro ao identificar a música.")
-    _track_id, _caption, cover, _keyboard, _card_emoji = payload
-    artist = html.escape(str(track.get("artist") or "").strip() or "Artista")
-    track_name = html.escape(str(track.get("track_name") or "").strip() or "Música")
-    name_part = _inline_name_style(item.display_name or "Usuário")
-    caption = f"{name_part} · ♫ {track_name} — {artist}"
+    _track_id, caption, cover, _keyboard, _card_emoji = payload
     safe_caption = _strip_links(caption)
     return _InlineRender(caption=safe_caption, photo=cover, filename="playing-inline.jpg", fallback_text=safe_caption)
 
@@ -351,29 +380,65 @@ def _inline_name_style(value: str | None) -> str:
     return html.escape("".join(out))
 
 
+def _inline_tly_search_query(raw: str | None) -> str | None:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    for sep in (" — ", " – ", " - "):
+        if sep in value:
+            title, artist = value.split(sep, 1)
+            title = title.strip()
+            artist = artist.strip()
+            if title and artist:
+                return f'track:"{title}" artist:"{artist}"'
+    return value
+
+
+async def _search_spotify_inline_track(raw_query: str | None) -> dict | None:
+    query = _inline_tly_search_query(raw_query)
+    if not query:
+        return None
+    try:
+        token = await spotify_service._get_client_credentials_token()
+        if not token:
+            return None
+        client = spotify_service._client()
+        response = await client.get(
+            "https://api.spotify.com/v1/search",
+            params={"q": query, "type": "track", "limit": 1, "market": "BR"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if response.status_code != 200:
+            logger.warning("MUSIC_INLINE_TLY_SEARCH_NON_200 status=%s query=%s", response.status_code, query)
+            return None
+        items = ((response.json().get("tracks") or {}).get("items") or [])
+        if not items:
+            return None
+        return spotify_service._map_track(items[0], source="spotify_inline_search", played_at=None)
+    except Exception:
+        logger.warning("MUSIC_INLINE_TLY_SEARCH_FAILED query=%s", query, exc_info=True)
+        return None
+
+
+async def _resolve_inline_tly_track(item: _PendingInline) -> dict | None:
+    if item.arg:
+        return await _search_spotify_inline_track(item.arg)
+    return await music_service.get_current_or_last_played(item.user_id)
+
+
+
 async def _render_tly(item: _PendingInline) -> _InlineRender:
-    if not is_user_connected(item.user_id):
+    if not item.arg and not is_user_connected(item.user_id):
         text = _strip_links(connect_hint_for("private"))
         return _InlineRender(caption=text, fallback_text=text)
-    track = await music_service.get_current_or_last_played(item.user_id)
+    track = await _resolve_inline_tly_track(item)
     if not track:
-        text = "Nada está tocando agora. Bota algo pra rolar no Spotify ou Last.fm e tenta de novo."
+        text = "Não encontrei essa música." if item.arg else "Nada está tocando agora. Bota algo pra rolar no Spotify ou Last.fm e tenta de novo."
         return _InlineRender(caption=text, fallback_text=text)
 
     artist_raw = str(track.get("artist") or "").strip()
     track_name_raw = str(track.get("track_name") or "").strip()
     lyric_snippet: str | None = None
-    if artist_raw and track_name_raw:
-        try:
-            lyric_snippet = await lyrics_service.get_snippet(artist_raw, track_name_raw)
-        except Exception as exc:
-            logger.warning(
-                "MUSIC_INLINE_TLY_LYRICS_SKIPPED artist=%s track=%s error=%s",
-                artist_raw,
-                track_name_raw,
-                type(exc).__name__,
-            )
-            lyric_snippet = None
 
     track_id = str(track.get("track_id") or "").strip()
     if not track_id:
@@ -388,10 +453,7 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     track_name, artist, _track_url, cover = _track_label(track)
     name_part = _inline_name_style(item.display_name or "Usuário")
     header = f"{name_part} · ♫ {track_name} — {artist}"
-    if lyric_snippet:
-        caption = f"{header}\n<blockquote expandable>{html.escape(lyric_snippet)}</blockquote>"
-    else:
-        caption = header
+    caption = header
     safe_caption = _strip_links(caption)
     return _InlineRender(
         caption=safe_caption,
