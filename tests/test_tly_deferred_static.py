@@ -19,7 +19,7 @@ def test_tly_sends_cover_before_lyrics_and_never_uses_canvas():
 
 
 def test_lyrics_timeout_and_exc_binding_are_safe():
-    assert "LYRICS_TIMEOUT_SECONDS = 2.5" in LYRICS
+    assert "LYRICS_TIMEOUT_SECONDS = 5.0" in LYRICS
     if "type(exc).__name__" in LYRICS:
         assert "except Exception as exc" in LYRICS
     assert not re.search(r"except Exception:\n\s+logger\.warning\([^\n]*type\(exc\)", LYRICS)
@@ -39,3 +39,7 @@ def test_inline_tly_is_cover_first_when_inline_file_exists():
     assert "deferred_artist" in INLINE
     assert "_edit_inline_caption_when_lyrics_ready" in INLINE
     assert "<blockquote>" in INLINE
+
+def test_lyrics_background_has_more_patience_without_long_negative_cache():
+    assert "LYRICS_TIMEOUT_SECONDS = 5.0" in LYRICS
+    assert "LYRICS_NEGATIVE_TTL_SECONDS = 60" in LYRICS

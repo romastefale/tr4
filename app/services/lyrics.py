@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 LYRICS_API_URL = "https://api.lyrics.ovh/v1"
 LRCLIB_API_URL = "https://lrclib.net/api"
 LRCLIB_USER_AGENT = "tr4-music-bot/1.0 (+https://github.com/romastefale/tr4)"
-LYRICS_TIMEOUT_SECONDS = 2.5
+LYRICS_TIMEOUT_SECONDS = 5.0
 LYRICS_CACHE_TTL_SECONDS = 24 * 3600
-LYRICS_NEGATIVE_TTL_SECONDS = 6 * 3600
+LYRICS_NEGATIVE_TTL_SECONDS = 60
 LYRICS_CACHE_BOUND = 2000
 # Guard contra resposta absurdamente grande (letra normal < ~6k chars).
 LYRICS_MAX_CHARS = 8000
