@@ -203,7 +203,7 @@ def readyz() -> JSONResponse:
 
 
 @app.post("/webhook")
-async def telegram_webhook(request: Request) -> dict[str, bool] | Response:
+async def telegram_webhook(request: Request) -> object:
     if bot is None:
         return {"ok": True}
     expected_secret = telegram_webhook_secret()

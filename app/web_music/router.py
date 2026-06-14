@@ -108,7 +108,7 @@ async def playing_preview(request: Request) -> dict[str, Any]:
 
 
 @router.post("/api/public/nowp")
-async def public_nowp(request: Request, payload: GroupCommandPayload) -> JSONResponse | dict[str, Any]:
+async def public_nowp(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
     bot = _bot_or_503()
     try:
@@ -124,7 +124,7 @@ async def public_nowp(request: Request, payload: GroupCommandPayload) -> JSONRes
 
 
 @router.post("/api/public/group-command")
-async def group_command(request: Request, payload: GroupCommandPayload) -> JSONResponse | dict[str, Any]:
+async def group_command(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
     bot = _bot_or_503()
     command = (payload.command or "").strip().lower().lstrip("/")
@@ -152,7 +152,7 @@ async def group_command(request: Request, payload: GroupCommandPayload) -> JSONR
 
 
 @router.get("/api/public/command/{command_name}")
-async def command_preview(request: Request, command_name: str, group_ref: str | None = None) -> JSONResponse | dict[str, Any]:
+async def command_preview(request: Request, command_name: str, group_ref: str | None = None) -> Any:
     authenticate_web_music_request(request)
     command = command_name.strip().lower().lstrip("/")
     if command == "playing":
@@ -169,7 +169,7 @@ async def command_preview(request: Request, command_name: str, group_ref: str | 
 
 
 @router.post("/api/public/story-command")
-async def story_command(request: Request, payload: GroupCommandPayload) -> JSONResponse | dict[str, Any]:
+async def story_command(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
     bot = _bot_or_503()
     target = getattr(payload, "target", None) or None
@@ -187,7 +187,7 @@ async def story_command(request: Request, payload: GroupCommandPayload) -> JSONR
 
 
 @router.post("/api/public/dm-command")
-async def dm_command(request: Request, payload: GroupCommandPayload) -> JSONResponse | dict[str, Any]:
+async def dm_command(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
     bot = _bot_or_503()
     command = (payload.command or "").strip().lower().lstrip("/")
@@ -205,7 +205,7 @@ async def dm_command(request: Request, payload: GroupCommandPayload) -> JSONResp
 
 @router.post("/api/public/execute-command")
 @router.post("/api/public/send-command-copy")
-async def execute_command_copy(request: Request, payload: GroupCommandPayload) -> JSONResponse | dict[str, Any]:
+async def execute_command_copy(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
     bot = _bot_or_503()
     command = (payload.command or "").strip().lower().lstrip("/")
