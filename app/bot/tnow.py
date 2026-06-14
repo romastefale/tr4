@@ -100,6 +100,25 @@ async def _resolve_now_playing(user_id: int) -> dict[str, Any] | None:
     return None
 
 
+def _lastfm_display_name(user_id: int) -> str | None:
+    """Fallback visual for imported users whose Telegram profile is not reachable.
+
+    Imported music users may exist only in lastfm_profiles/spotify_tokens. When
+    Telegram get_chat fails, never expose the numeric Telegram ID in the mosaic;
+    prefer the Last.fm username already stored by the user, then a neutral label.
+    """
+    try:
+        with SessionLocal() as db:
+            username = db.execute(
+                select(LastfmProfile.username).where(LastfmProfile.user_id == user_id)
+            ).scalar_one_or_none()
+    except Exception:
+        logger.debug("TNOW_LASTFM_NAME_LOOKUP_FAILED | user_id=%s", user_id, exc_info=True)
+        return None
+    username = str(username or "").strip()
+    return username or None
+
+
 async def _display_name(bot: Any, user_id: int) -> str:
     try:
         chat = await bot.get_chat(user_id)
@@ -111,7 +130,11 @@ async def _display_name(bot: Any, user_id: int) -> str:
             return f"@{username}"
     except Exception:
         logger.debug("TNOW_GET_CHAT_FAILED | user_id=%s", user_id, exc_info=True)
-    return f"user {user_id}"
+
+    lastfm_username = _lastfm_display_name(user_id)
+    if lastfm_username:
+        return lastfm_username
+    return "Usuário cadastrado"
 
 
 async def _build_entry(bot: Any, user_id: int) -> TnowEntry | None:
