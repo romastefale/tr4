@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 LYRICS_API_URL = "https://api.lyrics.ovh/v1"
 LRCLIB_API_URL = "https://lrclib.net/api"
 LRCLIB_USER_AGENT = "tr4-music-bot/1.0 (+https://github.com/romastefale/tr4)"
-LYRICS_TIMEOUT_SECONDS = 8.0
+LYRICS_TIMEOUT_SECONDS = 2.5
 LYRICS_CACHE_TTL_SECONDS = 24 * 3600
 LYRICS_NEGATIVE_TTL_SECONDS = 6 * 3600
 LYRICS_CACHE_BOUND = 2000
@@ -238,13 +238,13 @@ class LyricsService:
             result: str | None = None
             source = ""
             for a, t in candidates:
-                result = await self._fetch(a, t)
-                if result:
-                    source = "lyrics_ovh"
-                    break
                 result = await self._fetch_lrclib(a, t)
                 if result:
                     source = "lrclib"
+                    break
+                result = await self._fetch(a, t)
+                if result:
+                    source = "lyrics_ovh"
                     break
 
             if result:
@@ -262,7 +262,7 @@ class LyricsService:
         url = f"{LYRICS_API_URL}/{quote(artist, safe='')}/{quote(title, safe='')}"
         try:
             resp = await self._client().get(url)
-        except Exception:
+        except Exception as exc:
             logger.warning(
                 "LYRICS_FETCH_ERROR artist=%s title=%s error=%s",
                 artist,
@@ -305,7 +305,7 @@ class LyricsService:
                 logger.info(
                     "LRCLIB_GET_MISS artist=%s title=%s status=%s", artist, title, resp.status_code
                 )
-        except Exception:
+        except Exception as exc:
             logger.warning("LRCLIB_GET_ERROR artist=%s title=%s error=%s", artist, title, type(exc).__name__)
 
         try:
@@ -314,7 +314,7 @@ class LyricsService:
                 params={"artist_name": artist, "track_name": title},
                 headers=headers,
             )
-        except Exception:
+        except Exception as exc:
             logger.warning("LRCLIB_SEARCH_ERROR artist=%s title=%s error=%s", artist, title, type(exc).__name__)
             return None
         if resp.status_code != 200:

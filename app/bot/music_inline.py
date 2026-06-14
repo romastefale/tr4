@@ -14,6 +14,7 @@ Regras desta fase:
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
@@ -123,6 +124,8 @@ class _InlineRender:
     photo: bytes | str | None = None
     filename: str = "inline.jpg"
     fallback_text: str | None = None
+    deferred_artist: str | None = None
+    deferred_title: str | None = None
 
 
 _PENDING: dict[str, _PendingInline] = {}
@@ -165,6 +168,51 @@ def _strip_links(value: str | None) -> str:
     text = _HREF_ATTR_RE.sub("", text)
     text = _URL_RE.sub("", text)
     return text.strip()
+
+
+def _caption_with_open_quote(base_caption: str, lyric_snippet: str | None, *, limit: int = 1024) -> str | None:
+    raw = (lyric_snippet or "").strip()
+    if not raw:
+        return None
+    candidate_raw = raw
+    while candidate_raw:
+        display = candidate_raw if candidate_raw == raw else candidate_raw.rstrip("…").rstrip() + "…"
+        candidate = f"{base_caption}\n<blockquote>{html.escape(display)}</blockquote>"
+        if len(candidate) <= limit:
+            return candidate
+        candidate_raw = candidate_raw[:-120].rstrip()
+    return None
+
+
+async def _edit_inline_caption_when_lyrics_ready(
+    bot: Bot,
+    inline_message_id: str,
+    *,
+    base_caption: str,
+    artist: str,
+    title: str,
+) -> None:
+    if not artist or not title:
+        return
+    try:
+        lyric_snippet = await lyrics_service.get_snippet(artist, title)
+    except Exception as exc:
+        logger.warning("MUSIC_INLINE_TLY_LYRICS_SKIPPED artist=%s track=%s error=%s", artist, title, type(exc).__name__)
+        return
+    new_caption = _caption_with_open_quote(base_caption, lyric_snippet)
+    if not new_caption:
+        return
+    try:
+        await bot.edit_message_caption(
+            inline_message_id=inline_message_id,
+            caption=new_caption,
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+    except Exception as exc:
+        if "message is not modified" in str(exc).lower():
+            return
+        logger.warning("MUSIC_INLINE_TLY_EDIT_CAPTION_FAILED artist=%s track=%s error=%s", artist, title, exc)
 
 
 def _is_owner(user_id: int) -> bool:
@@ -233,6 +281,16 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
         if "message is not modified" in str(exc).casefold():
             logger.info("MUSIC_INLINE_EDIT_TEXT_NOT_MODIFIED inline_message_id=%s", inline_message_id)
             await _clear_inline_markup(bot, inline_message_id)
+            if rendered.deferred_artist and rendered.deferred_title:
+                asyncio.create_task(
+                    _edit_inline_caption_when_lyrics_ready(
+                        bot,
+                        inline_message_id,
+                        base_caption=caption,
+                        artist=rendered.deferred_artist,
+                        title=rendered.deferred_title,
+                    )
+                )
             return
         raise
 
@@ -314,7 +372,14 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     else:
         caption = header
     safe_caption = _strip_links(caption)
-    return _InlineRender(caption=safe_caption, photo=cover, filename="tly-inline.jpg", fallback_text=safe_caption)
+    return _InlineRender(
+        caption=safe_caption,
+        photo=cover,
+        filename="tly-inline.jpg",
+        fallback_text=safe_caption,
+        deferred_artist=artist_raw,
+        deferred_title=track_name_raw,
+    )
 
 
 async def _render_week(item: _PendingInline) -> _InlineRender:
