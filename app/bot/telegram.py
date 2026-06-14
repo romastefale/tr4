@@ -64,7 +64,7 @@ def _pick_card_emoji(total_plays: int, plays_source: str) -> str:
 
 async def _react_to_own_card(bot, chat_id: int, message_id: int, emoji: str) -> None:
     """Sprint 10: bot reage no card que ele mesmo enviou. Silencioso em falha
-    (bot pode não ter permissão de reagir, ou emoji rejeitado pela região)."""
+    (a plataforma pode rejeitar o emoji em alguns casos)."""
     try:
         await bot.set_message_reaction(
             chat_id=chat_id,

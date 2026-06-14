@@ -654,8 +654,8 @@ async def execute_universal_tnow(
 ) -> MusicCommandResult:
     """Accept a code-owner-only global mosaic request.
 
-    Authorization is enforced at the entrypoints. This function only schedules
-    the DM-only musical delivery.
+    Code-owner authorization is enforced at the entrypoints. This function only
+    schedules the DM-only musical delivery.
     """
     _spawn_web_task(_run_universal_tnow_task(bot, requester_id=requester_id))
     return MusicCommandResult(

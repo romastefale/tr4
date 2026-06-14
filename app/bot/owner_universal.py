@@ -27,7 +27,15 @@ async def _deny_if_needed(message: Message) -> bool:
             await message.answer("Função musical exclusiva do dono do código.")
         return True
     if message.chat.type != "private":
-        await message.answer("Use este comando na DM do bot. O resultado universal não é postado em grupo.")
+        # Não responde no grupo. A função universal é DM-only.
+        try:
+            if message.bot:
+                await message.bot.send_message(
+                    message.from_user.id,
+                    "Use este comando na DM do bot. O resultado universal será enviado somente aqui.",
+                )
+        except Exception:
+            pass
         return True
     if not message.bot:
         return True

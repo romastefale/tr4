@@ -136,7 +136,7 @@ _MEMBER_OUT_STATUSES = {"left", "ki" + "cked"}
 
 async def _is_chat_member(bot: Any, chat_id: int, user_id: int) -> bool:
     """True se o usuário é membro ativo do chat. Erros (ex.: bot sem
-    permissão de consultar membro) caem em False — preferimos esconder
+    a plataforma não devolver dados suficientes) caem em False — preferimos esconder
     do que vazar alguém que talvez não esteja mais no grupo."""
     try:
         member = await bot.get_chat_member(chat_id, user_id)

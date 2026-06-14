@@ -30,3 +30,12 @@ def test_player_has_owner_only_universal_buttons():
     assert "/api/public/tnow-universal" in html
     assert "songchartsAllWeekBtn" in html
     assert "songchartsAllMonthBtn" in html
+
+
+def test_owner_universal_does_not_answer_in_group():
+    source = Path("app/bot/owner_universal.py").read_text(encoding="utf-8")
+    assert 'message.chat.type != "private"' in source
+    group_block = source.split('message.chat.type != "private"', 1)[1].split('return True', 1)[0]
+    assert "message.answer" not in group_block
+    assert "send_message" in group_block
+

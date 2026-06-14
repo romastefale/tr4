@@ -119,7 +119,7 @@ async def myself_callback(query: CallbackQuery) -> None:
         await query.message.edit_text(f"Gerando extrato do {label} no Last.fm...")
         status = query.message
     except Exception:
-        # Mensagem não pôde ser editada (idade, permissões) — manda nova.
+        # Mensagem não pôde ser editada; manda nova.
         logger.warning("MYSELF_EDIT_FAILED", exc_info=True)
         status = await query.message.answer(f"Gerando extrato do {label} no Last.fm...")
 

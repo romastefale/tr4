@@ -161,4 +161,4 @@ async def radiofm_pick(query: CallbackQuery) -> None:
             chat_id, caption, parse_mode="HTML", disable_web_page_preview=True
         )
 
-    # Music-only clean: não apaga comando/lista no grupo; evita exigir permissão de apagar mensagens.
+    # Music-only clean: não apaga comando/lista no grupo.

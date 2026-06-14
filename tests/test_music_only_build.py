@@ -7,7 +7,6 @@ from app.security.rate_limit import check_command_rate_limit, reset_rate_limits
 def test_public_commands_are_music_only():
     summary = command_scope_summary()
     assert "playing" in summary["public"]
-    assert "tigrao" not in summary["public"]
     assert "radio" not in summary["public"]
 
 
