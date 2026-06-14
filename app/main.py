@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 
@@ -39,6 +40,9 @@ logger = logging.getLogger(__name__)
 bot: Bot | None = None
 dispatcher: Dispatcher = bot_dispatcher
 _telegram_dispatcher_configured = False
+_telegram_startup_task: asyncio.Task | None = None
+_telegram_startup_status = "pending"
+_telegram_startup_error: str | None = None
 
 
 def _message_from_update(update: Update):
@@ -59,22 +63,20 @@ def _remember_music_group_from_update(update: Update) -> None:
         logger.debug("MUSIC_GROUP_REMEMBER_FAILED", exc_info=True)
 
 
-@app.on_event("startup")
-async def on_startup() -> None:
-    global bot, _telegram_dispatcher_configured
-    missing_env = validate_required_env()
-    if missing_env:
-        logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
-    init_db()
-    run_migrations(engine)
-    ensure_music_group_tables()
-    if not TELEGRAM_BOT_TOKEN:
-        logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
-        return
+async def _configure_telegram_bot_background() -> None:
+    """Configure Telegram without blocking Railway /healthz startup.
 
+    Railway health checks only need the HTTP server to answer /healthz.
+    Network calls to Telegram (set_webhook/setup commands) can take longer than
+    the first health-check attempt, so this task finishes Telegram setup after
+    FastAPI has already started serving HTTP.
+    """
+    global bot, _telegram_dispatcher_configured, _telegram_startup_status, _telegram_startup_error
+    _telegram_startup_status = "starting"
+    _telegram_startup_error = None
+    local_bot: Bot | None = None
     try:
-        bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        set_web_music_bot(bot)
+        local_bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         if not _telegram_dispatcher_configured:
             dispatcher.include_router(monthfm_router)
             dispatcher.include_router(weekfm_router)
@@ -89,23 +91,52 @@ async def on_startup() -> None:
             _register_handlers(dispatcher)
             _telegram_dispatcher_configured = True
         webhook_secret = telegram_webhook_secret()
-        await bot.set_webhook(
+        await local_bot.set_webhook(
             f"{BASE_URL}/webhook",
             allowed_updates=dispatcher.resolve_used_update_types(),
             secret_token=webhook_secret,
         )
-        await setup_bot_commands(bot)
-    except Exception:
+        await setup_bot_commands(local_bot)
+        bot = local_bot
+        set_web_music_bot(local_bot)
+        _telegram_startup_status = "ready"
+        logger.info("TELEGRAM_STARTUP_READY")
+    except Exception as exc:
+        _telegram_startup_status = "failed"
+        _telegram_startup_error = f"{type(exc).__name__}: {exc}"
         logger.exception("TELEGRAM_STARTUP_FAILED")
-        if bot:
-            await bot.session.close()
+        if local_bot:
+            await local_bot.session.close()
         set_web_music_bot(None)
         bot = None
 
 
+@app.on_event("startup")
+async def on_startup() -> None:
+    global _telegram_startup_task, _telegram_startup_status, _telegram_startup_error
+    missing_env = validate_required_env()
+    if missing_env:
+        logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
+    init_db()
+    run_migrations(engine)
+    ensure_music_group_tables()
+    if not TELEGRAM_BOT_TOKEN:
+        _telegram_startup_status = "skipped_missing_token"
+        logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
+        return
+
+    _telegram_startup_task = asyncio.create_task(_configure_telegram_bot_background())
+
+
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    global bot
+    global bot, _telegram_startup_task
+    if _telegram_startup_task and not _telegram_startup_task.done():
+        _telegram_startup_task.cancel()
+        try:
+            await _telegram_startup_task
+        except asyncio.CancelledError:
+            pass
     await shutdown_telegram_bot()
     if bot:
         await bot.session.close()
@@ -124,7 +155,12 @@ def _db_ready_check() -> tuple[bool, str | None]:
 
 @app.get("/healthz", status_code=200)
 def healthz() -> dict[str, object]:
-    return {"status": "ok", "mode": "music_only", "rate_limit": rate_limit_status()}
+    return {
+        "status": "ok",
+        "mode": "music_only",
+        "rate_limit": rate_limit_status(),
+        "telegram_startup": _telegram_startup_status,
+    }
 
 
 @app.get("/readyz")
@@ -139,6 +175,10 @@ def readyz() -> JSONResponse:
                 "database": {"ok": db_ok, "error": db_error},
                 "bot_token_configured": bool(TELEGRAM_BOT_TOKEN),
                 "dispatcher_configured": _telegram_dispatcher_configured,
+                "telegram_startup": {
+                    "status": _telegram_startup_status,
+                    "error": _telegram_startup_error,
+                },
             },
         },
         status_code=200 if ok else 503,
