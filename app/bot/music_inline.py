@@ -32,6 +32,7 @@ from aiogram.types import (
     InlineQuery,
     InlineQueryResultArticle,
     InputMediaPhoto,
+    InputMediaVideo,
     InputTextMessageContent,
 )
 
@@ -48,6 +49,9 @@ from app.bot.weekfm import _caption as _weekfm_caption
 from app.config import settings
 from app.config.settings import BASE_URL, CANVAS_CACHE_CHANNEL_ID
 from app.services.connection_check import connect_hint_for, is_user_connected
+from app.services.canvas_audio import get_canvas_with_preview_asset
+from app.services.canvas_asset import get_canvas_bytes_cached
+from app.services.canvas_cache import canvas_cache_service
 from app.services.lastfm_capsule import lastfm_capsule_service
 from app.services.lastfm_weekly import lastfm_weekly_service
 from app.services.likes import likes_service
@@ -69,6 +73,8 @@ _ALIAS_TO_KIND: dict[str, str] = {
     "play": "playing",
     "tocando": "playing",
     "tly": "tly",
+    "tcanvas": "tcanvas",
+    "canvas": "tcanvas",
     "letra": "tly",
     "lyrics": "tly",
     "week": "week",
@@ -90,6 +96,7 @@ _ALIAS_TO_KIND: dict[str, str] = {
 _KIND_TITLE = {
     "playing": "♫ Música atual",
     "tly": "✎ Trecho da letra",
+    "tcanvas": "▣ Canvas da música",
     "week": "▦ Extrato semanal",
     "month": "◫ Extrato mensal",
     "mosaic": "✦ Mosaico musical",
@@ -98,12 +105,13 @@ _KIND_TITLE = {
 _KIND_LOADING = {
     "playing": "Gerando música atual...",
     "tly": "Gerando trecho da letra...",
+    "tcanvas": "Gerando Canvas da música...",
     "week": "Gerando extrato da semana do Last.fm...",
     "month": "Gerando extrato mensal do Last.fm...",
     "mosaic": "Gerando mosaico musical...",
 }
 
-_INLINE_MENU_KINDS: tuple[str, ...] = ("playing", "tly", "week", "month", "mosaic")
+_INLINE_MENU_KINDS: tuple[str, ...] = ("playing", "tly", "tcanvas", "week", "month", "mosaic")
 
 def _inline_thumb_url(kind: str) -> str | None:
     base = str(BASE_URL or "").strip().rstrip("/")
@@ -133,7 +141,9 @@ class _PendingInline:
 class _InlineRender:
     caption: str
     photo: bytes | str | None = None
+    video: bytes | str | None = None
     filename: str = "inline.jpg"
+    video_filename: str = "inline.mp4"
     fallback_text: str | None = None
     deferred_artist: str | None = None
     deferred_title: str | None = None
@@ -276,6 +286,23 @@ async def _clear_inline_markup(bot: Bot, inline_message_id: str) -> None:
 
 async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _InlineRender) -> None:
     caption = _strip_links(rendered.caption)
+    if rendered.video:
+        file_id = await _cache_video_file_id(bot, rendered.video, filename=rendered.video_filename)
+        if file_id:
+            try:
+                await bot.edit_message_media(
+                    inline_message_id=inline_message_id,
+                    media=InputMediaVideo(media=file_id, caption=caption[:1024], parse_mode="HTML"),
+                    reply_markup=None,
+                )
+                await _clear_inline_markup(bot, inline_message_id)
+                return
+            except Exception as exc:
+                if "message is not modified" in str(exc).casefold():
+                    logger.info("MUSIC_INLINE_EDIT_VIDEO_NOT_MODIFIED inline_message_id=%s", inline_message_id)
+                    await _clear_inline_markup(bot, inline_message_id)
+                    return
+                logger.warning("MUSIC_INLINE_EDIT_VIDEO_FAILED_FALLBACK inline_message_id=%s", inline_message_id, exc_info=True)
     if rendered.photo:
         file_id = await _cache_photo_file_id(bot, rendered.photo, filename=rendered.filename)
         if file_id:
@@ -359,6 +386,34 @@ async def _cache_photo_file_id(bot: Bot, photo: bytes | str | None, *, filename:
             return sent.photo[-1].file_id
     except Exception:
         logger.warning("MUSIC_INLINE_CACHE_PHOTO_FAILED filename=%s", filename, exc_info=True)
+    return None
+
+
+async def _cache_video_file_id(bot: Bot, video: bytes | str | None, *, filename: str) -> str | None:
+    """Arquiva vídeo no canal técnico e devolve file_id reutilizável.
+
+    Para mensagens inline editadas, o Telegram exige mídia já existente
+    (file_id/URL); por isso bytes novos nunca são enviados diretamente no
+    edit_message_media. Esta rotina mantém o mesmo padrão de cache do Canvas.
+    """
+    if not video:
+        return None
+    if isinstance(video, str):
+        return video
+    if not CANVAS_CACHE_CHANNEL_ID:
+        return None
+    try:
+        sent = await bot.send_video(
+            chat_id=CANVAS_CACHE_CHANNEL_ID,
+            video=BufferedInputFile(video, filename=filename),
+            caption="inline canvas",
+        )
+        for attr in ("video", "animation", "document"):
+            media = getattr(sent, attr, None)
+            if media is not None and getattr(media, "file_id", None):
+                return media.file_id
+    except Exception:
+        logger.debug("MUSIC_INLINE_CACHE_VIDEO_FAILED filename=%s", filename, exc_info=True)
     return None
 
 
@@ -490,6 +545,91 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     )
 
 
+async def _resolve_inline_canvas_track(item: _PendingInline) -> dict | None:
+    if item.arg:
+        return await _search_spotify_inline_track(item.arg)
+    return await music_service.get_current_or_last_played(item.user_id)
+
+
+async def _canvas_file_id_for_inline(bot: Bot, *, track: dict, track_id: str) -> tuple[str | None, str | None]:
+    """Devolve (file_id, canvas_track_id) para uso em mensagem inline.
+
+    Prioriza o derivado com preview oficial, quando existir; se qualquer parte
+    falhar, usa o cache bruto validado do /tcanvas. Quando o Canvas bruto existe
+    apenas como bytes/cache local, arquiva no canal técnico e grava em
+    canvas_files antes de editar a mensagem inline, porque inline media não deve
+    depender de upload novo no edit_message_media.
+    """
+    try:
+        audio_asset = await get_canvas_with_preview_asset(
+            bot,
+            track=track,
+            track_id=track_id,
+            log_prefix="TCANVAS_INLINE_AUDIO",
+            want_bytes=False,
+        )
+        if audio_asset and audio_asset.file_id:
+            return audio_asset.file_id, audio_asset.canvas_track_id
+    except Exception:
+        logger.warning("MUSIC_INLINE_TCANVAS_AUDIO_SKIPPED track_id=%s", track_id, exc_info=True)
+
+    try:
+        canvas_track_id, canvas_bytes = await get_canvas_bytes_cached(
+            bot,
+            track=track,
+            track_id=track_id,
+            log_prefix="TCANVAS_INLINE",
+        )
+        if not canvas_bytes:
+            return None, canvas_track_id
+        cached_file_id = await canvas_cache_service.get_file_id(canvas_track_id)
+        if cached_file_id:
+            return cached_file_id, canvas_track_id
+        uploaded_file_id = await _cache_video_file_id(
+            bot,
+            canvas_bytes,
+            filename=f"tcanvas-inline-{canvas_track_id or track_id}.mp4",
+        )
+        if uploaded_file_id and canvas_track_id:
+            await canvas_cache_service.put(canvas_track_id, uploaded_file_id, None)
+            logger.info("MUSIC_INLINE_TCANVAS_RAW_ARCHIVED track_id=%s", canvas_track_id)
+            return uploaded_file_id, canvas_track_id
+        return None, canvas_track_id
+    except Exception:
+        logger.warning("MUSIC_INLINE_TCANVAS_RAW_SKIPPED track_id=%s", track_id, exc_info=True)
+        return None, None
+
+
+async def _render_tcanvas(bot: Bot, item: _PendingInline) -> _InlineRender:
+    if not item.arg and not is_user_connected(item.user_id):
+        text = _strip_links(connect_hint_for("private"))
+        return _InlineRender(caption=text, fallback_text=text)
+    track = await _resolve_inline_canvas_track(item)
+    if not track:
+        text = "Não encontrei essa música." if item.arg else "Nada está tocando agora. Bota algo pra rolar no Spotify ou Last.fm e tenta de novo."
+        return _InlineRender(caption=text, fallback_text=text)
+
+    payload = await build_playing_payload_for_user(item.user_id, item.display_name, track)
+    if not payload:
+        return _InlineRender(caption="Erro ao identificar a música.", fallback_text="Erro ao identificar a música.")
+    track_id, caption, cover, _keyboard, _card_emoji = payload
+    safe_caption = _strip_links(caption)
+    file_id, canvas_track_id = await _canvas_file_id_for_inline(bot, track=track, track_id=track_id)
+    if file_id:
+        return _InlineRender(
+            caption=safe_caption,
+            video=file_id,
+            video_filename=f"tcanvas-inline-{canvas_track_id or track_id}.mp4",
+            fallback_text=safe_caption,
+        )
+    return _InlineRender(
+        caption=safe_caption,
+        photo=cover,
+        filename="tcanvas-inline-fallback.jpg",
+        fallback_text=safe_caption,
+    )
+
+
 async def _render_week(item: _PendingInline) -> _InlineRender:
     if not is_user_connected(item.user_id):
         text = _strip_links(connect_hint_for("private"))
@@ -557,6 +697,8 @@ async def _render(bot: Bot, item: _PendingInline) -> _InlineRender:
         return await _render_playing(item)
     if item.kind == "tly":
         return await _render_tly(item)
+    if item.kind == "tcanvas":
+        return await _render_tcanvas(bot, item)
     if item.kind == "week":
         return await _render_week(item)
     if item.kind == "month":

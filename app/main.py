@@ -186,6 +186,7 @@ _INLINE_ICON_DIR = Path(__file__).resolve().parent / "static" / "inline_icons"
 _INLINE_ICON_FILES = {
     "playing": "playing.png",
     "tly": "tly.png",
+    "tcanvas": "tcanvas.png",
     "week": "week.png",
     "month": "month.png",
     "mosaic": "mosaic.png",
