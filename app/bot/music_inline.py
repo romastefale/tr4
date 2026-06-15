@@ -55,6 +55,7 @@ from app.services.lyrics import lyrics_service
 from app.services.monthfm_card import render_monthfm_card
 from app.services.music import music_service
 from app.services.spotify import spotify_service
+from app.services.spotify_links import looks_like_spotify_track_reference
 from app.services.tnow_card import render_tnow_card
 
 logger = logging.getLogger(__name__)
@@ -152,7 +153,12 @@ def _purge_pending() -> None:
 
 
 def _split_query(raw: str | None) -> tuple[str | None, str | None]:
-    parts = (raw or "").strip().split(maxsplit=1)
+    value = (raw or "").strip()
+    if not value:
+        return None, None
+    if looks_like_spotify_track_reference(value):
+        return "tly", value
+    parts = value.split(maxsplit=1)
     if not parts:
         return None, None
     kind = _ALIAS_TO_KIND.get(parts[0].casefold())
@@ -404,6 +410,16 @@ def _inline_tly_search_query(raw: str | None) -> str | None:
 
 
 async def _search_spotify_inline_track(raw_query: str | None) -> dict | None:
+    raw_value = (raw_query or "").strip()
+    if raw_value and looks_like_spotify_track_reference(raw_value):
+        try:
+            linked_track = await spotify_service.resolve_track_from_shared_link(raw_value)
+            if linked_track:
+                return linked_track
+        except Exception:
+            logger.warning("MUSIC_INLINE_TLY_LINK_RESOLVE_FAILED", exc_info=True)
+            return None
+
     query = _inline_tly_search_query(raw_query)
     if not query:
         return None
