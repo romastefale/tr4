@@ -38,17 +38,21 @@ async def compose_story_video(canvas_bytes: bytes | None, overlay_png: bytes | N
         filter_complex = (
             f"[0:v]scale={STORY_W}:{STORY_H}:force_original_aspect_ratio=increase,"
             f"crop={STORY_W}:{STORY_H},setsar=1[bg];"
-            f"[bg][1:v]overlay=0:0:format=auto"
+            f"[bg][1:v]overlay=0:0:format=auto[vout]"
         )
         cmd = [
             "ffmpeg", "-y",
             "-i", inp,
             "-i", overlay,
             "-filter_complex", filter_complex,
-            "-an",
+            "-map", "[vout]",
+            "-map", "0:a?",
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-shortest",
             "-movflags", "+faststart",
             out,
         ]

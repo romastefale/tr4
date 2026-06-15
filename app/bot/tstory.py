@@ -23,6 +23,7 @@ from app.services.bot_identity import get_bot_identity
 from app.services.connection_check import connect_hint_for, is_user_connected
 from app.services.music import music_service
 from app.services.canvas_asset import get_canvas_bytes_cached
+from app.services.canvas_audio import get_canvas_with_preview_asset
 from app.services.tstory_card import render_tstory_full, render_tstory_overlay
 from app.services.tstory_video import compose_story_video
 
@@ -132,14 +133,25 @@ async def tstory(message: Message) -> None:
     bot_name = identity.name
     bot_logo = identity.photo_bytes
 
-    # Tentativa principal: Canvas bruto via cache compartilhado (/tcanvas -> canal/file_id -> cache local).
+    # Tentativa principal: asset-fonte enriquecido com preview oficial. Se a
+    # camada nova falhar, usa exatamente o Canvas bruto já validado.
     video_bytes: bytes | None = None
-    canvas_track_id, canvas_bytes = await get_canvas_bytes_cached(
+    audio_asset = await get_canvas_with_preview_asset(
         message.bot,
         track=track,
         track_id=track_id,
-        log_prefix="TSTORY",
+        log_prefix="TSTORY_AUDIO",
+        want_bytes=True,
     )
+    if audio_asset and audio_asset.bytes_data:
+        canvas_track_id, canvas_bytes = audio_asset.canvas_track_id, audio_asset.bytes_data
+    else:
+        canvas_track_id, canvas_bytes = await get_canvas_bytes_cached(
+            message.bot,
+            track=track,
+            track_id=track_id,
+            log_prefix="TSTORY",
+        )
     if canvas_bytes:
         try:
             overlay_png = await render_tstory_overlay(

@@ -347,7 +347,7 @@ class SpotifyService:
         self._client_token_expiration = _utcnow_naive() + timedelta(seconds=int(expires_in))
         return self._client_access_token
 
-    async def get_track_by_id(self, track_id: str) -> dict[str, Any] | None:
+    async def get_track_by_id(self, track_id: str, market: str | None = "BR") -> dict[str, Any] | None:
         clean_track_id = (track_id or "").strip()
         if not clean_track_id:
             return None
@@ -357,9 +357,11 @@ class SpotifyService:
             return None
 
         client = self._client()
+        params = {"market": market} if market else None
         response = await client.get(
             f"https://api.spotify.com/v1/tracks/{clean_track_id}",
             headers={"Authorization": f"Bearer {access_token}"},
+            params=params,
         )
 
         if response.status_code != 200:
@@ -386,6 +388,8 @@ class SpotifyService:
             "spotify_url": (item.get("external_urls") or {}).get("spotify"),
             "album_url": (album.get("external_urls") or {}).get("spotify"),
             "album_image_url": images[0].get("url") if images else None,
+            "preview_url": item.get("preview_url"),
+            "duration_ms": item.get("duration_ms"),
         }
 
     async def search_track(self, artist: str, title: str) -> dict[str, str | None] | None:

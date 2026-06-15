@@ -275,11 +275,37 @@ def run_migrations(engine) -> None:
         except Exception:
             logger.warning("DB canvas_files table creation failed", exc_info=True)
 
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS canvas_processed_files (
+                        cache_key VARCHAR PRIMARY KEY,
+                        spotify_track_id VARCHAR NOT NULL,
+                        canvas_fingerprint VARCHAR NOT NULL,
+                        duration_ms INTEGER NOT NULL,
+                        process_kind VARCHAR NOT NULL,
+                        process_version VARCHAR NOT NULL,
+                        file_id VARCHAR NOT NULL,
+                        file_unique_id VARCHAR,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_canvas_processed_files_spotify_track_id ON canvas_processed_files(spotify_track_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_canvas_processed_files_fingerprint ON canvas_processed_files(canvas_fingerprint)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_canvas_processed_files_kind ON canvas_processed_files(process_kind)"))
+        except Exception:
+            logger.warning("DB canvas_processed_files table creation failed", exc_info=True)
+
 
 def init_db() -> None:
     try:
         from app.models.card_message import CardMessage  # noqa: F401  # Sprint 8
         from app.models.canvas_file import CanvasFile  # noqa: F401  # cache file_id
+        from app.models.canvas_processed_file import CanvasProcessedFile  # noqa: F401  # Canvas derivado com áudio
         from app.models.lastfm_profile import LastfmProfile  # noqa: F401
         from app.models.spotify_token import SpotifyToken  # noqa: F401
         from app.models.track_like import TrackLike  # noqa: F401

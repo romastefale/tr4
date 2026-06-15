@@ -181,6 +181,17 @@ CANVAS_CACHE_CHANNEL_ID = _int_env(
     legacy=("CANVAS_CACHE_CHANNEL_ID",),
 )
 
+CANVAS_AUDIO_PREVIEW_ENABLED = _bool_env(
+    "TR3_CANVAS_AUDIO_PREVIEW_ENABLED",
+    True,
+    legacy=("CANVAS_AUDIO_PREVIEW_ENABLED",),
+)
+CANVAS_AUDIO_PROCESS_VERSION = _env(
+    "TR3_CANVAS_AUDIO_PROCESS_VERSION",
+    "preview-v1",
+    legacy=("CANVAS_AUDIO_PROCESS_VERSION",),
+).strip() or "preview-v1"
+
 LASTFM_API_KEY = _env(
     "TR3_LASTFM_API_KEY",
     legacy=("LASTFM_API_KEY",),
