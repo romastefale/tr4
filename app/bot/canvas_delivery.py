@@ -1,4 +1,4 @@
-"""Entrega de Spotify Canvas com cache de file_id (compartilhado /tcanvas e /tly).
+"""Entrega de Spotify Canvas com cache de file_id (compartilhado com /tstory).
 
 Fluxo (todas as camadas caem pro fallback silencioso do /playing em falha):
 
