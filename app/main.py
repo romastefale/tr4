@@ -22,6 +22,7 @@ configure_safe_logging()
 
 from app.bot.monthfm import router as monthfm_router
 from app.bot.owner_universal import router as owner_universal_router
+from app.bot.owner_manual_register import router as owner_manual_register_router
 from app.bot.myself import router as myself_router
 from app.bot.radiofm import router as radiofm_router
 from app.bot.setup_commands import setup_bot_commands
@@ -90,6 +91,7 @@ async def _configure_telegram_bot_background() -> None:
         if not _telegram_dispatcher_configured:
             dispatcher.include_router(monthfm_router)
             dispatcher.include_router(owner_universal_router)
+            dispatcher.include_router(owner_manual_register_router)
             dispatcher.include_router(weekfm_router)
             dispatcher.include_router(tnow_router)
             dispatcher.include_router(tcanvas_router)

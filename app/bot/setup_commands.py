@@ -64,6 +64,7 @@ _OWNER_ONLY_COMMANDS: tuple[CommandDef, ...] = (
     CommandDef("songchartsall", "Ranking consolidado por DM"),
     CommandDef("weekall", "Ranking semanal consolidado"),
     CommandDef("monthall", "Ranking mensal consolidado"),
+    CommandDef("tmn", "Cadastrar usuário Last.fm manualmente"),
 )
 
 _OWNER_PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PRIVATE_COMMANDS + _OWNER_ONLY_COMMANDS
