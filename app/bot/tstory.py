@@ -21,6 +21,7 @@ from aiogram.types import BufferedInputFile, Message
 
 from app.services.bot_identity import get_bot_identity
 from app.services.connection_check import connect_hint_for, is_user_connected
+from app.services.cover_cache import cover_cache_service
 from app.services.music import music_service
 from app.services.canvas_asset import get_canvas_bytes_cached
 from app.services.canvas_audio import get_canvas_with_preview_asset
@@ -197,10 +198,32 @@ async def tstory(message: Message) -> None:
 
     # Último recurso (Playwright indisponível): manda só a capa ou o texto.
     if cover_bytes:
-        await message.answer_photo(
-            photo=BufferedInputFile(cover_bytes, filename="cover.jpg"),
-            caption=caption,
-            parse_mode="HTML",
+        original_cover_url = str(cover_url or "").strip() or None
+        photo = await cover_cache_service.resolve_photo(
+            message.bot,
+            track_id=track_id,
+            cover_url=original_cover_url,
+            photo=cover_bytes,
+            filename="cover.jpg",
         )
+        send_photo = BufferedInputFile(photo, filename="cover.jpg") if isinstance(photo, bytes) else photo
+        try:
+            await message.answer_photo(
+                photo=send_photo,
+                caption=caption,
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.warning("TSTORY_FALLBACK_COVER_SEND_FAILED track=%s", track_id, exc_info=True)
+            if photo and not isinstance(photo, bytes):
+                await cover_cache_service.forget(track_id=track_id, cover_url=original_cover_url, photo=cover_bytes)
+            try:
+                await message.answer_photo(
+                    photo=BufferedInputFile(cover_bytes, filename="cover.jpg"),
+                    caption=caption,
+                    parse_mode="HTML",
+                )
+            except Exception:
+                await message.answer(caption, parse_mode="HTML")
     else:
         await message.answer(caption, parse_mode="HTML")

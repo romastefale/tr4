@@ -12,11 +12,12 @@ def _block(name: str) -> str:
     return INLINE[start:end]
 
 
-def test_playing_inline_preserva_legenda_original():
+def test_playing_inline_preserva_payload_e_aplica_layout_novo():
     block = _block("_render_playing")
-    assert "_track_id, caption, cover, _keyboard, _card_emoji = payload" in block
+    assert "track_id, _caption, cover, _keyboard, _card_emoji = payload" in block
+    assert "caption = _format_inline_music_header(name_part, track_name, artist, total_plays)" in block
     assert "safe_caption = _strip_links(caption)" in block
-    assert 'caption = f"{name_part} · ♫ {track_name} — {artist}"' not in block
+    assert "build_playing_payload_for_user" in block
 
 
 def test_tly_inline_pesquisa_nome_sem_exigir_conexao():

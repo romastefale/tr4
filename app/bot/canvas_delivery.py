@@ -27,6 +27,7 @@ from app.config.settings import CANVAS_CACHE_CHANNEL_ID, CANVAS_CACHE_ENABLED
 from app.services.canvas_audio import get_canvas_with_preview_asset
 from app.services.canvas_cache import canvas_cache_service, is_cacheable_track_id
 from app.services.canvas_processed_cache import canvas_processed_cache_service
+from app.services.cover_cache import cover_cache_service
 from app.services.reactions import reactions_service
 from app.services.spotify import spotify_service
 from app.services.spotify_canvas import spotify_canvas_service
@@ -117,7 +118,24 @@ async def deliver_canvas(
 
     async def _fallback() -> Message:
         if cover:
-            sent = await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+            photo = await cover_cache_service.resolve_photo(
+                bot,
+                track_id=track_id,
+                cover_url=cover,
+                filename="canvas-fallback-cover.jpg",
+            )
+            try:
+                sent = await message.answer_photo(photo=photo or cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+            except Exception:
+                logger.warning("%s_FALLBACK_COVER_SEND_FAILED track_id=%s", log_prefix, track_id, exc_info=True)
+                if photo and photo != cover:
+                    await cover_cache_service.forget(track_id=track_id, cover_url=cover, photo=cover)
+                    try:
+                        sent = await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    except Exception:
+                        sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
+                else:
+                    sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
         else:
             sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
         return await _finalize(sent)

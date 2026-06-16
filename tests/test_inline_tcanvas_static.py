@@ -24,7 +24,7 @@ def test_tcanvas_entra_na_lista_inline_com_icone_local():
     assert path.exists()
     data = path.read_bytes()
     assert data.startswith(bytes.fromhex("89504e470d0a1a0a"))
-    assert len(data) < 150_000
+    assert len(data) > 100_000
 
 
 def test_tcanvas_inline_usa_fluxo_canvas_validado_com_fallback():

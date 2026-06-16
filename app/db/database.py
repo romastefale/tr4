@@ -255,8 +255,8 @@ def run_migrations(engine) -> None:
             logger.warning("Sprint 12 likes→reactions migration failed", exc_info=True)
 
 
-        # Cache de Canvas por file_id (/tcanvas e /tly). Colunas são todas
-        # texto (sem BigInteger), então CREATE TABLE IF NOT EXISTS serve igual
+        # Cache persistente de trechos de letra usados pelo /tly. Colunas são
+        # texto/datetime simples, então CREATE TABLE IF NOT EXISTS serve igual
         # pros dois dialetos.
         try:
             conn.execute(
@@ -270,6 +270,9 @@ def run_migrations(engine) -> None:
                         title VARCHAR NOT NULL,
                         snippet TEXT,
                         source VARCHAR,
+                        channel_chat_id BIGINT,
+                        channel_message_id INTEGER,
+                        archived_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """,
                         expires_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
                         created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
                         updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
@@ -277,11 +280,56 @@ def run_migrations(engine) -> None:
                     """
                 )
             )
+            existing_columns = _table_columns(conn, dialect_name, "lyrics_snippet_cache")
+            lyric_archive_columns = {
+                "channel_chat_id": "BIGINT",
+                "channel_message_id": "INTEGER",
+                "archived_at": "TIMESTAMP" if dialect_name == "postgresql" else "DATETIME",
+            }
+            for column_name, column_type in lyric_archive_columns.items():
+                if column_name in existing_columns:
+                    continue
+                try:
+                    conn.execute(text(f"ALTER TABLE lyrics_snippet_cache ADD COLUMN {column_name} {column_type}"))
+                    existing_columns.add(column_name)
+                except Exception:
+                    logger.debug(
+                        "DB lyrics archive column add skipped | column=%s",
+                        column_name,
+                        exc_info=True,
+                    )
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_artist_norm ON lyrics_snippet_cache(artist_norm)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_title_norm ON lyrics_snippet_cache(title_norm)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_expires_at ON lyrics_snippet_cache(expires_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_channel_chat_id ON lyrics_snippet_cache(channel_chat_id)"))
         except Exception:
             logger.warning("DB lyrics_snippet_cache table creation failed", exc_info=True)
+
+        # Cache persistente de capas musicais por file_id. Fase 3: o canal
+        # técnico arquiva a mídia; o banco indexa por faixa/URL/hash.
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS cover_files (
+                        cache_key VARCHAR PRIMARY KEY,
+                        spotify_track_id VARCHAR,
+                        cover_url TEXT,
+                        cover_hash VARCHAR,
+                        file_id VARCHAR NOT NULL,
+                        file_unique_id VARCHAR,
+                        width INTEGER,
+                        height INTEGER,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cover_files_spotify_track_id ON cover_files(spotify_track_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cover_files_cover_hash ON cover_files(cover_hash)"))
+        except Exception:
+            logger.warning("DB cover_files table creation failed", exc_info=True)
 
         try:
             conn.execute(
@@ -331,6 +379,7 @@ def init_db() -> None:
         from app.models.card_message import CardMessage  # noqa: F401  # Sprint 8
         from app.models.canvas_file import CanvasFile  # noqa: F401  # cache file_id
         from app.models.canvas_processed_file import CanvasProcessedFile  # noqa: F401  # Canvas derivado com áudio
+        from app.models.cover_file import CoverFile  # noqa: F401  # cache de capas
         from app.models.lyrics_snippet_cache import LyricsSnippetCache  # noqa: F401  # cache de trechos /tly
         from app.models.lastfm_profile import LastfmProfile  # noqa: F401
         from app.models.spotify_token import SpotifyToken  # noqa: F401

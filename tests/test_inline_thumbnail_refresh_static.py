@@ -7,6 +7,7 @@ def test_inline_icon_assets_are_png():
     for name in expected:
         data = (icon_dir / name).read_bytes()
         assert data.startswith(b"\x89PNG\r\n\x1a\n")
+        assert len(data) > 100_000
 
 
 def test_inline_thumb_url_uses_revision_query():
@@ -14,3 +15,9 @@ def test_inline_thumb_url_uses_revision_query():
     assert "hashlib.sha1" in source
     assert '?v={rev}' in source or 'png?v=' in source
     assert '_INLINE_ICON_REVISIONS' in source
+
+
+def test_inline_menu_forces_fast_thumbnail_refresh_after_deploy():
+    source = Path("app/bot/music_inline.py").read_text(encoding="utf-8")
+    assert "await query.answer(results, cache_time=0, is_personal=True)" in source
+    assert "await query.answer([result], cache_time=0, is_personal=True)" in source

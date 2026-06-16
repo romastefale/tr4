@@ -42,6 +42,8 @@ class LyricsCacheHit:
     snippet: str | None
     source: str | None
     negative: bool = False
+    channel_chat_id: int | None = None
+    channel_message_id: int | None = None
 
 
 class LyricsSnippetCacheService:
@@ -68,9 +70,21 @@ class LyricsSnippetCacheService:
                     return None
                 if row.snippet:
                     logger.info("LYRICS_DB_HIT artist=%s title=%s source=%s", artist, title, row.source or "db")
-                    return LyricsCacheHit(snippet=row.snippet, source=row.source or "db", negative=False)
+                    return LyricsCacheHit(
+                        snippet=row.snippet,
+                        source=row.source or "db",
+                        negative=False,
+                        channel_chat_id=row.channel_chat_id,
+                        channel_message_id=row.channel_message_id,
+                    )
                 logger.info("LYRICS_DB_NEGATIVE_HIT artist=%s title=%s", artist, title)
-                return LyricsCacheHit(snippet=None, source=row.source or "negative", negative=True)
+                return LyricsCacheHit(
+                    snippet=None,
+                    source=row.source or "negative",
+                    negative=True,
+                    channel_chat_id=row.channel_chat_id,
+                    channel_message_id=row.channel_message_id,
+                )
         except Exception:
             logger.warning("lyrics_cache get failed artist=%s title=%s", artist, title, exc_info=True)
             return None
@@ -105,6 +119,9 @@ class LyricsSnippetCacheService:
                         row.snippet = clean_snippet
                         row.source = clean_source
                         row.expires_at = expires_at
+                        row.channel_chat_id = None
+                        row.channel_message_id = None
+                        row.archived_at = None
                         row.updated_at = now
                     else:
                         db.add(
@@ -129,10 +146,54 @@ class LyricsSnippetCacheService:
                         row.snippet = clean_snippet
                         row.source = clean_source
                         row.expires_at = expires_at
+                        row.channel_chat_id = None
+                        row.channel_message_id = None
+                        row.archived_at = None
                         row.updated_at = now
                         db.commit()
         except Exception:
             logger.warning("lyrics_cache put failed artist=%s title=%s", artist, title, exc_info=True)
+
+    async def get_archive_ref(self, artist: str, title: str) -> tuple[int, int] | None:
+        key = build_lyrics_cache_key(artist, title)
+        if not key:
+            return None
+        now = _utcnow_naive()
+        try:
+            with SessionLocal() as db:
+                row = db.get(LyricsSnippetCache, key)
+                if not row or row.expires_at <= now or not row.snippet:
+                    return None
+                if row.channel_chat_id and row.channel_message_id:
+                    return int(row.channel_chat_id), int(row.channel_message_id)
+        except Exception:
+            logger.warning("lyrics_cache archive ref failed artist=%s title=%s", artist, title, exc_info=True)
+        return None
+
+    async def mark_archived(
+        self,
+        *,
+        artist: str,
+        title: str,
+        channel_chat_id: int,
+        channel_message_id: int,
+    ) -> None:
+        key = build_lyrics_cache_key(artist, title)
+        if not key:
+            return
+        now = _utcnow_naive()
+        try:
+            with SessionLocal() as db:
+                row = db.get(LyricsSnippetCache, key)
+                if not row or not row.snippet:
+                    return
+                row.channel_chat_id = int(channel_chat_id)
+                row.channel_message_id = int(channel_message_id)
+                row.archived_at = now
+                row.updated_at = now
+                db.commit()
+        except Exception:
+            logger.warning("lyrics_cache mark archived failed artist=%s title=%s", artist, title, exc_info=True)
 
     async def forget(self, artist: str, title: str) -> None:
         key = build_lyrics_cache_key(artist, title)

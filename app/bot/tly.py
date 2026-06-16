@@ -20,7 +20,9 @@ from aiogram.types import Message
 
 from app.bot.telegram import _react_to_own_card, build_tly_payload
 from app.services.connection_check import connect_hint_for, is_user_connected
+from app.services.cover_cache import cover_cache_service
 from app.services.lyrics import lyrics_service
+from app.services.lyrics_archive import archive_tly_snippet
 from app.services.music import music_service
 from app.services.reactions import reactions_service
 
@@ -83,12 +85,24 @@ async def _register_tly_card(sent: Message, *, user_id: int, track: dict, track_
         logger.debug("TLY_REACT_FAILED chat=%s message=%s", sent.chat.id, sent.message_id, exc_info=True)
 
 
-async def _send_initial_tly(message: Message, *, caption: str, cover: str | None) -> Message:
+async def _send_initial_tly(message: Message, *, track_id: str, caption: str, cover: str | None) -> Message:
     if cover:
+        photo = await cover_cache_service.resolve_photo(
+            message.bot,
+            track_id=track_id,
+            cover_url=cover,
+            filename="tly-cover.jpg",
+        )
         try:
-            return await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML")
+            return await message.answer_photo(photo=photo or cover, caption=caption, parse_mode="HTML")
         except Exception:
-            logger.warning("TLY_COVER_SEND_FAILED fallback=text", exc_info=True)
+            logger.warning("TLY_COVER_SEND_FAILED fallback=original_or_text track_id=%s", track_id, exc_info=True)
+            if photo and photo != cover:
+                await cover_cache_service.forget(track_id=track_id, cover_url=cover, photo=cover)
+                try:
+                    return await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML")
+                except Exception:
+                    logger.warning("TLY_ORIGINAL_COVER_SEND_FAILED fallback=text track_id=%s", track_id, exc_info=True)
     return await message.answer(caption, parse_mode="HTML")
 
 
@@ -98,6 +112,7 @@ async def _edit_tly_caption_when_lyrics_ready(
     base_caption: str,
     artist: str,
     title: str,
+    cover: str | bytes | None = None,
 ) -> None:
     if not artist or not title:
         return
@@ -113,10 +128,21 @@ async def _edit_tly_caption_when_lyrics_ready(
         return
 
     try:
-        if sent.photo:
+        if getattr(sent, "photo", None):
             await sent.edit_caption(caption=new_caption, parse_mode="HTML")
         else:
             await sent.edit_text(new_caption, parse_mode="HTML")
+        try:
+            await archive_tly_snippet(
+                sent.bot,
+                artist=artist,
+                title=title,
+                base_caption=base_caption,
+                lyric_snippet=lyric_snippet,
+                cover=cover,
+            )
+        except Exception:
+            logger.debug("TLY_ARCHIVE_SKIPPED artist=%s track=%s", artist, title, exc_info=True)
     except TelegramBadRequest as exc:
         if _is_not_modified(exc):
             return
@@ -161,7 +187,7 @@ async def tly(message: Message) -> None:
         return
 
     track_id, caption, cover, card_emoji = payload
-    sent = await _send_initial_tly(message, caption=caption, cover=cover)
+    sent = await _send_initial_tly(message, track_id=track_id, caption=caption, cover=cover)
     await _register_tly_card(
         sent,
         user_id=message.from_user.id,
@@ -176,5 +202,6 @@ async def tly(message: Message) -> None:
             base_caption=caption,
             artist=artist_raw,
             title=track_name_raw,
+            cover=cover,
         )
     )

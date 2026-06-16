@@ -3,6 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INLINE = (ROOT / "app" / "bot" / "music_inline.py").read_text(encoding="utf-8")
 TELEGRAM = (ROOT / "app" / "bot" / "telegram.py").read_text(encoding="utf-8")
+PNG_SIGNATURE = bytes.fromhex("89504e470d0a1a0a")
 
 
 def _async_block(name: str) -> str:
@@ -13,22 +14,28 @@ def _async_block(name: str) -> str:
     return INLINE[start:end]
 
 
-def test_inline_menu_lateral_tem_icone_preto_sobre_fundo_branco():
-    assert "_INLINE_THUMB_URL" in INLINE
-    assert "ffffff/000000" in INLINE
-    assert "thumbnail_url=_INLINE_THUMB_URL.get(item_kind)" in INLINE
+def test_inline_menu_usa_icones_png_locais_com_cache_bust():
+    assert "def _inline_thumb_url" in INLINE
+    assert "_INLINE_ICON_REVISIONS" in INLINE
+    assert "hashlib.sha1" in INLINE
+    assert "thumbnail_url=_inline_thumb_url(item_kind)" in INLINE
     assert "thumbnail_width=96" in INLINE
     assert "thumbnail_height=96" in INLINE
+    assert "dummyimage.com" not in INLINE
 
 
-def test_todos_os_kinds_tem_thumbnail_monocromatica():
-    for kind in ("playing", "tly", "week", "month", "mosaic"):
-        assert f'"{kind}": "https://dummyimage.com/96x96/ffffff/000000.png&text=' in INLINE
+def test_todos_os_kinds_tem_thumbnail_neon_local():
+    icon_dir = ROOT / "app" / "static" / "inline_icons"
+    for kind in ("playing", "tly", "tcanvas", "week", "month", "mosaic"):
+        path = icon_dir / f"{kind}.png"
+        data = path.read_bytes()
+        assert data.startswith(PNG_SIGNATURE), f"PNG inválido: {kind}"
+        assert len(data) > 100_000, f"ícone pequeno demais: {kind}"
 
 
 def test_fluxo_musica_atual_nao_mudou():
     block = _async_block("_render_playing")
-    assert "_track_id, caption, cover, _keyboard, _card_emoji = payload" in block
+    assert "track_id, _caption, cover, _keyboard, _card_emoji = payload" in block
     assert 'caption = f"{name_part} · ♫ {track_name} — {artist}"' not in block
 
 

@@ -10,7 +10,7 @@ Regras desta fase:
 - tly inline: somente foto de capa, nunca Canvas/vídeo.
 - weekfm/monthfm inline: extratos individuais do usuário que chamou o inline.
 - tnow/mosaico inline: apenas dono do código, sem tentar descobrir grupo destino.
-- resultado final com foto usa file_id cacheado no Telegram; não usa photo_url.
+- resultado final com foto prioriza file_id persistente no Telegram; URL só fica como fallback seguro.
 """
 from __future__ import annotations
 
@@ -51,6 +51,7 @@ from app.bot.weekfm import _caption as _weekfm_caption
 from app.config import settings
 from app.config.settings import BASE_URL, CANVAS_CACHE_CHANNEL_ID
 from app.services.connection_check import connect_hint_for, is_user_connected
+from app.services.cover_cache import cover_cache_service
 from app.services.canvas_audio import get_canvas_with_preview_asset
 from app.services.canvas_asset import get_canvas_bytes_cached
 from app.services.canvas_cache import canvas_cache_service
@@ -58,6 +59,7 @@ from app.services.lastfm_capsule import lastfm_capsule_service
 from app.services.lastfm_weekly import lastfm_weekly_service
 from app.services.likes import likes_service
 from app.services.lyrics import lyrics_service
+from app.services.lyrics_archive import archive_tly_snippet
 from app.services.monthfm_card import render_monthfm_card
 from app.services.music import music_service
 from app.services.spotify import spotify_service
@@ -174,6 +176,7 @@ class _InlineRender:
     fallback_text: str | None = None
     deferred_artist: str | None = None
     deferred_title: str | None = None
+    track_id: str | None = None
 
 
 _PENDING: dict[str, _PendingInline] = {}
@@ -245,6 +248,7 @@ async def _edit_inline_caption_when_lyrics_ready(
     artist: str,
     title: str,
     as_media: bool = True,
+    cover: str | bytes | None = None,
 ) -> None:
     if not artist or not title:
         return
@@ -271,6 +275,17 @@ async def _edit_inline_caption_when_lyrics_ready(
                 parse_mode="HTML",
                 reply_markup=None,
             )
+        try:
+            await archive_tly_snippet(
+                bot,
+                artist=artist,
+                title=title,
+                base_caption=base_caption,
+                lyric_snippet=lyric_snippet,
+                cover=cover,
+            )
+        except Exception:
+            logger.debug("MUSIC_INLINE_TLY_ARCHIVE_SKIPPED artist=%s track=%s", artist, title, exc_info=True)
     except Exception as exc:
         if "message is not modified" in str(exc).lower():
             return
@@ -323,6 +338,18 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                     reply_markup=None,
                 )
                 await _clear_inline_markup(bot, inline_message_id)
+                if rendered.deferred_artist and rendered.deferred_title:
+                    asyncio.create_task(
+                        _edit_inline_caption_when_lyrics_ready(
+                            bot,
+                            inline_message_id,
+                            base_caption=caption,
+                            artist=rendered.deferred_artist,
+                            title=rendered.deferred_title,
+                            as_media=True,
+                            cover=rendered.photo,
+                        )
+                    )
                 return
             except Exception as exc:
                 if "message is not modified" in str(exc).casefold():
@@ -331,7 +358,7 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                     return
                 logger.warning("MUSIC_INLINE_EDIT_VIDEO_FAILED_FALLBACK inline_message_id=%s", inline_message_id, exc_info=True)
     if rendered.photo:
-        file_id = await _cache_photo_file_id(bot, rendered.photo, filename=rendered.filename)
+        file_id = await _cache_photo_file_id(bot, rendered.photo, filename=rendered.filename, track_id=rendered.track_id)
         if file_id:
             try:
                 await bot.edit_message_media(
@@ -349,6 +376,7 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                             artist=rendered.deferred_artist,
                             title=rendered.deferred_title,
                             as_media=True,
+                            cover=rendered.photo,
                         )
                     )
                 return
@@ -357,6 +385,11 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                     logger.info("MUSIC_INLINE_EDIT_MEDIA_NOT_MODIFIED inline_message_id=%s", inline_message_id)
                     await _clear_inline_markup(bot, inline_message_id)
                     return
+                await cover_cache_service.forget(
+                    track_id=rendered.track_id,
+                    cover_url=str(rendered.photo) if isinstance(rendered.photo, str) else None,
+                    photo=rendered.photo,
+                )
                 logger.warning("MUSIC_INLINE_EDIT_MEDIA_FAILED_FALLBACK_TEXT inline_message_id=%s", inline_message_id, exc_info=True)
     text = _strip_links(rendered.fallback_text or caption or "Resultado indisponível.")[:3900]
     try:
@@ -376,6 +409,7 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                     artist=rendered.deferred_artist,
                     title=rendered.deferred_title,
                     as_media=False,
+                    cover=rendered.photo,
                 )
             )
     except Exception as exc:
@@ -391,26 +425,34 @@ async def _edit_inline_rendered(bot: Bot, inline_message_id: str, rendered: _Inl
                         artist=rendered.deferred_artist,
                         title=rendered.deferred_title,
                         as_media=False,
+                        cover=rendered.photo,
                     )
                 )
             return
         raise
 
 
-async def _cache_photo_file_id(bot: Bot, photo: bytes | str | None, *, filename: str) -> str | None:
-    """Envia imagem ao canal técnico e devolve file_id reutilizável."""
-    if not photo or not CANVAS_CACHE_CHANNEL_ID:
+async def _cache_photo_file_id(
+    bot: Bot,
+    photo: bytes | str | None,
+    *,
+    filename: str,
+    track_id: str | None = None,
+) -> str | None:
+    """Resolve capa para file_id persistente, com fallback para URL quando seguro."""
+    if not photo:
         return None
     try:
-        if isinstance(photo, bytes):
-            sent = await bot.send_photo(
-                chat_id=CANVAS_CACHE_CHANNEL_ID,
-                photo=BufferedInputFile(photo, filename=filename),
-            )
-        else:
-            sent = await bot.send_photo(chat_id=CANVAS_CACHE_CHANNEL_ID, photo=str(photo))
-        if sent.photo:
-            return sent.photo[-1].file_id
+        resolved = await cover_cache_service.resolve_photo(
+            bot,
+            track_id=track_id,
+            cover_url=str(photo) if isinstance(photo, str) else None,
+            photo=photo,
+            filename=filename,
+        )
+        if isinstance(resolved, bytes):
+            return None
+        return str(resolved) if resolved else None
     except Exception:
         logger.warning("MUSIC_INLINE_CACHE_PHOTO_FAILED filename=%s", filename, exc_info=True)
     return None
@@ -455,9 +497,19 @@ async def _render_playing(item: _PendingInline) -> _InlineRender:
     payload = await build_playing_payload_for_user(item.user_id, item.display_name, track)
     if not payload:
         return _InlineRender(caption="Erro ao identificar a música.", fallback_text="Erro ao identificar a música.")
-    _track_id, caption, cover, _keyboard, _card_emoji = payload
+    track_id, _caption, cover, _keyboard, _card_emoji = payload
+    artist_raw = str(track.get("artist") or "").strip()
+    track_name_raw = str(track.get("track_name") or "").strip()
+    total_plays: int | None = None
+    try:
+        total_plays, _plays_source = await _resolve_play_button_count(item.user_id, track_id, artist_raw, track_name_raw)
+    except Exception:
+        logger.debug("MUSIC_INLINE_PLAYING_COUNT_SKIPPED user=%s track=%s", item.user_id, track_id, exc_info=True)
+    track_name, artist, _track_url, _cover = _track_label(track)
+    name_part = _inline_name_style(item.display_name or "Usuário")
+    caption = _format_inline_music_header(name_part, track_name, artist, total_plays)
     safe_caption = _strip_links(caption)
-    return _InlineRender(caption=safe_caption, photo=cover, filename="playing-inline.jpg", fallback_text=safe_caption)
+    return _InlineRender(caption=safe_caption, photo=cover, filename="playing-inline.jpg", fallback_text=safe_caption, track_id=track_id)
 
 
 _SANS_BOLD_ITALIC_UPPER_OFFSET = 0x1D63C - ord("A")
@@ -475,6 +527,16 @@ def _inline_name_style(value: str | None) -> str:
         else:
             out.append(ch)
     return html.escape("".join(out))
+
+
+def _format_inline_music_header(
+    name_part: str,
+    track_name: str,
+    artist: str,
+    total_plays: int | None,
+) -> str:
+    play_prefix = f"♫ {total_plays} · " if isinstance(total_plays, int) and total_plays >= 0 else "♫ "
+    return f"{name_part}\n{play_prefix}{track_name} — {artist}"
 
 
 def _inline_tly_search_query(raw: str | None) -> str | None:
@@ -555,11 +617,17 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     except Exception:
         logger.exception("MUSIC_INLINE_TLY_REGISTER_PLAY_FAILED user=%s track=%s", item.user_id, track_id)
 
-    total_plays, plays_source = await _resolve_play_button_count(item.user_id, track_id, artist_raw, track_name_raw)
-    _ = _pick_card_emoji(total_plays, plays_source)
+    total_plays: int | None = None
+    plays_source = "none"
+    try:
+        total_plays, plays_source = await _resolve_play_button_count(item.user_id, track_id, artist_raw, track_name_raw)
+    except Exception:
+        logger.debug("MUSIC_INLINE_TLY_COUNT_SKIPPED user=%s track=%s", item.user_id, track_id, exc_info=True)
+    if isinstance(total_plays, int):
+        _ = _pick_card_emoji(total_plays, plays_source)
     track_name, artist, _track_url, cover = _track_label(track)
     name_part = _inline_name_style(item.display_name or "Usuário")
-    header = f"{name_part}\n♫ {track_name} — {artist}"
+    header = _format_inline_music_header(name_part, track_name, artist, total_plays)
     caption = header
     safe_caption = _strip_links(caption)
     return _InlineRender(
@@ -569,6 +637,7 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
         fallback_text=safe_caption,
         deferred_artist=artist_raw,
         deferred_title=track_name_raw,
+        track_id=track_id,
     )
 
 
@@ -654,6 +723,7 @@ async def _render_tcanvas(bot: Bot, item: _PendingInline) -> _InlineRender:
         photo=cover,
         filename="tcanvas-inline-fallback.jpg",
         fallback_text=safe_caption,
+        track_id=track_id,
     )
 
 
@@ -775,14 +845,14 @@ async def music_inline_query(query: InlineQuery) -> None:
             for result in [_make_result(item_kind, None)]
             if result is not None
         ]
-        await query.answer(results, cache_time=1, is_personal=True)
+        await query.answer(results, cache_time=0, is_personal=True)
         return
 
     result = _make_result(kind, arg)
     if result is None:
-        await query.answer([], cache_time=1, is_personal=True)
+        await query.answer([], cache_time=0, is_personal=True)
         return
-    await query.answer([result], cache_time=1, is_personal=True)
+    await query.answer([result], cache_time=0, is_personal=True)
 
 
 @router.callback_query(lambda query: str(query.data or "").startswith("mi:render:"))

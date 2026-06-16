@@ -6,7 +6,7 @@ PNG_SIGNATURE = bytes.fromhex("89504e470d0a1a0a")
 
 def test_inline_neon_icons_exist_and_are_pngs_reais():
     icon_dir = ROOT / "app" / "static" / "inline_icons"
-    for name in ("playing", "tly", "week", "month", "mosaic"):
+    for name in ("playing", "tly", "tcanvas", "week", "month", "mosaic"):
         path = icon_dir / f"{name}.png"
         assert path.exists(), f"ícone ausente: {name}"
         data = path.read_bytes()
@@ -24,6 +24,6 @@ def test_inline_icon_route_and_usage_still_exist():
     assert "_INLINE_ICON_FILES" in main
 
     assert "def _inline_thumb_url" in inline
-    assert 'return f"{base}/inline-icons/{kind}.png"' in inline
+    assert 'return f"{base}/inline-icons/{kind}.png?v={rev}"' in inline
     assert "thumbnail_url=_inline_thumb_url(item_kind)" in inline
     assert "dummyimage.com" not in inline

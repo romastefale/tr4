@@ -12,17 +12,18 @@ def _block(name: str) -> str:
     return INLINE[start:end]
 
 
-def test_tly_pesquisado_usa_layout_duas_linhas():
+def test_tly_pesquisado_usa_layout_com_nome_linha_e_contador_real():
     block = _block("_render_tly")
-    assert 'header = f"{name_part}\\n♫ {track_name} — {artist}"' in block
+    assert "header = _format_inline_music_header(name_part, track_name, artist, total_plays)" in block
     assert 'header = f"{name_part} · ♫ {track_name} — {artist}"' not in block
-
-
-def test_playing_nao_foi_alterado():
-    block = _block("_render_playing")
-    assert "_track_id, caption, cover, _keyboard, _card_emoji = payload" in block
-    assert 'caption = f"{name_part} · ♫ {track_name} — {artist}"' not in block
     assert 'header = f"{name_part}\\n♫ {track_name} — {artist}"' not in block
+
+
+def test_playing_inline_tambem_usa_layout_publico_novo_sem_link():
+    block = _block("_render_playing")
+    assert "track_id, _caption, cover, _keyboard, _card_emoji = payload" in block
+    assert "caption = _format_inline_music_header(name_part, track_name, artist, total_plays)" in block
+    assert "safe_caption = _strip_links(caption)" in block
 
 
 def test_tly_continua_com_nome_musica_artista_e_sem_link():
