@@ -262,6 +262,31 @@ def run_migrations(engine) -> None:
             conn.execute(
                 text(
                     """
+                    CREATE TABLE IF NOT EXISTS lyrics_snippet_cache (
+                        cache_key VARCHAR PRIMARY KEY,
+                        artist_norm VARCHAR NOT NULL,
+                        title_norm VARCHAR NOT NULL,
+                        artist VARCHAR NOT NULL,
+                        title VARCHAR NOT NULL,
+                        snippet TEXT,
+                        source VARCHAR,
+                        expires_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_artist_norm ON lyrics_snippet_cache(artist_norm)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_title_norm ON lyrics_snippet_cache(title_norm)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_expires_at ON lyrics_snippet_cache(expires_at)"))
+        except Exception:
+            logger.warning("DB lyrics_snippet_cache table creation failed", exc_info=True)
+
+        try:
+            conn.execute(
+                text(
+                    """
                     CREATE TABLE IF NOT EXISTS canvas_files (
                         track_id VARCHAR PRIMARY KEY,
                         file_id VARCHAR NOT NULL,
@@ -306,6 +331,7 @@ def init_db() -> None:
         from app.models.card_message import CardMessage  # noqa: F401  # Sprint 8
         from app.models.canvas_file import CanvasFile  # noqa: F401  # cache file_id
         from app.models.canvas_processed_file import CanvasProcessedFile  # noqa: F401  # Canvas derivado com áudio
+        from app.models.lyrics_snippet_cache import LyricsSnippetCache  # noqa: F401  # cache de trechos /tly
         from app.models.lastfm_profile import LastfmProfile  # noqa: F401
         from app.models.spotify_token import SpotifyToken  # noqa: F401
         from app.models.track_like import TrackLike  # noqa: F401
