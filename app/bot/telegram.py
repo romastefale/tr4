@@ -26,6 +26,7 @@ from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service
 from app.services.spotify import spotify_service
+from app.services.tnow_activity_cache import schedule_tnow_activity_record
 
 logger = logging.getLogger(__name__)
 
@@ -360,6 +361,8 @@ async def build_playing_payload_for_user(
     if not track_id:
         return None
 
+    schedule_tnow_activity_record(user_id, track, context="playing_payload")
+
     track_name_raw = str(track.get("track_name") or "").strip()
     artist_raw = str(track.get("artist") or "").strip()
     try:
@@ -433,6 +436,8 @@ async def build_tly_payload(
     track_id = str(track.get("track_id") or "").strip()
     if not track_id:
         return None
+
+    schedule_tnow_activity_record(user_id, track, context="tly_payload")
 
     track_name_raw = str(track.get("track_name") or "").strip()
     artist_raw = str(track.get("artist") or "").strip()
@@ -817,6 +822,7 @@ def _register_handlers(dp: Dispatcher) -> None:
             await query.answer([], cache_time=1, is_personal=True)
             return
         track_id = str(track.get("track_id") or "").strip()
+        schedule_tnow_activity_record(query.from_user.id, track, context="inline_public_playing")
         track_name_raw = str(track.get("track_name") or "").strip()
         artist_raw = str(track.get("artist") or "").strip()
         track_name, artist, track_url, cover = _track_label(track)

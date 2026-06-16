@@ -181,6 +181,57 @@ class CoverCacheService:
         except Exception:
             logger.warning("cover_cache forget failed key=%s", cache_key, exc_info=True)
 
+    async def download_file_id_bytes(self, bot: Bot, file_id: str | None, *, timeout: int = 30) -> bytes | None:
+        """Download bytes from a cached Telegram file_id for local rendering.
+
+        The Bot API/aiogram path is: get_file(file_id) -> file_path ->
+        download_file(file_path). The returned BytesIO is used only as an
+        optimization for composed images; failure must not block fallbacks.
+        """
+        if not file_id:
+            return None
+        try:
+            tg_file = await bot.get_file(file_id)
+            file_path = getattr(tg_file, "file_path", None)
+            if not file_path:
+                return None
+            stream = await bot.download_file(file_path, timeout=timeout)
+            try:
+                stream.seek(0)
+            except Exception:
+                pass
+            data = stream.read()
+            return data if isinstance(data, bytes) and data else None
+        except Exception:
+            logger.debug("cover_cache download file_id failed", exc_info=True)
+            return None
+
+    async def resolve_photo_bytes(
+        self,
+        bot: Bot,
+        *,
+        track_id: str | None = None,
+        cover_url: str | None = None,
+        file_id: str | None = None,
+    ) -> bytes | None:
+        """Return cover bytes using Telegram cache first, then DB lookup.
+
+        Mosaic rendering needs raw bytes, not just a file_id. When a cached
+        file_id is available, download it from Telegram; when it fails, callers
+        should fall back to the original cover URL.
+        """
+        if file_id:
+            data = await self.download_file_id_bytes(bot, file_id)
+            if data:
+                return data
+        hit = await self.get(track_id=track_id, cover_url=cover_url)
+        if hit and hit.file_id and hit.file_id != file_id:
+            data = await self.download_file_id_bytes(bot, hit.file_id)
+            if data:
+                return data
+            await self.forget(track_id=track_id, cover_url=cover_url)
+        return None
+
     async def resolve_photo(
         self,
         bot: Bot,

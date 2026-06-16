@@ -62,6 +62,7 @@ from app.services.monthfm_card import render_monthfm_card
 from app.services.music import music_service
 from app.services.spotify import spotify_service
 from app.services.spotify_links import looks_like_spotify_track_reference
+from app.services.tnow_activity_cache import schedule_tnow_activity_record
 from app.services.tnow_card import render_tnow_card
 
 logger = logging.getLogger(__name__)
@@ -610,6 +611,7 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
     track_id = str(track.get("track_id") or "").strip()
     if not track_id:
         return _InlineRender(caption="Erro ao identificar a música.", fallback_text="Erro ao identificar a música.")
+    schedule_tnow_activity_record(item.user_id, track, context="inline_tly")
     try:
         await likes_service.register_play(item.user_id, track_id, track_name=track_name_raw, artist_name=artist_raw)
     except Exception:

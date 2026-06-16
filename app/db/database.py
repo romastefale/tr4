@@ -305,6 +305,47 @@ def run_migrations(engine) -> None:
         except Exception:
             logger.warning("DB lyrics_snippet_cache table creation failed", exc_info=True)
 
+
+        # Cache persistente do mosaico /tnow. Fonte de verdade por usuário:
+        # Last.fm username + faixa ouvida + quando foi ouvida/observada.
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS tnow_recent_tracks (
+                        user_id """ + ("BIGINT" if dialect_name == "postgresql" else "INTEGER") + """ PRIMARY KEY,
+                        lastfm_username VARCHAR,
+                        source VARCHAR NOT NULL,
+                        status VARCHAR NOT NULL,
+                        track_id VARCHAR,
+                        track_name VARCHAR NOT NULL,
+                        artist VARCHAR NOT NULL,
+                        album_name VARCHAR,
+                        track_url TEXT,
+                        cover_url TEXT,
+                        cover_file_id VARCHAR,
+                        is_live BOOLEAN NOT NULL DEFAULT """ + ("false" if dialect_name == "postgresql" else "0") + """,
+                        played_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """,
+                        observed_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        fetched_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        expires_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        raw_age_seconds FLOAT,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_lastfm_username ON tnow_recent_tracks(lastfm_username)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_status ON tnow_recent_tracks(status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_track_id ON tnow_recent_tracks(track_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_played_at ON tnow_recent_tracks(played_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_observed_at ON tnow_recent_tracks(observed_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_fetched_at ON tnow_recent_tracks(fetched_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_expires_at ON tnow_recent_tracks(expires_at)"))
+        except Exception:
+            logger.warning("DB tnow_recent_tracks table creation failed", exc_info=True)
+
         # Cache persistente de capas musicais por file_id. Fase 3: o canal
         # técnico arquiva a mídia; o banco indexa por faixa/URL/hash.
         try:
@@ -386,6 +427,7 @@ def init_db() -> None:
         from app.models.track_like import TrackLike  # noqa: F401
         from app.models.track_play import TrackPlay  # noqa: F401
         from app.models.track_reaction import TrackReaction  # noqa: F401  # Sprint 8
+        from app.models.tnow_recent_track import TnowRecentTrack  # noqa: F401  # cache /tnow
 
         Base.metadata.create_all(bind=engine)
         logger.info("Database initialized.")
