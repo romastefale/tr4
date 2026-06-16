@@ -6,10 +6,8 @@ como mensagem textual temporária e, quando o Telegram envia
 musical final. A legenda final inline é sempre sanitizada para não conter links.
 
 Regras desta fase:
-- playing inline: capa/foto + legenda sem links.
-- tly inline: somente foto de capa, nunca Canvas/vídeo.
-- weekfm/monthfm inline: extratos individuais do usuário que chamou o inline.
-- tnow/mosaico inline: apenas dono do código, sem tentar descobrir grupo destino.
+- fluxo inline musical inteiro: apenas dono do código. Usuário comum não recebe opções inline.
+- tnow/mosaico inline: matriz universal apenas para o dono, sem tentar descobrir grupo destino.
 - resultado final com foto prioriza file_id persistente no Telegram; URL só fica como fallback seguro.
 """
 from __future__ import annotations
@@ -607,7 +605,7 @@ async def _render_tly(item: _PendingInline) -> _InlineRender:
 
     artist_raw = str(track.get("artist") or "").strip()
     track_name_raw = str(track.get("track_name") or "").strip()
-    lyric_snippet: str | None = None
+    lyric_snippet = None
 
     track_id = str(track.get("track_id") or "").strip()
     if not track_id:
@@ -776,7 +774,7 @@ async def _render_mosaic(bot: Bot, item: _PendingInline) -> _InlineRender:
         text = "Ninguém cadastrado está com música tocando agora."
         return _InlineRender(caption=text, fallback_text=text)
     card_bytes = await render_tnow_card(entries)
-    caption = f"♫ <b>tocando agora</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
+    caption = f"♫ <b>mosaico universal</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
     safe_caption = _strip_links(caption)
     if card_bytes:
         return _InlineRender(caption=safe_caption, photo=card_bytes, filename="tnow-inline.jpg", fallback_text=safe_caption)
@@ -790,6 +788,10 @@ async def _render_mosaic(bot: Bot, item: _PendingInline) -> _InlineRender:
 
 
 async def _render(bot: Bot, item: _PendingInline) -> _InlineRender:
+    if not _is_owner(item.user_id):
+        logger.info("MUSIC_INLINE_RENDER_BLOCKED_NON_OWNER | user_id=%s | kind=%s", item.user_id, item.kind)
+        text = "Acesso restrito ao dono do código."
+        return _InlineRender(caption=text, fallback_text=text)
     if item.kind == "playing":
         return await _render_playing(item)
     if item.kind == "tly":
@@ -809,8 +811,17 @@ async def _render(bot: Bot, item: _PendingInline) -> _InlineRender:
 async def music_inline_query(query: InlineQuery) -> None:
     kind, arg = _split_query(query.query)
 
+    if not _is_owner(query.from_user.id):
+        logger.info(
+            "MUSIC_INLINE_BLOCKED_NON_OWNER | user_id=%s | query=%s",
+            query.from_user.id,
+            (query.query or "")[:80],
+        )
+        await query.answer([], cache_time=1, is_personal=True)
+        return
+
     def _make_result(item_kind: str, item_arg: str | None) -> InlineQueryResultArticle | None:
-        allowed = item_kind != "mosaic" or _is_owner(query.from_user.id)
+        allowed = _is_owner(query.from_user.id)
         if not allowed:
             return None
         result_id = f"mi:{item_kind}:{uuid.uuid4().hex[:12]}"
@@ -850,7 +861,7 @@ async def music_inline_query(query: InlineQuery) -> None:
 
     result = _make_result(kind, arg)
     if result is None:
-        await query.answer([], cache_time=0, is_personal=True)
+        await query.answer([], cache_time=1, is_personal=True)
         return
     await query.answer([result], cache_time=0, is_personal=True)
 

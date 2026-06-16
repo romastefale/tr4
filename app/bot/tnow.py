@@ -1,25 +1,22 @@
-"""/tnow — mosaico ao vivo do que cada membro cadastrado está ouvindo agora.
+"""/tnow — mosaico musical com escopo explícito e sem vazamento universal.
 
-Critérios:
-- Considera todo user_id presente em `spotify_tokens` OU `lastfm_profiles`.
-- Quando rodado em grupo/supergrupo, restringe ao subconjunto que é membro
-  daquele chat. Em DM/privado, lista
-  todos os cadastrados.
-- Mantém SOMENTE quem está com música em reprodução neste exato momento
-  (Spotify currently-playing == 200 AND is_playing=true, OU Last.fm
-  @attr.nowplaying == true).
-- Quem pausou / parou é ignorado.
-
-Privacidade: o pré-requisito p/ aparecer é o usuário ter conectado
-voluntariamente Spotify ou Last.fm ao bot, então o card só revela o que
-ele já consentiu em expor por meio dos comandos individuais. Em grupo,
-o filtro de membership garante que ninguém de fora apareça no mosaico.
+Regras consolidadas:
+- Grupo/supergrupo: mostra somente usuários cadastrados que ainda são membros
+  daquele chat. Este fluxo é livre para membros do grupo.
+- DM/privado sem grupo: é matriz universal e só pode ser executada pelo dono
+  do código. Usuário comum nunca recebe mosaico universal.
+- A captura usa somente dado musical real: tocando agora, última faixa recente
+  ou último dado real aceito pelos serviços Spotify/Last.fm. Nada é inventado.
+- O nome visual do card prioriza o username Last.fm cadastrado; Telegram é
+  apenas fallback.
 """
 from __future__ import annotations
 
 import asyncio
 import html
 import logging
+import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -30,7 +27,7 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, Chat, Message
 from sqlalchemy import select
 
-from app.config.settings import HTTP_TIMEOUT_SECONDS
+from app.config.settings import SPOTIFY_MAX_CONCURRENT_REQUESTS, is_code_owner
 from app.db.database import SessionLocal
 from app.models.lastfm_profile import LastfmProfile
 from app.models.spotify_token import SpotifyToken
@@ -46,6 +43,8 @@ router = Router(name="tnow")
 MAX_USERS = 60
 MAX_TILES = 30
 COVER_FETCH_TIMEOUT = 8.0
+TNOW_SNAPSHOT_TTL_SECONDS = 75.0
+TNOW_GATHER_CONCURRENCY = max(1, min(20, int(SPOTIFY_MAX_CONCURRENT_REQUESTS or 10)))
 
 TNOW_RECENT_YELLOW_MINUTES = 15
 TNOW_RECENT_RED_MINUTES = 30
@@ -55,6 +54,15 @@ _TNOW_STATUS_PRIORITY = {
     "recent_30": 2,
     "stale": 3,
 }
+
+
+@dataclass(frozen=True)
+class _TnowSnapshot:
+    created_at: float
+    entries: tuple[TnowEntry, ...]
+
+
+_TNOW_SNAPSHOTS: dict[str, _TnowSnapshot] = {}
 
 
 def _utcnow() -> datetime:
@@ -149,6 +157,42 @@ def _grid_slots(n: int) -> int:
     return columns * math.ceil(n / columns)
 
 
+def _scope_kind(chat: Chat | None) -> str:
+    if chat is not None and chat.type in _GROUP_TYPES:
+        return "group"
+    return "universal"
+
+
+def _snapshot_key(chat: Chat | None) -> str:
+    if chat is not None and chat.type in _GROUP_TYPES:
+        return f"tnow:group:{int(chat.id)}"
+    return "tnow:universal"
+
+
+def _get_snapshot(key: str) -> list[TnowEntry] | None:
+    item = _TNOW_SNAPSHOTS.get(key)
+    if item is None:
+        return None
+    age = time.monotonic() - item.created_at
+    if age > TNOW_SNAPSHOT_TTL_SECONDS:
+        _TNOW_SNAPSHOTS.pop(key, None)
+        return None
+    logger.info(
+        "TNOW_SNAPSHOT_HIT | scope=%s | age=%.1f | selected=%s",
+        key,
+        age,
+        len(item.entries),
+    )
+    return list(item.entries)
+
+
+def _put_snapshot(key: str, entries: list[TnowEntry]) -> None:
+    _TNOW_SNAPSHOTS[key] = _TnowSnapshot(created_at=time.monotonic(), entries=tuple(entries))
+    if len(_TNOW_SNAPSHOTS) > 100:
+        now = time.monotonic()
+        for stale_key, snapshot in list(_TNOW_SNAPSHOTS.items()):
+            if now - snapshot.created_at > TNOW_SNAPSHOT_TTL_SECONDS:
+                _TNOW_SNAPSHOTS.pop(stale_key, None)
 
 
 def _registered_user_ids() -> list[int]:
@@ -238,6 +282,12 @@ def _lastfm_display_name(user_id: int) -> str | None:
 
 
 async def _display_name(bot: Any, user_id: int) -> str:
+    # Regra musical: o nome do mosaico prioriza o username Last.fm.
+    # Telegram é somente fallback quando não existe Last.fm cadastrado.
+    lastfm_username = _lastfm_display_name(user_id)
+    if lastfm_username:
+        return lastfm_username
+
     try:
         chat = await bot.get_chat(user_id)
         name = getattr(chat, "full_name", None) or getattr(chat, "first_name", None)
@@ -249,9 +299,6 @@ async def _display_name(bot: Any, user_id: int) -> str:
     except Exception:
         logger.debug("TNOW_GET_CHAT_FAILED | user_id=%s", user_id, exc_info=True)
 
-    lastfm_username = _lastfm_display_name(user_id)
-    if lastfm_username:
-        return lastfm_username
     return "Usuário cadastrado"
 
 
@@ -305,10 +352,22 @@ async def _filter_to_group_members(bot: Any, chat_id: int, user_ids: list[int]) 
     return [uid for uid, ok in zip(user_ids, checks) if ok]
 
 
-async def _gather_entries(bot: Any, chat: Chat | None = None) -> list[TnowEntry]:
+async def _gather_entries(bot: Any, chat: Chat | None = None, *, use_snapshot: bool = True) -> list[TnowEntry]:
+    scope = _scope_kind(chat)
+    snapshot_key = _snapshot_key(chat)
+    if use_snapshot:
+        cached = _get_snapshot(snapshot_key)
+        if cached is not None:
+            return cached
+
     registered_user_ids = _registered_user_ids()
     if not registered_user_ids:
-        logger.info("TNOW_GATHER_RESULT | registered=0 | members=0 | fresh=0 | stale=0 | selected=0")
+        logger.info(
+            "TNOW_GATHER_RESULT | scope=%s | registered=0 | members=0 | fresh=0 | stale=0 | selected=0 | chat_id=%s",
+            scope,
+            getattr(chat, "id", None),
+        )
+        _put_snapshot(snapshot_key, [])
         return []
 
     user_ids = registered_user_ids
@@ -316,14 +375,21 @@ async def _gather_entries(bot: Any, chat: Chat | None = None) -> list[TnowEntry]
         user_ids = await _filter_to_group_members(bot, chat.id, user_ids)
         if not user_ids:
             logger.info(
-                "TNOW_GATHER_RESULT | registered=%s | members=0 | fresh=0 | stale=0 | selected=0 | chat_id=%s",
+                "TNOW_GATHER_RESULT | scope=group | registered=%s | members=0 | fresh=0 | stale=0 | selected=0 | chat_id=%s",
                 len(registered_user_ids),
                 chat.id,
             )
+            _put_snapshot(snapshot_key, [])
             return []
 
     now = _utcnow()
-    tasks = [asyncio.create_task(_build_entry(bot, uid, now=now)) for uid in user_ids]
+    sem = asyncio.Semaphore(TNOW_GATHER_CONCURRENCY)
+
+    async def _guarded_build(uid: int) -> TnowEntry | None:
+        async with sem:
+            return await _build_entry(bot, uid, now=now)
+
+    tasks = [asyncio.create_task(_guarded_build(uid)) for uid in user_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     fresh: list[TnowEntry] = []
@@ -353,7 +419,8 @@ async def _gather_entries(bot: Any, chat: Chat | None = None) -> list[TnowEntry]
             selected.extend(stale[:missing])
 
     logger.info(
-        "TNOW_GATHER_RESULT | registered=%s | members=%s | fresh=%s | stale=%s | selected=%s | empty=%s | raised=%s | chat_id=%s",
+        "TNOW_GATHER_RESULT | scope=%s | registered=%s | members=%s | fresh=%s | stale=%s | selected=%s | empty=%s | raised=%s | chat_id=%s | snapshot=%s",
+        scope,
         len(registered_user_ids),
         len(user_ids),
         len(fresh),
@@ -362,25 +429,42 @@ async def _gather_entries(bot: Any, chat: Chat | None = None) -> list[TnowEntry]
         empty,
         raised,
         getattr(chat, "id", None),
+        snapshot_key,
     )
 
+    _put_snapshot(snapshot_key, selected)
     return selected
 
 
 
 
-async def _finish_tnow(status: Message) -> None:
+async def _finish_tnow(status: Message, *, requester_id: int) -> None:
     try:
-        entries = await _gather_entries(status.bot)
-        if not entries:
-            await status.edit_text(
-                "Ninguém cadastrado está com música tocando agora. 🦗\n"
-                "Conecta seu Spotify ou Last.fm e bota algo no replay."
+        chat = status.chat if status.chat.type in _GROUP_TYPES else None
+        scope = _scope_kind(chat)
+        if scope == "universal" and not is_code_owner(requester_id):
+            logger.info(
+                "TNOW_UNIVERSAL_BLOCKED | user_id=%s | chat_id=%s | chat_type=%s",
+                requester_id,
+                getattr(status.chat, "id", None),
+                getattr(status.chat, "type", None),
             )
+            await status.edit_text("Mosaico universal é exclusivo do dono do código. Use /tnow dentro de um grupo.")
+            return
+
+        entries = await _gather_entries(status.bot, chat=chat)
+        if not entries:
+            empty_message = (
+                "Ninguém cadastrado neste grupo tem dado musical real agora."
+                if scope == "group"
+                else "Nenhum usuário musical importado tem dado musical real agora."
+            )
+            await status.edit_text(empty_message)
             return
 
         card_bytes = await render_tnow_card(entries)
-        caption = f"♫ <b>ao vivo e recentes</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
+        label = "mosaico do grupo" if scope == "group" else "mosaico universal"
+        caption = f"♫ <b>{label}</b> • {len(entries)} pessoa{'s' if len(entries) != 1 else ''}"
         if card_bytes:
             sent = await status.answer_photo(
                 photo=BufferedInputFile(card_bytes, filename="tnow.jpg"),
@@ -431,6 +515,6 @@ async def tnow(message: Message) -> None:
     except Exception:
         pass
     status = await message.answer("Vendo quem tá ouvindo o quê agora...")
-    task = asyncio.create_task(_finish_tnow(status))
+    task = asyncio.create_task(_finish_tnow(status, requester_id=message.from_user.id))
     _BG_TASKS.add(task)
     task.add_done_callback(_BG_TASKS.discard)

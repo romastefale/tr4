@@ -36,6 +36,13 @@ def test_inline_scope_contains_expected_commands():
         assert token in INLINE
 
 
+
+
+def test_inline_musical_inteiro_e_owner_only():
+    assert "MUSIC_INLINE_BLOCKED_NON_OWNER" in INLINE
+    assert "MUSIC_INLINE_RENDER_BLOCKED_NON_OWNER" in INLINE
+    assert "allowed = _is_owner(query.from_user.id)" in INLINE
+
 def test_empty_inline_query_does_not_use_legacy_playing_photo_url():
     assert "if not raw:" in TELEGRAM
     assert "await query.answer([], cache_time=1, is_personal=True)" in TELEGRAM
@@ -44,7 +51,7 @@ def test_empty_inline_query_does_not_use_legacy_playing_photo_url():
 def test_empty_inline_query_shows_clickable_menu():
     assert "_INLINE_MENU_KINDS" in INLINE
     assert 'if not kind:' in INLINE
-    assert "await query.answer(results, cache_time=1, is_personal=True)" in INLINE
+    assert "await query.answer(results, cache_time=0, is_personal=True)" in INLINE
     for token in ('"playing"', '"tly"', '"week"', '"month"', '"mosaic"'):
         assert token in INLINE
 

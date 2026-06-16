@@ -154,8 +154,9 @@ async def render_tnow_card(entries: list[TnowEntry]) -> bytes | None:
     try:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(args=["--no-sandbox"])
-            # Altura cresce com o grid; viewport inicial pequena pra deixar
-            # o navegador medir, depois full_page=True captura tudo.
+            # Captura somente o elemento real do card. Antes o render usava
+            # captura de página inteira com viewport fixa deixava uma faixa escura
+            # sobrando abaixo em mosaicos pequenos.
             page = await browser.new_page(
                 viewport={"width": CARD_WIDTH, "height": 1200},
                 device_scale_factor=2,
@@ -165,7 +166,9 @@ async def render_tnow_card(entries: list[TnowEntry]) -> bytes | None:
                 await page.evaluate("document.fonts && document.fonts.ready")
             except Exception:
                 logger.debug("TNOW_CARD_FONTS_READY_FAILED", exc_info=True)
-            return await page.screenshot(type="jpeg", quality=90, full_page=True, timeout=20000)
+            card = page.locator(".card").first
+            await card.wait_for(state="visible", timeout=20000)
+            return await card.screenshot(type="jpeg", quality=90, timeout=20000)
     except Exception:
         logger.exception("TNOW_CARD_RENDER_FAILED | n=%s", len(entries))
         return None

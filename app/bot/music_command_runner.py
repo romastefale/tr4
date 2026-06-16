@@ -10,6 +10,7 @@ from aiogram import Bot
 from aiogram.types import BufferedInputFile
 
 from app.bot.music_groups import list_groups
+from app.config.settings import is_code_owner
 from app.services.connection_check import is_user_connected
 from app.services.cover_cache import cover_cache_service
 from app.services.lastfm import lastfm_service
@@ -631,6 +632,10 @@ async def _run_universal_tnow_task(
     spotify_tokens or lastfm_profiles. No group is used and nothing is posted
     publicly.
     """
+    if not is_code_owner(requester_id):
+        logger.info("WEB_UNIVERSAL_TNOW_BLOCKED_NON_OWNER | user_id=%s", requester_id)
+        return
+
     from app.bot.tnow import _gather_entries
     from app.services.tnow_card import render_tnow_card
     from app.bot.telegram import _react_to_own_card, _CARD_EMOJI_TNOW
@@ -713,9 +718,16 @@ async def execute_universal_tnow(
 ) -> MusicCommandResult:
     """Accept a code-owner-only global mosaic request.
 
-    Code-owner authorization is enforced at the entrypoints. This function only
-    schedules the DM-only musical delivery.
+    A segunda validação aqui impede vazamento caso alguma rota futura chame
+    diretamente este executor sem passar pelo filtro do Web App/DM.
     """
+    if not is_code_owner(requester_id):
+        logger.info("WEB_UNIVERSAL_TNOW_REJECTED_NON_OWNER | user_id=%s", requester_id)
+        raise MusicCommandError(
+            "code_owner_required",
+            "Mosaico universal é exclusivo do dono do código.",
+            status_code=403,
+        )
     _spawn_web_task(_run_universal_tnow_task(bot, requester_id=requester_id))
     return MusicCommandResult(
         ok=True,
