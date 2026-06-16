@@ -15,12 +15,14 @@ Regras desta fase:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
 import logging
 import re
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 from aiogram import Bot, Router
 from aiogram.types import (
@@ -112,6 +114,30 @@ _KIND_LOADING = {
 }
 
 _INLINE_MENU_KINDS: tuple[str, ...] = ("playing", "tly", "tcanvas", "week", "month", "mosaic")
+_INLINE_ICON_DIR = Path(__file__).resolve().parents[1] / "static" / "inline_icons"
+_INLINE_ICON_FILES = {
+    "playing": "playing.png",
+    "tly": "tly.png",
+    "tcanvas": "tcanvas.png",
+    "week": "week.png",
+    "month": "month.png",
+    "mosaic": "mosaic.png",
+}
+
+
+def _build_inline_icon_revisions() -> dict[str, str]:
+    revisions: dict[str, str] = {}
+    for kind, filename in _INLINE_ICON_FILES.items():
+        path = _INLINE_ICON_DIR / filename
+        try:
+            revisions[kind] = hashlib.sha1(path.read_bytes()).hexdigest()[:12]
+        except Exception:
+            revisions[kind] = "0"
+    return revisions
+
+
+_INLINE_ICON_REVISIONS = _build_inline_icon_revisions()
+
 
 def _inline_thumb_url(kind: str) -> str | None:
     base = str(BASE_URL or "").strip().rstrip("/")
@@ -119,7 +145,8 @@ def _inline_thumb_url(kind: str) -> str | None:
         return None
     if kind not in _INLINE_MENU_KINDS:
         return None
-    return f"{base}/inline-icons/{kind}.png"
+    rev = _INLINE_ICON_REVISIONS.get(kind, "0")
+    return f"{base}/inline-icons/{kind}.png?v={rev}"
 
 
 _LINK_TAG_RE = re.compile(r"<a\s+[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
