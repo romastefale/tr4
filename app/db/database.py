@@ -346,6 +346,29 @@ def run_migrations(engine) -> None:
         except Exception:
             logger.warning("DB tnow_recent_tracks table creation failed", exc_info=True)
 
+        # Máscara visual owner-only para nomes no /tnow/mosaico. Não altera
+        # Last.fm/Spotify nem a música; apenas o rótulo renderizado.
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS tnow_private_visibility (
+                        telegram_user_id """ + ("BIGINT" if dialect_name == "postgresql" else "INTEGER") + """ PRIMARY KEY,
+                        mode VARCHAR NOT NULL DEFAULT 'all',
+                        display_label VARCHAR NOT NULL DEFAULT 'User',
+                        enabled BOOLEAN NOT NULL DEFAULT """ + ("true" if dialect_name == "postgresql" else "1") + """,
+                        created_by_owner_id """ + ("BIGINT" if dialect_name == "postgresql" else "INTEGER") + """,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_private_visibility_mode ON tnow_private_visibility(mode)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_private_visibility_enabled ON tnow_private_visibility(enabled)"))
+        except Exception:
+            logger.warning("DB tnow_private_visibility table creation failed", exc_info=True)
+
         # Cache persistente de capas musicais por file_id. Fase 3: o canal
         # técnico arquiva a mídia; o banco indexa por faixa/URL/hash.
         try:
@@ -428,6 +451,7 @@ def init_db() -> None:
         from app.models.track_play import TrackPlay  # noqa: F401
         from app.models.track_reaction import TrackReaction  # noqa: F401  # Sprint 8
         from app.models.tnow_recent_track import TnowRecentTrack  # noqa: F401  # cache /tnow
+        from app.models.tnow_private_visibility import TnowPrivateVisibility  # noqa: F401  # máscara /tpv
 
         Base.metadata.create_all(bind=engine)
         logger.info("Database initialized.")

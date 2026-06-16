@@ -220,16 +220,23 @@ class CoverCacheService:
         file_id is available, download it from Telegram; when it fails, callers
         should fall back to the original cover URL.
         """
-        if file_id:
-            data = await self.download_file_id_bytes(bot, file_id)
-            if data:
-                return data
         hit = await self.get(track_id=track_id, cover_url=cover_url)
-        if hit and hit.file_id and hit.file_id != file_id:
+        if hit and hit.file_id:
+            if file_id and file_id != hit.file_id:
+                logger.info("cover_cache file_id mismatch ignored for current cover key")
             data = await self.download_file_id_bytes(bot, hit.file_id)
             if data:
                 return data
             await self.forget(track_id=track_id, cover_url=cover_url)
+            return None
+
+        # Só confia em file_id direto quando não há identidade de capa para
+        # validar. No /tnow sempre há track_id/cover_url; baixar um file_id
+        # antigo antes de verificar a chave foi a causa plausível de capa errada.
+        if file_id and not (track_id or cover_url):
+            data = await self.download_file_id_bytes(bot, file_id)
+            if data:
+                return data
         return None
 
     async def resolve_photo(

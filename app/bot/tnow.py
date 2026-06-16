@@ -45,6 +45,7 @@ from app.services.tnow_activity_cache import (
     tnow_activity_cache_service,
 )
 from app.services.tnow_card import TnowEntry, render_tnow_card
+from app.services.tnow_privacy import TPV_DEFAULT_LABEL, normalize_tpv_mode, tnow_privacy_service
 
 logger = logging.getLogger(__name__)
 router = Router(name="tnow")
@@ -303,8 +304,14 @@ def _lastfm_display_name(user_id: int) -> str | None:
     return username or None
 
 
-async def _display_name(bot: Any, user_id: int, lastfm_username: str | None = None) -> str:
-    # Regra musical: o nome do mosaico prioriza o username Last.fm.
+async def _display_name(bot: Any, user_id: int, lastfm_username: str | None = None, *, surface: str = "tnow") -> str:
+    # /tpv é owner-only e só mascara o nome renderizado. A busca musical segue
+    # usando Last.fm/Spotify e a música continua aparecendo normalmente.
+    private_label = tnow_privacy_service.label_for(telegram_user_id=user_id, surface=surface)
+    if private_label:
+        return private_label
+
+    # Regra musical existente: o nome do mosaico prioriza o username Last.fm.
     # Telegram é somente fallback quando não existe Last.fm cadastrado.
     if lastfm_username and str(lastfm_username).strip():
         return str(lastfm_username).strip()
@@ -323,7 +330,7 @@ async def _display_name(bot: Any, user_id: int, lastfm_username: str | None = No
     except Exception:
         logger.debug("TNOW_GET_CHAT_FAILED | user_id=%s", user_id, exc_info=True)
 
-    return "Usuário cadastrado"
+    return TPV_DEFAULT_LABEL
 
 
 async def _warm_cover_cache(bot: Any, activity: TnowActivityHit) -> str | None:
@@ -420,7 +427,7 @@ async def _refresh_recent_activity(bot: Any, user_id: int, *, now: datetime) -> 
 
 async def _entry_from_activity(bot: Any, activity: TnowActivityHit) -> TnowEntry:
     cover_bytes = await _cover_bytes_for_activity(bot, activity)
-    display_name = await _display_name(bot, activity.user_id, activity.lastfm_username)
+    display_name = await _display_name(bot, activity.user_id, activity.lastfm_username, surface="tnow")
     source = "spotify" if str(activity.source).startswith("spotify") else "lastfm"
     age_minutes = int(max(0.0, activity.raw_age_seconds or 0.0) // 60)
     return TnowEntry(
@@ -635,6 +642,75 @@ async def _finish_tnow(status: Message, *, requester_id: int) -> None:
 # I4: mantém ref forte das background tasks pra GC não coletar antes do término.
 _BG_TASKS: set[asyncio.Task] = set()
 
+
+
+
+def _clear_tnow_snapshots_for_privacy_change() -> None:
+    _TNOW_SNAPSHOTS.clear()
+
+
+def _parse_tpv_args(text: str | None) -> tuple[int | None, str | None, str | None]:
+    parts = str(text or "").split()
+    if len(parts) < 3:
+        return None, None, None
+    try:
+        user_id = int(parts[1])
+    except Exception:
+        return None, None, None
+    mode_raw = parts[2].strip().lower()
+    label = " ".join(parts[3:]).strip() if len(parts) > 3 else TPV_DEFAULT_LABEL
+    return user_id, mode_raw, label or TPV_DEFAULT_LABEL
+
+
+@router.message(Command("tpv"))
+async def tpv(message: Message) -> None:
+    """Owner-only DM command to mask a Telegram user as User in /tnow/mosaico.
+
+    Usage:
+    /tpv <telegram_id> tnow
+    /tpv <telegram_id> mosaico
+    /tpv <telegram_id> all
+    /tpv <telegram_id> off
+    """
+    if not message.from_user:
+        return
+    if message.chat.type != ChatType.PRIVATE or not is_code_owner(message.from_user.id):
+        return
+
+    user_id, mode_raw, label = _parse_tpv_args(message.text)
+    if user_id is None or not mode_raw:
+        await message.answer("Uso: /tpv <ID Telegram> tnow|mosaico|all|off")
+        return
+
+    if mode_raw == "off":
+        changed = tnow_privacy_service.disable_rule(telegram_user_id=user_id, owner_id=message.from_user.id)
+        _clear_tnow_snapshots_for_privacy_change()
+        await message.answer(
+            f"TPV desativado para <code>{user_id}</code>." if changed else f"TPV já estava inativo para <code>{user_id}</code>.",
+            parse_mode="HTML",
+        )
+        return
+
+    mode = normalize_tpv_mode(mode_raw)
+    if mode not in {"tnow", "mosaic", "all"}:
+        await message.answer("Modo inválido. Use: tnow, mosaico, all ou off.")
+        return
+
+    rule = tnow_privacy_service.set_rule(
+        telegram_user_id=user_id,
+        mode=mode,
+        display_label=label or TPV_DEFAULT_LABEL,
+        owner_id=message.from_user.id,
+    )
+    _clear_tnow_snapshots_for_privacy_change()
+    await message.answer(
+        "TPV ativo: <code>{uid}</code> será exibido como <b>{label}</b> em <code>{mode}</code>.".format(
+            uid=rule.telegram_user_id,
+            label=html.escape(rule.display_label),
+            mode=html.escape(rule.mode),
+        ),
+        parse_mode="HTML",
+    )
 
 @router.message(Command("tnow"))
 async def tnow(message: Message) -> None:

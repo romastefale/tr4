@@ -264,6 +264,9 @@ class TnowActivityCacheService:
                 )
                 db.add(row)
             else:
+                previous_track_id = row.track_id
+                previous_cover_url = row.cover_url
+                same_cover_identity = (previous_track_id == track_id and previous_cover_url == cover_url)
                 row.lastfm_username = username or row.lastfm_username
                 row.source = source
                 row.status = now_status
@@ -273,7 +276,13 @@ class TnowActivityCacheService:
                 row.album_name = album_name
                 row.track_url = track_url
                 row.cover_url = cover_url
-                row.cover_file_id = cover_file_id or row.cover_file_id
+                if cover_file_id:
+                    row.cover_file_id = cover_file_id
+                elif not same_cover_identity:
+                    # Nunca carregar file_id de capa antiga para uma faixa/capa nova.
+                    # O log real mostrou várias trocas de música do mesmo user; manter
+                    # row.cover_file_id aqui pode renderizar a capa anterior no mosaico.
+                    row.cover_file_id = None
                 row.is_live = is_live
                 row.played_at = played_at
                 row.observed_at = observed_at
