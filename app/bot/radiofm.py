@@ -1,15 +1,16 @@
 """/radiofm — busca uma música por termo livre e envia o card avulso.
 
-Fluxo: `/radiofm <termo>` busca candidatos e mostra uma lista de botões
-(título - artista). `/radiofm` sem termo pergunta qual música buscar e aceita
-uma resposta direta ao prompt ou a próxima mensagem do mesmo autor no mesmo
-chat. Ao escolher, o bot envia o card final sem apagar mensagens do grupo.
+Fluxo limpo: o bot usa apenas mensagens próprias transitórias. Durante a busca,
+edita a mesma mensagem para status/lista/preparação; ao concluir o envio do
+card final, apaga somente essa mensagem própria. Não apaga comando do usuário,
+resposta do usuário, mensagens de terceiros nem depende de permissão admin.
 
 Sem contador de play/like e sem registro de reações (diferente de /playing e
 /tcanvas). ZERO emojis na interface.
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import time
@@ -45,6 +46,8 @@ class _Pending:
     user_name: str
     command_chat_id: int
     command_msg_id: int
+    flow_chat_id: int
+    flow_msg_id: int
     ts: float = field(default_factory=time.monotonic)
 
 
@@ -111,6 +114,88 @@ def _is_radiofm_prompt_answer(message: Message) -> bool:
         return False
 
 
+
+async def _safe_delete_bot_message(bot, chat_id: int, message_id: int) -> bool:
+    """Apaga apenas mensagem própria do bot usada como fluxo transitório.
+
+    Nunca é chamada para comando/resposta do usuário. Falhas esperadas
+    (mensagem já apagada, não encontrada ou não apagável) não interrompem o
+    RadioFM.
+    """
+    try:
+        await bot.delete_message(chat_id=int(chat_id), message_id=int(message_id))
+        return True
+    except Exception:
+        logger.info(
+            "RADIOFM_TRANSIENT_DELETE_SKIPPED chat_id=%s message_id=%s",
+            chat_id,
+            message_id,
+            exc_info=True,
+        )
+        return False
+
+
+async def _delete_bot_message_later(bot, chat_id: int, message_id: int, delay: float) -> None:
+    try:
+        await asyncio.sleep(max(0.0, float(delay)))
+        await _safe_delete_bot_message(bot, chat_id, message_id)
+    except Exception:
+        logger.info(
+            "RADIOFM_TRANSIENT_DELETE_TASK_FAILED chat_id=%s message_id=%s",
+            chat_id,
+            message_id,
+            exc_info=True,
+        )
+
+
+def _schedule_delete_bot_message(bot, chat_id: int, message_id: int, *, delay: float = 12.0) -> None:
+    try:
+        asyncio.create_task(_delete_bot_message_later(bot, chat_id, message_id, delay))
+    except RuntimeError:
+        logger.info(
+            "RADIOFM_TRANSIENT_DELETE_SCHEDULE_SKIPPED chat_id=%s message_id=%s",
+            chat_id,
+            message_id,
+            exc_info=True,
+        )
+
+
+async def _set_flow_message(
+    message: Message,
+    *,
+    flow_chat_id: int,
+    flow_msg_id: int,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> tuple[int, int]:
+    """Edita a mensagem própria do bot; se não der, cria outra mensagem própria.
+
+    O fallback preserva o fluxo sem tentar apagar nada do usuário.
+    """
+    bot = message.bot
+    try:
+        await bot.edit_message_text(
+            chat_id=int(flow_chat_id),
+            message_id=int(flow_msg_id),
+            text=text,
+            reply_markup=reply_markup,
+        )
+        return int(flow_chat_id), int(flow_msg_id)
+    except Exception:
+        logger.info(
+            "RADIOFM_TRANSIENT_EDIT_SKIPPED chat_id=%s message_id=%s",
+            flow_chat_id,
+            flow_msg_id,
+            exc_info=True,
+        )
+        try:
+            _schedule_delete_bot_message(bot, flow_chat_id, flow_msg_id, delay=2.0)
+        except Exception:
+            pass
+        fallback = await message.answer(text, reply_markup=reply_markup)
+        return int(fallback.chat.id), int(fallback.message_id)
+
+
 async def _resolve_spotify_output(hit: TrackHit) -> tuple[str | None, str | None]:
     """Resolve URL/capa do Spotify para o resultado escolhido.
 
@@ -135,10 +220,18 @@ async def _present_radiofm_results(
     requester_id: int,
     requester_name: str,
     command_msg_id: int,
+    flow_chat_id: int,
+    flow_msg_id: int,
 ) -> None:
     clean_term = (term or "").strip()
     if not clean_term:
-        await message.answer("Manda o nome da música ou artista para buscar no RadioFM.")
+        flow_chat_id, flow_msg_id = await _set_flow_message(
+            message,
+            flow_chat_id=flow_chat_id,
+            flow_msg_id=flow_msg_id,
+            text="Manda o nome da música ou artista para buscar no RadioFM.",
+        )
+        _schedule_delete_bot_message(message.bot, flow_chat_id, flow_msg_id, delay=12.0)
         return
 
     try:
@@ -146,9 +239,22 @@ async def _present_radiofm_results(
     except Exception:
         pass
 
+    flow_chat_id, flow_msg_id = await _set_flow_message(
+        message,
+        flow_chat_id=flow_chat_id,
+        flow_msg_id=flow_msg_id,
+        text="Buscando música...",
+    )
+
     hits = await search_tracks(clean_term, limit=_MAX_RESULTS)
     if not hits:
-        await message.answer(f'Nada encontrado para "{html.escape(clean_term)}".')
+        flow_chat_id, flow_msg_id = await _set_flow_message(
+            message,
+            flow_chat_id=flow_chat_id,
+            flow_msg_id=flow_msg_id,
+            text=f'Nada encontrado para "{html.escape(clean_term)}".',
+        )
+        _schedule_delete_bot_message(message.bot, flow_chat_id, flow_msg_id, delay=12.0)
         return
 
     token = uuid.uuid4().hex[:10]
@@ -161,6 +267,8 @@ async def _present_radiofm_results(
         user_name=requester_name or "Usuário",
         command_chat_id=message.chat.id,
         command_msg_id=command_msg_id,
+        flow_chat_id=flow_chat_id,
+        flow_msg_id=flow_msg_id,
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -169,7 +277,17 @@ async def _present_radiofm_results(
             for i, h in enumerate(hits)
         ]
     )
-    await message.answer("Escolha a faixa:", reply_markup=keyboard)
+    flow_chat_id, flow_msg_id = await _set_flow_message(
+        message,
+        flow_chat_id=flow_chat_id,
+        flow_msg_id=flow_msg_id,
+        text="Escolha a faixa:",
+        reply_markup=keyboard,
+    )
+    stored = _pending.get(token)
+    if stored is not None:
+        stored.flow_chat_id = flow_chat_id
+        stored.flow_msg_id = flow_msg_id
 
 
 @router.message(Command("radiofm"))
@@ -188,6 +306,7 @@ async def radiofm(message: Message, command: CommandObject) -> None:
             "Qual música você quer buscar no RadioFM?\n"
             "Responda esta mensagem ou envie o nome da música na sua próxima mensagem."
         )
+        _schedule_delete_bot_message(message.bot, int(message.chat.id), int(prompt.message_id), delay=_PROMPT_TTL + 5.0)
         _purge_expired()
         _prompt_pending[(int(message.chat.id), requester_id)] = _PromptPending(
             user_id=requester_id,
@@ -197,12 +316,15 @@ async def radiofm(message: Message, command: CommandObject) -> None:
         )
         return
 
+    status = await message.answer("Buscando música...")
     await _present_radiofm_results(
         message,
         term=term,
         requester_id=requester_id,
         requester_name=requester_name,
         command_msg_id=int(message.message_id),
+        flow_chat_id=int(status.chat.id),
+        flow_msg_id=int(status.message_id),
     )
 
 
@@ -220,6 +342,8 @@ async def radiofm_prompt_answer(message: Message) -> None:
         requester_id=int(message.from_user.id),
         requester_name=message.from_user.full_name or "Usuário",
         command_msg_id=pending.command_msg_id,
+        flow_chat_id=pending.chat_id,
+        flow_msg_id=pending.prompt_msg_id,
     )
 
 
@@ -261,6 +385,16 @@ async def radiofm_pick(query: CallbackQuery) -> None:
 
     bot = query.bot
     chat_id = query.message.chat.id
+    flow_chat_id = int(pending.flow_chat_id or chat_id)
+    flow_msg_id = int(pending.flow_msg_id or query.message.message_id)
+
+    await _set_flow_message(
+        query.message,
+        flow_chat_id=flow_chat_id,
+        flow_msg_id=flow_msg_id,
+        text="Preparando card...",
+    )
+
     spotify_url, cover_url = await _resolve_spotify_output(hit)
     caption = _card_caption(
         hit,
@@ -270,34 +404,46 @@ async def radiofm_pick(query: CallbackQuery) -> None:
     )
 
     sent = None
-    if cover_url:
-        photo = await cover_cache_service.resolve_photo(
-            bot,
-            track_id=str(hit.track_id or "").strip() or None,
-            cover_url=cover_url,
-            filename="radiofm-cover.jpg",
-        )
-        try:
-            sent = await bot.send_photo(
-                chat_id, photo=photo or cover_url, caption=caption, parse_mode="HTML"
+    try:
+        if cover_url:
+            photo = await cover_cache_service.resolve_photo(
+                bot,
+                track_id=str(hit.track_id or "").strip() or None,
+                cover_url=cover_url,
+                filename="radiofm-cover.jpg",
             )
-        except Exception:
-            logger.warning("RADIOFM_SEND_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
-            if photo and photo != cover_url:
-                await cover_cache_service.forget(
-                    track_id=str(hit.track_id or "").strip() or None,
-                    cover_url=cover_url,
-                    photo=cover_url,
+            try:
+                sent = await bot.send_photo(
+                    chat_id, photo=photo or cover_url, caption=caption, parse_mode="HTML"
                 )
-                try:
-                    sent = await bot.send_photo(
-                        chat_id, photo=cover_url, caption=caption, parse_mode="HTML"
+            except Exception:
+                logger.warning("RADIOFM_SEND_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
+                if photo and photo != cover_url:
+                    await cover_cache_service.forget(
+                        track_id=str(hit.track_id or "").strip() or None,
+                        cover_url=cover_url,
+                        photo=cover_url,
                     )
-                except Exception:
-                    logger.warning("RADIOFM_SEND_ORIGINAL_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
-    if sent is None:
-        await bot.send_message(
-            chat_id, caption, parse_mode="HTML", disable_web_page_preview=True
+                    try:
+                        sent = await bot.send_photo(
+                            chat_id, photo=cover_url, caption=caption, parse_mode="HTML"
+                        )
+                    except Exception:
+                        logger.warning("RADIOFM_SEND_ORIGINAL_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
+        if sent is None:
+            sent = await bot.send_message(
+                chat_id, caption, parse_mode="HTML", disable_web_page_preview=True
+            )
+    except Exception:
+        logger.warning("RADIOFM_SEND_FINAL_FAILED track=%s", hit.track_id, exc_info=True)
+        await _set_flow_message(
+            query.message,
+            flow_chat_id=flow_chat_id,
+            flow_msg_id=flow_msg_id,
+            text="Não consegui enviar o card. Tente novamente.",
         )
+        _schedule_delete_bot_message(bot, flow_chat_id, flow_msg_id, delay=12.0)
+        return
 
-    # Music-only clean: não apaga comando/lista no grupo.
+    # Music-only clean: apaga somente a mensagem transitória do próprio bot.
+    await _safe_delete_bot_message(bot, flow_chat_id, flow_msg_id)

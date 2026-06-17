@@ -104,12 +104,40 @@ def check_expected_provider_failures_are_not_crashes() -> None:
         fail("lastfm.py não trata perfil inexistente como indisponibilidade esperada")
 
 
+
+def check_radiofm_own_transient_flow_contract() -> None:
+    radiofm = read("app/bot/radiofm.py")
+
+    if "apaga somente essa mensagem própria" not in radiofm or "Não apaga comando do usuário" not in radiofm:
+        fail("radiofm não documenta o contrato de limpar apenas mensagem própria do bot")
+    if "flow_chat_id" not in radiofm or "flow_msg_id" not in radiofm:
+        fail("radiofm não guarda mensagem transitória própria para edição/exclusão")
+    if "async def _safe_delete_bot_message" not in radiofm or "await bot.delete_message" not in radiofm:
+        fail("radiofm não possui helper seguro para apagar mensagem própria do bot")
+    if "async def _set_flow_message" not in radiofm or "await bot.edit_message_text" not in radiofm:
+        fail("radiofm não possui helper de edição da mensagem transitória")
+    if 'await message.answer("Escolha a faixa:"' in radiofm:
+        fail("radiofm ainda envia lista como nova mensagem permanente")
+    if 'text="Escolha a faixa:"' not in radiofm or 'reply_markup=keyboard' not in radiofm:
+        fail("radiofm não edita mensagem transitória para lista de escolhas")
+    if 'text="Preparando card..."' not in radiofm:
+        fail("radiofm não edita a mensagem transitória durante preparação do card")
+    if "# Music-only clean: apaga somente a mensagem transitória do próprio bot." not in radiofm:
+        fail("radiofm não registra limpeza final da mensagem própria")
+    if "_safe_delete_bot_message(bot, flow_chat_id, flow_msg_id)" not in radiofm:
+        fail("radiofm não apaga a mensagem transitória própria ao concluir o card")
+    if "message.delete(" in radiofm or "delete_message(message.chat.id" in radiofm or "delete_message(chat_id=message.chat.id" in radiofm:
+        fail("radiofm tenta apagar mensagem do usuário ou mensagem não rastreada como própria")
+    if "command_msg_id" in radiofm.split("async def _safe_delete_bot_message", 1)[1].split("async def _resolve_spotify_output", 1)[0]:
+        fail("helper de exclusão do radiofm referencia mensagem de comando do usuário")
+
 def main() -> int:
     check_no_python_cache()
     check_parse_and_compile()
     check_tnow_contract()
     check_user_facing_text_contract()
     check_expected_provider_failures_are_not_crashes()
+    check_radiofm_own_transient_flow_contract()
     print("TR4_RELEASE_VALIDATE_OK")
     return 0
 
