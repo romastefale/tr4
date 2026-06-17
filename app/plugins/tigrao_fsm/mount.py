@@ -1,6 +1,6 @@
 """Ponto de montagem futuro do Tigrão FSM.
 
-Não chama dispatcher.include_router nesta etapa.
+Não conecta o plugin ao dispatcher real nesta etapa.
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from .plugin import TigraoFSMPlugin
 
 
 def build_tigrao_fsm_plugin(*, dispatcher: Any | None = None) -> TigraoFSMPlugin:
-    """Cria o plugin isolado sem conectá-lo ao dispatcher real."""
-    _ = dispatcher
-    return TigraoFSMPlugin(mounted=False)
+    plugin = TigraoFSMPlugin(mounted=False)
+    if dispatcher is not None:
+        plugin.mount(dispatcher)
+    return plugin

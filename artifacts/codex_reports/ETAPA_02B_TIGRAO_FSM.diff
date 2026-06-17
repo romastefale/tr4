@@ -1,0 +1,380 @@
+ app/plugins/tigrao_fsm/keyboards.py           |  44 +++++++--
+ app/plugins/tigrao_fsm/parsers.py             |  13 +--
+ app/plugins/tigrao_fsm/runtime/ddx_runtime.py |  32 +++++-
+ app/plugins/tigrao_fsm/services.py            |  40 ++++----
+ tests/test_tigrao_fsm_stage2_static.py        | 137 ++++++++++++++++++++++++++
+ 5 files changed, 229 insertions(+), 37 deletions(-)
+
+diff --git a/app/plugins/tigrao_fsm/keyboards.py b/app/plugins/tigrao_fsm/keyboards.py
+index ad9fdfe..a4fb5a7 100644
+--- a/app/plugins/tigrao_fsm/keyboards.py
++++ b/app/plugins/tigrao_fsm/keyboards.py
+@@ -11,7 +11,25 @@ CALLBACK_PREFIX = "tgf:"
+ MAX_CALLBACK_DATA_BYTES = 64
+ ALLOWED_BUTTON_STYLES: tuple[ButtonStyle, ...] = ("primary", "success", "danger")
+ _ALLOWED_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+-_ALLOWED_ACTIONS = {"home", "grp", "logs", "close", "confirm"}
++CALLBACK_ACTIONS = frozenset({
++    "home",
++    "grp",
++    "grp_sel",
++    "logs",
++    "log_mod",
++    "log_music",
++    "log_use",
++    "log_join",
++    "log_err",
++    "join",
++    "join_link",
++    "join_auto",
++    "join_pending",
++    "ddx",
++    "confirm",
++    "back",
++    "close",
++})
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -37,13 +55,13 @@ def _callback_is_valid(data: str) -> bool:
+     if len(pieces) != 2:
+         return False
+     sid, action = pieces
+-    return _valid_token(sid) and _valid_token(action) and action in _ALLOWED_ACTIONS
++    return _valid_token(sid) and _valid_token(action) and action in CALLBACK_ACTIONS
+ 
+ 
+ def make_callback(session_id: str, *parts: str) -> str:
+     if not _valid_token(session_id):
+         raise ValueError("invalid Tigrão session_id")
+-    if len(parts) != 1 or not _valid_token(parts[0]) or parts[0] not in _ALLOWED_ACTIONS:
++    if len(parts) != 1 or not _valid_token(parts[0]) or parts[0] not in CALLBACK_ACTIONS:
+         raise ValueError("invalid Tigrão callback action")
+     callback = f"{CALLBACK_PREFIX}{session_id}:{parts[0]}"
+     if not _callback_is_valid(callback):
+@@ -64,6 +82,8 @@ def _validate_single_action(callback_data: str | None, url: str | None, copy_tex
+         raise ValueError("exactly one button action is required")
+     if callback_data is not None and not _callback_is_valid(callback_data):
+         raise ValueError("invalid internal Tigrão callback_data")
++    if copy_text is not None and not (1 <= len(copy_text) <= 256):
++        raise ValueError("copy_text must contain 1 to 256 characters")
+ 
+ 
+ def button(
+@@ -87,12 +107,20 @@ def _button_kwargs(spec: TigraoButtonSpec) -> dict[str, Any]:
+     elif spec.url is not None:
+         kwargs["url"] = spec.url
+     elif spec.copy_text is not None:
+-        kwargs["copy_text"] = spec.copy_text
++        try:
++            from aiogram.types import CopyTextButton
++        except Exception:
++            kwargs["copy_text"] = spec.copy_text
++        else:
++            kwargs["copy_text"] = CopyTextButton(text=spec.copy_text)
+     return kwargs
+ 
+ 
+ def to_inline_keyboard_button(spec: TigraoButtonSpec) -> Any:
+-    from aiogram.types import InlineKeyboardButton
++    try:
++        from aiogram.types import InlineKeyboardButton
++    except Exception:
++        return spec
+ 
+     kwargs = _button_kwargs(spec)
+     try:
+@@ -109,9 +137,11 @@ def to_inline_keyboard_button(spec: TigraoButtonSpec) -> Any:
+ 
+ 
+ def to_inline_keyboard_markup(rows: list[list[TigraoButtonSpec]]) -> Any:
+-    from aiogram.types import InlineKeyboardMarkup
+-
+     keyboard = [[to_inline_keyboard_button(spec) for spec in row] for row in rows]
++    try:
++        from aiogram.types import InlineKeyboardMarkup
++    except Exception:
++        return keyboard
+     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+ 
+ 
+diff --git a/app/plugins/tigrao_fsm/parsers.py b/app/plugins/tigrao_fsm/parsers.py
+index 7558384..0c79fc2 100644
+--- a/app/plugins/tigrao_fsm/parsers.py
++++ b/app/plugins/tigrao_fsm/parsers.py
+@@ -31,10 +31,11 @@ def parse_user_ids(text: str) -> ParsedUserIds:
+ 
+ 
+ def parse_x9_query(query: str) -> str | None:
+-    clean = (query or "").strip()
+-    if not clean.lower().startswith("x9"):
++    raw = query or ""
++    clean = raw.strip()
++    lowered = clean.casefold()
++    if lowered == "x9":
++        return ""
++    if not lowered.startswith("x9 "):
+         return None
+-    if len(clean) > 2 and not clean[2].isspace() and clean[2] not in {":", "-"}:
+-        return None
+-    body = clean[2:].lstrip(" :-\t")
+-    return body or ""
++    return clean[3:].strip()
+diff --git a/app/plugins/tigrao_fsm/runtime/ddx_runtime.py b/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
+index 2bafab9..a306e69 100644
+--- a/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
++++ b/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
+@@ -1,7 +1,7 @@
+ """Runtime DDX hard isolado do Tigrão FSM, ainda não conectado ao webhook."""
+ from __future__ import annotations
+ from dataclasses import dataclass
+-from typing import Any, Callable, Awaitable
++from typing import Any, Awaitable, Callable
+ 
+ RUNTIME_ACTIVE = False
+ 
+@@ -11,15 +11,37 @@ class DDXConfig:
+     filter_text: str | None = None
+ 
+ 
+-async def handle(bot: Any, update: Any, *, config: DDXConfig | None = None, logger: Callable[[dict[str, Any]], Awaitable[None]] | None = None) -> bool:
++def _normalized(value: Any) -> str:
++    return str(value or "").casefold().strip()
++
++
++async def handle(
++    bot: Any,
++    update: Any,
++    *,
++    config: DDXConfig | None = None,
++    permissions: Any | None = None,
++    logger: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
++) -> bool:
+     config = config or DDXConfig()
++    if config.active is not True:
++        return False
++    filter_text = _normalized(config.filter_text)
++    if not filter_text:
++        return False
++    if permissions is None or getattr(permissions, "can_delete_messages", False) is not True:
++        return False
++
+     message = getattr(update, "message", update)
+     chat = getattr(message, "chat", None)
+-    if not config.active or getattr(chat, "type", None) not in {"group", "supergroup"}:
++    if getattr(chat, "type", None) not in {"group", "supergroup"}:
+         return False
+-    text = getattr(message, "text", "") or ""
+-    if config.filter_text and config.filter_text not in text:
++
++    text = _normalized(getattr(message, "text", None))
++    caption = _normalized(getattr(message, "caption", None))
++    if filter_text not in text and filter_text not in caption:
+         return False
++
+     if hasattr(bot, "delete_message"):
+         await bot.delete_message(chat.id, message.message_id)
+     if logger is not None:
+diff --git a/app/plugins/tigrao_fsm/services.py b/app/plugins/tigrao_fsm/services.py
+index 08e831f..a3851de 100644
+--- a/app/plugins/tigrao_fsm/services.py
++++ b/app/plugins/tigrao_fsm/services.py
+@@ -32,28 +32,12 @@ def find_pending_join_request(requests: list[TigraoJoinRequest], *, chat_id: int
+     return None
+ 
+ 
+-async def approve_pending_join_request(bot: Any, request: TigraoJoinRequest, *, processed_by: int | None, autoaccept: bool, origin: str) -> str:
+-    approved_at = datetime.now(timezone.utc)
+-    try:
+-        await bot.approve_chat_join_request(chat_id=request.chat_id, user_id=request.user_id)
+-    except Exception as exc:  # serviço isolado registra falha real sem afirmar aprovação
+-        request.status = "falhou"
+-        request.processed_at = approved_at
+-        request.processed_by = processed_by
+-        request.result_detail = f"falha ao aprovar: {exc}"
+-        return request.result_detail
+-    request.status = "aprovado"
+-    request.processed_at = approved_at
+-    request.processed_by = processed_by
+-    request.result_detail = (
+-        "Entrada aprovada\n"
+-        f"Usuário: {request.full_name}\n"
+-        f"Username: @{request.username}" if request.username else "Username: não informado"
+-    )
++def format_join_approval_detail(request: TigraoJoinRequest, *, approved_at: datetime, autoaccept: bool, origin: str) -> str:
++    username = f"@{request.username}" if request.username else "não informado"
+     return (
+         "Entrada aprovada\n"
+         f"Usuário: {request.full_name}\n"
+-        f"Username: {'@' + request.username if request.username else 'não informado'}\n"
++        f"Username: {username}\n"
+         f"ID: {request.user_id}\n"
+         f"Grupo: {request.chat_title}\n"
+         f"ID do grupo: {request.chat_id}\n"
+@@ -66,3 +50,21 @@ async def approve_pending_join_request(bot: Any, request: TigraoJoinRequest, *,
+         f"Autoaceite: {'sim' if autoaccept else 'não'}\n"
+         f"Origem: {origin}"
+     )
++
++
++async def approve_pending_join_request(bot: Any, request: TigraoJoinRequest, *, processed_by: int | None, autoaccept: bool, origin: str) -> str:
++    approved_at = datetime.now(timezone.utc)
++    try:
++        await bot.approve_chat_join_request(chat_id=request.chat_id, user_id=request.user_id)
++    except Exception as exc:  # serviço isolado registra falha real sem afirmar aprovação
++        request.status = "falhou"
++        request.processed_at = approved_at
++        request.processed_by = processed_by
++        request.result_detail = f"falha ao aprovar: {exc}"
++        return request.result_detail
++    request.status = "aprovado"
++    request.processed_at = approved_at
++    request.processed_by = processed_by
++    detail = format_join_approval_detail(request, approved_at=approved_at, autoaccept=autoaccept, origin=origin)
++    request.result_detail = detail
++    return detail
+diff --git a/tests/test_tigrao_fsm_stage2_static.py b/tests/test_tigrao_fsm_stage2_static.py
+index 1992320..5ee1356 100644
+--- a/tests/test_tigrao_fsm_stage2_static.py
++++ b/tests/test_tigrao_fsm_stage2_static.py
+@@ -103,3 +103,140 @@ def test_music_files_do_not_reference_tigrao() -> None:
+     for path in paths:
+         if (ROOT / path).exists():
+             assert "tigrao_fsm" not in read(path).lower()
++
++
++def test_copy_text_button_builds_real_or_safe_fallback() -> None:
++    from app.plugins.tigrao_fsm.keyboards import TigraoButtonSpec, button, to_inline_keyboard_button
++
++    spec = button("Copiar", copy_text="https://example.com/convite")
++    built = to_inline_keyboard_button(spec)
++    if isinstance(built, TigraoButtonSpec):
++        assert built.copy_text == "https://example.com/convite"
++    else:
++        assert getattr(built, "copy_text", None) is not None
++        copy_text = getattr(built, "copy_text")
++        assert getattr(copy_text, "text", copy_text) == "https://example.com/convite"
++
++
++def test_copy_text_size_is_validated() -> None:
++    from app.plugins.tigrao_fsm.keyboards import button
++
++    with pytest.raises(ValueError):
++        button("vazio", copy_text="")
++    with pytest.raises(ValueError):
++        button("grande", copy_text="x" * 257)
++
++
++def test_future_callback_action_is_valid_and_unknown_action_rejected() -> None:
++    from app.plugins.tigrao_fsm.keyboards import make_callback, parse_callback
++
++    callback = make_callback("sid", "join_pending")
++    assert parse_callback(callback) == ("sid", ("join_pending",))
++    with pytest.raises(ValueError):
++        make_callback("sid", "unknown")
++    assert parse_callback("tgf:sid:unknown") is None
++
++
++@pytest.mark.asyncio
++async def test_approve_pending_join_request_detail_with_and_without_username() -> None:
++    from datetime import datetime, timezone
++
++    from app.plugins.tigrao_fsm.models import TigraoJoinRequest
++    from app.plugins.tigrao_fsm.services import approve_pending_join_request
++
++    class Bot:
++        async def approve_chat_join_request(self, *, chat_id: int, user_id: int) -> None:
++            assert chat_id
++            assert user_id
++
++    base = dict(
++        chat_id=-100123,
++        chat_title="Grupo",
++        user_id=123,
++        full_name="Nome Sobrenome",
++        user_chat_id=777,
++        bio=None,
++        invite_link="https://t.me/+abc",
++        request_date=datetime(2026, 6, 17, tzinfo=timezone.utc),
++        received_at=datetime(2026, 6, 17, tzinfo=timezone.utc),
++        expires_at=datetime(2026, 6, 17, 2, tzinfo=timezone.utc),
++    )
++    with_username = TigraoJoinRequest(username="usuario", **base)
++    detail = await approve_pending_join_request(Bot(), with_username, processed_by=1, autoaccept=True, origin="ID autorizado no painel")
++    assert detail == with_username.result_detail
++    assert "Username: @usuario" in detail
++    assert "ID: 123" in detail
++    assert "Autoaceite: sim" in detail
++
++    without_username = TigraoJoinRequest(username=None, **{**base, "user_id": 456})
++    detail = await approve_pending_join_request(Bot(), without_username, processed_by=1, autoaccept=False, origin="aprovação manual")
++    assert detail == without_username.result_detail
++    assert "Username: não informado" in detail
++    assert "ID: 456" in detail
++    assert "Autoaceite: não" in detail
++
++
++@pytest.mark.asyncio
++async def test_ddx_does_not_delete_without_filter_or_permission() -> None:
++    from dataclasses import dataclass
++    from types import SimpleNamespace
++
++    from app.plugins.tigrao_fsm.runtime.ddx_runtime import DDXConfig, handle
++
++    class Bot:
++        def __init__(self) -> None:
++            self.deleted = []
++
++        async def delete_message(self, chat_id: int, message_id: int) -> None:
++            self.deleted.append((chat_id, message_id))
++
++    @dataclass(frozen=True)
++    class Perms:
++        can_delete_messages: bool
++
++    message = SimpleNamespace(
++        chat=SimpleNamespace(id=-100, type="supergroup"),
++        message_id=10,
++        text="apagar isto",
++        caption=None,
++    )
++    bot = Bot()
++    assert await handle(bot, message, config=DDXConfig(active=True, filter_text=None), permissions=Perms(True)) is False
++    assert await handle(bot, message, config=DDXConfig(active=True, filter_text="apagar"), permissions=None) is False
++    assert await handle(bot, message, config=DDXConfig(active=True, filter_text="apagar"), permissions=Perms(False)) is False
++    assert bot.deleted == []
++
++
++@pytest.mark.asyncio
++async def test_ddx_requires_matching_text_or_caption() -> None:
++    from dataclasses import dataclass
++    from types import SimpleNamespace
++
++    from app.plugins.tigrao_fsm.runtime.ddx_runtime import DDXConfig, handle
++
++    class Bot:
++        async def delete_message(self, chat_id: int, message_id: int) -> None:
++            raise AssertionError("should not delete")
++
++    @dataclass(frozen=True)
++    class Perms:
++        can_delete_messages: bool = True
++
++    message = SimpleNamespace(
++        chat=SimpleNamespace(id=-100, type="supergroup"),
++        message_id=10,
++        text="texto seguro",
++        caption="legenda segura",
++    )
++    assert await handle(Bot(), message, config=DDXConfig(active=True, filter_text="bloqueado"), permissions=Perms()) is False
++
++
++def test_x9_rejects_colon_and_dash_forms() -> None:
++    from app.plugins.tigrao_fsm.parsers import parse_x9_query
++
++    assert parse_x9_query("x9") == ""
++    assert parse_x9_query("x9 alvo") == "alvo"
++    assert parse_x9_query("x9: alvo") is None
++    assert parse_x9_query("x9-alvo") is None
++    assert parse_x9_query("xx9 alvo") is None
++    assert parse_x9_query("123 456") is None
