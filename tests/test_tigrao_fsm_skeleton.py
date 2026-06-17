@@ -26,10 +26,10 @@ def test_main_py_not_changed_to_import_internal_tigrao_fsm_plugin() -> None:
 def test_callback_namespace_is_own_prefix() -> None:
     from app.plugins.tigrao_fsm.keyboards import CALLBACK_PREFIX, make_callback, parse_callback
 
-    callback = make_callback("abc123", "logs", "2")
+    callback = make_callback("abc123", "logs")
     assert CALLBACK_PREFIX == "tgf:"
-    assert callback == "tgf:abc123:logs:2"
-    assert parse_callback(callback) == ("abc123", ("logs", "2"))
+    assert callback == "tgf:abc123:logs"
+    assert parse_callback(callback) == ("abc123", ("logs",))
 
 
 def test_plugin_documentation_exists() -> None:
@@ -46,8 +46,8 @@ def test_no_active_dispatcher_connection_in_skeleton() -> None:
 
 
 def test_no_public_group_panel_response_is_implemented() -> None:
-    from app.plugins.tigrao_fsm.permissions import should_answer_panel_publicly
+    from app.plugins.tigrao_fsm.permissions import is_private_panel_surface
 
-    assert should_answer_panel_publicly("group") is False
-    assert should_answer_panel_publicly("supergroup") is False
-    assert should_answer_panel_publicly("private") is True
+    assert is_private_panel_surface("group") is False
+    assert is_private_panel_surface("supergroup") is False
+    assert is_private_panel_surface("private") is True

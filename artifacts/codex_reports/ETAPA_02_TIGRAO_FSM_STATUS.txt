@@ -1,0 +1,12 @@
+BRANCH:
+work
+
+STATUS:
+ M artifacts/codex_reports/ETAPA_02_TIGRAO_FSM.diff
+ M artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_STATUS.txt
+
+
+STATUS SEM ARTIFACTS:
+
+LAST COMMIT:
+d057e70 feat: update isolated tigrao fsm scope
