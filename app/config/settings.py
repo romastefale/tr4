@@ -230,14 +230,11 @@ HTTP_TIMEOUT_SECONDS = _float_env(
 )
 
 def _resolve_data_dir() -> Path:
-    """Resolve diretório gravável sem quebrar import/startup.
+    """Resolve diretório gravável sem quebrar startup.
 
-    Regra correta para Railway/Termux:
-    - respeita TR3_DATA_DIR/DATA_DIR explícito quando existir;
-    - tenta diretórios de produção conhecidos;
-    - usa diretório local gravável do projeto como fallback final;
-    - nunca assume que /tmp é gravável;
-    - nunca deixa settings.py quebrar apenas por falta de permissão em /data.
+    Railway injeta variáveis e pode ter volume em /data. Em ambiente local
+    ou Termux, /data e /app/data podem não ser graváveis. Não usamos /tmp
+    como dependência.
     """
     raw = _env("TR3_DATA_DIR", "", legacy=("DATA_DIR",)).strip()
     candidates: list[Path] = []
@@ -274,7 +271,6 @@ def _resolve_data_dir() -> Path:
             logger.warning("DATA_DIR_UNAVAILABLE path=%s error=%s", candidate, last_error)
 
     raise RuntimeError(f"Nenhum DATA_DIR gravável foi encontrado. last_error={last_error}")
-
 
 DATA_DIR = _resolve_data_dir()
 

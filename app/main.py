@@ -291,10 +291,9 @@ def inline_icon(name: str) -> Response:
 
 @app.get("/healthz", status_code=200)
 def healthz() -> dict[str, str]:
-    """Railway liveness check.
+    """Liveness check para Railway.
 
     Não toca DB, Telegram, storage, filesystem ou rede.
-    Falhas desses subsistemas aparecem em /readyz e nos logs.
     """
     return {"status": "ok"}
 
