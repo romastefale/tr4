@@ -1,4 +1,4 @@
-"""Helpers para detectar se um usuário já conectou Spotify ou Last.fm,
+"""Helpers para detectar se um usuário já conectou uma conta musical,
 e textos padronizados para orientar quem ainda não conectou.
 
 Usado por comandos de música (/playing, /albnow, /tnow, ...) para
@@ -13,7 +13,7 @@ from app.models.spotify_token import SpotifyToken
 
 
 def is_user_connected(user_id: int) -> bool:
-    """True se o usuário tem Spotify OU Last.fm vinculado ao bot."""
+    """True se o usuário tem uma conexão musical vinculada ao bot."""
     with SessionLocal() as db:
         has_spotify = (
             db.query(SpotifyToken.id).filter_by(user_id=user_id).first() is not None
@@ -27,21 +27,17 @@ def is_user_connected(user_id: int) -> bool:
         return has_lastfm
 
 
-# Mensagem curta para uso em grupo: evita poluir o chat.
+# Mensagem curta para uso em grupo: evita poluir o chat e cita só o comando.
 CONNECT_HINT_GROUP = (
-    "👋 Você ainda não conectou o Last.fm — sem isso eu não consigo "
-    "ler o que você está ouvindo.\n\n"
-    "Manda aqui mesmo (ou no meu privado): "
-    "<code>/lastfm seu_username</code> (sem o @)."
+    "Use <code>/lastfm seu_usuario</code> para conectar seu perfil musical. "
+    "Depois rode o comando de novo."
 )
 
-# Mensagem completa para uso no privado: já entrega o passo-a-passo.
+# Mensagem completa para uso no privado: explica a sintaxe sem citar serviço musical.
 CONNECT_HINT_PRIVATE = (
-    "👋 Você ainda não conectou o Last.fm — sem isso eu não consigo "
-    "ler o que você está ouvindo.\n\n"
-    "🎧 <b>Como conectar:</b>\n"
-    "<code>/lastfm seu_username</code> (sem o @)\n\n"
-    "Depois é só rodar o comando de novo."
+    "🎧 <b>Como conectar seu perfil musical:</b>\n"
+    "Use <code>/lastfm seu_usuario</code> (sem @).\n\n"
+    "Depois rode o comando de novo."
 )
 
 

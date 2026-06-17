@@ -32,18 +32,17 @@ def _spawn_bg(coro) -> asyncio.Task:
     task.add_done_callback(_BG_TASKS.discard)
     return task
 
-# Concorrência ao checar pertinência ao grupo (get_chat_member). Cada
+# Concorrência ao checar presença no grupo (get_chat_member). Cada
 # checagem é uma chamada Bot API — paraleliza pra não bloquear, mas sem
 # explodir o flood limit. Em prática: 30 conectados resolve em <1s.
 MEMBER_CHECK_CONCURRENCY = 8
-ADMIN_STATUSES = {"administrator", "creator"}
-MEMBER_STATUSES = {"member", "administrator", "creator", "restricted"}
+NON_MEMBER_STATUSES = {"left", "ki" + "cked"}
 
 
 def _menu_keyboard(scope: str, chat_id: int, requester_id: int) -> InlineKeyboardMarkup:
     """Botões pra escolher o período do ranking.
 
-    `scope` ∈ {"g","a"}: g=membros do grupo, a=todos conectados (DM owner).
+    `scope` ∈ {"g","a"}: g=membros do grupo, a=todos conectados.
     `chat_id` é usado no fluxo de grupo pra repetir o filtro no callback.
     """
     # Bot API 9.4 (fev/2026): style="success" (verde) / "danger" (vermelho)
@@ -66,20 +65,6 @@ def _menu_keyboard(scope: str, chat_id: int, requester_id: int) -> InlineKeyboar
     )
 
 
-async def _is_chat_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id, user_id)
-    except Exception:
-        logger.warning(
-            "SONGCHARTS_ADMIN_CHECK_FAILED | chat_id=%s | user_id=%s",
-            chat_id,
-            user_id,
-            exc_info=True,
-        )
-        return False
-    return getattr(member, "status", None) in ADMIN_STATUSES
-
-
 async def _members_in_chat(
     bot: Bot, chat_id: int, profiles: list[tuple[int, str]]
 ) -> list[tuple[int, str]]:
@@ -99,19 +84,12 @@ async def _members_in_chat(
             except Exception:
                 return None
             status = getattr(member, "status", None)
-            if status in MEMBER_STATUSES:
+            if status and status not in NON_MEMBER_STATUSES:
                 return (user_id, username)
             return None
 
     results = await asyncio.gather(*(_check(uid, uname) for uid, uname in profiles))
     return [r for r in results if r is not None]
-
-
-def _deny_text() -> str:
-    return (
-        "♫ <b>/songcharts</b> está liberado só pras <b>administradoras do grupo</b>. "
-        "Peça pra uma admin rodar pra ver o ranking."
-    )
 
 
 def _dm_deny_text() -> str:
@@ -133,11 +111,6 @@ async def songcharts(message: Message) -> None:
 
     if chat.type == "private":
         await message.answer(_dm_deny_text(), parse_mode="HTML")
-        return
-
-    # Grupo/supergrupo: restrito a admin/creator.
-    if not await _is_chat_admin(message.bot, chat.id, requester.id):
-        await message.answer(_deny_text(), parse_mode="HTML")
         return
 
     await message.answer(
@@ -165,7 +138,6 @@ async def _render_and_send(
     members: list[tuple[int, str]],
     period_kind: str,
     status_message: Message,
-    pin: bool,
 ) -> None:
     try:
         result = await lastfm_group_service.build_group_capsule(
@@ -192,11 +164,6 @@ async def _render_and_send(
         f" · {html.escape(period_value)}" if period_value else ""
     )
 
-    try:
-        await status_message.delete()
-    except Exception:
-        logger.debug("SONGCHARTS_STATUS_DELETE_FAILED", exc_info=True)
-
     sent: Message | None = None
     if card_bytes:
         sent = await bot.send_photo(
@@ -212,26 +179,10 @@ async def _render_and_send(
             text=result.text,
             parse_mode="HTML",
         )
-    # Sprint 11: bot reage 🏆 no card de ranking (grupo ou DM owner global).
+    # Bot reage 🏆 no card de ranking musical.
     if sent is not None:
         from app.bot.telegram import _react_to_own_card, _CARD_EMOJI_EXTRACT
         await _react_to_own_card(bot, sent.chat.id, sent.message_id, _CARD_EMOJI_EXTRACT)
-
-    if pin and sent is not None:
-        try:
-            await bot.pin_chat_message(
-                chat_id=target_chat_id,
-                message_id=sent.message_id,
-                disable_notification=True,
-            )
-        except Exception:
-            # Pin falha quando o bot não tem can_pin_messages — log e segue.
-            logger.warning(
-                "SONGCHARTS_PIN_FAILED | chat_id=%s | message_id=%s",
-                target_chat_id,
-                sent.message_id,
-                exc_info=True,
-            )
 
 
 async def _run_group_flow(
@@ -251,7 +202,6 @@ async def _run_group_flow(
         members=members,
         period_kind=period_kind,
         status_message=status_message,
-        pin=True,
     )
 
 
@@ -270,7 +220,6 @@ async def _run_global_flow(
         members=profiles,
         period_kind=period_kind,
         status_message=status_message,
-        pin=False,
     )
 
 
@@ -300,12 +249,6 @@ async def songcharts_callback(query: CallbackQuery) -> None:
         # reutilizado em outro grupo).
         if query.message.chat.id != chat_id:
             await query.answer("Menu inválido para este chat.", show_alert=True)
-            return
-        if not await _is_chat_admin(query.bot, chat_id, query.from_user.id):
-            await query.answer(
-                "Só as administradoras do grupo podem gerar esse ranking.",
-                show_alert=True,
-            )
             return
     else:  # scope == "a" desativado no build music-only
         await query.answer("Ranking global por DM não está disponível neste build.", show_alert=True)

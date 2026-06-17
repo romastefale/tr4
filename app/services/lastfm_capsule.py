@@ -258,9 +258,9 @@ class LastfmCapsuleService:
             try:
                 await self._http.aclose()
             except Exception:
-                logger.exception("Last.fm capsule httpx pool close failed")
+                logger.exception("Last fm capsule httpx pool close failed")
             self._http = None
-        logger.info("Last.fm capsule service stopped.")
+        logger.info("Last fm capsule service stopped.")
 
     async def _api_get(self, client: httpx.AsyncClient, params: dict[str, Any]) -> dict[str, Any] | None:
         if not LASTFM_API_KEY:
@@ -269,18 +269,18 @@ class LastfmCapsuleService:
         try:
             response = await client.get(LASTFM_API_BASE_URL, params=full_params)
         except Exception:
-            logger.exception("Last.fm capsule request failed")
+            logger.exception("Last fm capsule request failed")
             return None
         if response.status_code != 200:
-            logger.warning("Last.fm capsule status=%s body=%s", response.status_code, response.text[:300])
+            logger.warning("Last fm capsule status=%s body=%s", response.status_code, response.text[:300])
             return None
         try:
             data = response.json()
         except Exception:
-            logger.exception("Last.fm capsule invalid json")
+            logger.exception("Last fm capsule invalid json")
             return None
         if isinstance(data, dict) and data.get("error"):
-            logger.warning("Last.fm capsule API error=%s message=%s", data.get("error"), data.get("message"))
+            logger.warning("Last fm capsule API error=%s message=%s", data.get("error"), data.get("message"))
             return None
         return data if isinstance(data, dict) else None
 
@@ -289,7 +289,7 @@ class LastfmCapsuleService:
         total_reported = 0
         capped = False
         # Sprint 5 (R5.01): usa pool compartilhado em vez de AsyncClient
-        # próprio. Páginas continuam seriais (paginação Last.fm depende
+        # próprio. Páginas continuam seriais (paginação Last fm depende
         # do total reportado na primeira página + early break por
         # total_pages, então paralelizar daria 0 ganho na maioria).
         client = self._client()
@@ -368,7 +368,7 @@ class LastfmCapsuleService:
             return None, 0, 0
         # Sprint 5 (P5.01 + R5.01): paraleliza até MAX_DURATION_LOOKUPS
         # buscas de duração via asyncio.gather com semáforo (cap=8 pra
-        # não estourar rate limit da Last.fm). Antes era serial — uma
+        # não estourar rate limit da Last fm). Antes era serial — uma
         # geração de /monthfm acumulava 10-30s só nesse loop.
         items = list(track_counts.most_common(MAX_DURATION_LOOKUPS))
         client = self._client()
@@ -442,11 +442,10 @@ class LastfmCapsuleService:
         username = await lastfm_service.get_username(user_id)
         if not username:
             return CapsuleResult(
-                "Você ainda não conectou um Last.fm. "
-                "Use <code>/lastfm seu_username</code> (sem o @) antes de gerar a cápsula mensal."
+                "Use <code>/lastfm seu_usuario</code> (sem @) antes de gerar o extrato mensal."
             )
         if not LASTFM_API_KEY:
-            return CapsuleResult("LASTFM_API_KEY ausente no Railway. Não consigo consultar o Last.fm.")
+            return CapsuleResult("Conexão técnica indisponível no momento. Tente novamente mais tarde.")
 
         try:
             spec = parse_month_spec(raw_month)
@@ -455,7 +454,7 @@ class LastfmCapsuleService:
 
         recent_items, total_reported, capped = await self._recent_tracks(username, spec)
         if not recent_items:
-            return CapsuleResult(f"♫ Extrato de {html.escape(spec.label)}\n\nNenhum scrobble encontrado para @{html.escape(username)} nesse mês.")
+            return CapsuleResult(f"♫ Extrato de {html.escape(spec.label)}\n\nNenhum registro musical encontrado nesse mês.")
 
         track_counts: Counter[tuple[str, str]] = Counter()
         artist_counts: Counter[str] = Counter()
@@ -482,7 +481,7 @@ class LastfmCapsuleService:
         top_artists = artist_counts.most_common(5)
         top_tracks = track_counts.most_common(5)
         top_album = album_counts.most_common(1)
-        album_artist = top_album[0][0][0] if top_album else "Last.fm"
+        album_artist = top_album[0][0][0] if top_album else "Artista"
         album_name = top_album[0][0][1] if top_album else "Sem disco identificado"
         album_count = top_album[0][1] if top_album else 0
         hero_key = top_tracks[0][0] if top_tracks else None
@@ -516,7 +515,7 @@ class LastfmCapsuleService:
             album_name=album_name,
             album_artist=album_artist,
             album_count=album_count,
-            total_scrobbles=total_reported,
+            total_registros=total_reported,
             minutes=minutes,
         )
 
@@ -528,7 +527,7 @@ class LastfmCapsuleService:
         ]
 
         for idx, (artist, count) in enumerate(top_artists, 1):
-            lines.append(f"{idx}. {_plain(_shorten(artist))} — {_format_number(count)} scrobbles")
+            lines.append(f"{idx}. {_plain(_shorten(artist))} — {_format_number(count)} registros")
 
         lines.extend(["", "♫ Top músicas"])
         for idx, ((artist, track), count) in enumerate(top_tracks, 1):
@@ -537,19 +536,19 @@ class LastfmCapsuleService:
         lines.extend(["", "◌ Disco mais ouvido"])
         if top_album:
             lines.append(_plain(_shorten(album_name, 44)))
-            lines.append(f"{_plain(_shorten(album_artist, 30))} · {_format_number(album_count)} scrobbles")
+            lines.append(f"{_plain(_shorten(album_artist, 30))} · {_format_number(album_count)} registros")
         else:
-            lines.append("Sem álbum identificado nos scrobbles do mês.")
+            lines.append("Sem álbum identificado nos registros do mês.")
 
         lines.extend(["", "⌁ Total do mês"])
-        lines.append(f"{_format_number(total_reported)} scrobbles")
+        lines.append(f"{_format_number(total_reported)} registros")
         if minutes is not None:
             lines.append(f"aprox. {_format_number(minutes)} minutos ouvidos")
         else:
             lines.append("minutos ouvidos indisponíveis")
 
         if capped:
-            lines.extend(["", "Resultado parcial: o mês tem mais scrobbles do que o limite seguro de leitura do bot."])
+            lines.extend(["", "Resultado parcial: o mês tem mais registros do que o limite seguro de leitura do bot."])
 
         return CapsuleResult("\n".join(lines), photo_bytes=photo_bytes, card_data=card_data)
 

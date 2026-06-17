@@ -26,7 +26,7 @@ from app.services.monthfm_card import CardArtist, CardTrack, MonthfmCardData
 
 logger = logging.getLogger(__name__)
 
-# Concorrência ao bater no Last.fm: 4 usuários em paralelo. Cada user pode
+# Concorrência ao bater no Last fm: 4 usuários em paralelo. Cada user pode
 # disparar até MAX_RECENT_PAGES (20) chamadas em série; com 4 simultâneos
 # o pico fica bem abaixo do limite prático de 5 req/s por API key.
 GROUP_FETCH_CONCURRENCY = 4
@@ -35,12 +35,12 @@ PeriodKind = Literal["week", "month"]
 
 
 class LastfmGroupService(LastfmCapsuleService):
-    """Agrega scrobbles de múltiplos Last.fm pra montar o ranking do grupo.
+    """Agrega registros de múltiplos Last fm pra montar o ranking do grupo.
 
     Reaproveita `_recent_tracks` (paginado, com cap), `_estimate_minutes`,
     `_track_image_url` e `_fetch_image_bytes` da classe pai. O que muda
     aqui é só a etapa de coleta multi-usuário (concorrência limitada,
-    falhas isoladas) e a agregação somando todos os scrobbles num único
+    falhas isoladas) e a agregação somando todos os registros num único
     `Counter`.
     """
 
@@ -52,11 +52,11 @@ class LastfmGroupService(LastfmCapsuleService):
         period_kind: PeriodKind,
     ) -> CapsuleResult:
         if not LASTFM_API_KEY:
-            return CapsuleResult("LASTFM_API_KEY ausente no Railway. Não consigo consultar o Last.fm.")
+            return CapsuleResult("Conexão técnica indisponível no momento. Tente novamente mais tarde.")
         if not members:
             return CapsuleResult(
-                "Nenhum membro com Last.fm conectado pra esse ranking. "
-                "Peça pra galera rodar <code>/lastfm seu_username</code>."
+                "Nenhum membro com perfil musical conectado para esse ranking. "
+                "Use <code>/lastfm seu_usuario</code>."
             )
 
         if period_kind == "week":
@@ -87,7 +87,7 @@ class LastfmGroupService(LastfmCapsuleService):
         track_counts: Counter[tuple[str, str]] = Counter()
         artist_counts: Counter[str] = Counter()
         image_urls: dict[tuple[str, str], str] = {}
-        total_scrobbles_sum = 0
+        total_registros_sum = 0
         successful = 0
         contributors = 0
 
@@ -99,7 +99,7 @@ class LastfmGroupService(LastfmCapsuleService):
             if not items:
                 continue
             contributors += 1
-            total_scrobbles_sum += int(total or len(items))
+            total_registros_sum += int(total or len(items))
             for item in items:
                 track = _text(item.get("name"))
                 artist = _text(item.get("artist"))
@@ -115,7 +115,7 @@ class LastfmGroupService(LastfmCapsuleService):
         if not track_counts:
             return CapsuleResult(
                 f"♫ {html.escape(chat_title)}\n\n"
-                f"Ninguém com scrobbles registrados no período. "
+                f"Ninguém com registros registrados no período. "
                 f"({successful} de {len(members)} membros consultados)"
             )
 
@@ -150,7 +150,7 @@ class LastfmGroupService(LastfmCapsuleService):
             hero_plays=hero_plays_count,
             top_artists=tuple(CardArtist(name=a, count=c) for a, c in top_artists),
             top_tracks=tuple(CardTrack(title=t, artist=a, plays=c) for (a, t), c in top_tracks),
-            total_scrobbles=total_scrobbles_sum,
+            total_registros=total_registros_sum,
             minutes=minutes,
             list_size=GROUP_LIST_SIZE,
         )
@@ -160,7 +160,7 @@ class LastfmGroupService(LastfmCapsuleService):
         lines = [
             f"♫ Top 10 de {safe_title}",
             _plain(spec.label),
-            f"{contributors} de {len(members)} membros com scrobbles no período",
+            f"{contributors} de {len(members)} membros com registros no período",
             "",
             "✦ Top 10 artistas",
         ]
@@ -171,7 +171,7 @@ class LastfmGroupService(LastfmCapsuleService):
             lines.append(
                 f"{idx:02d}. {_plain(track[:36])} — {_plain(artist[:22])} {_format_number(count)} plays"
             )
-        lines.extend(["", f"⌁ Total agregado: {_format_number(total_scrobbles_sum)} scrobbles"])
+        lines.extend(["", f"⌁ Total agregado: {_format_number(total_registros_sum)} registros"])
         if minutes:
             lines.append(f"aprox. {_format_number(minutes)} minutos de música no grupo")
 

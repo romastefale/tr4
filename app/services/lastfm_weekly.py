@@ -72,11 +72,10 @@ class LastfmWeeklyService(LastfmCapsuleService):
         username = await lastfm_service.get_username(user_id)
         if not username:
             return CapsuleResult(
-                "Você ainda não conectou um Last.fm. "
-                "Use <code>/lastfm seu_username</code> (sem o @) antes de gerar o extrato da semana."
+                "Use <code>/lastfm seu_usuario</code> (sem @) antes de gerar o extrato da semana."
             )
         if not LASTFM_API_KEY:
-            return CapsuleResult("LASTFM_API_KEY ausente no Railway. Não consigo consultar o Last.fm.")
+            return CapsuleResult("Conexão técnica indisponível no momento. Tente novamente mais tarde.")
 
         try:
             spec = parse_week_spec(raw_week)
@@ -85,7 +84,7 @@ class LastfmWeeklyService(LastfmCapsuleService):
 
         recent_items, total_reported, capped = await self._recent_tracks(username, spec)
         if not recent_items:
-            return CapsuleResult(f"♫ Extrato da semana\n{_plain(spec.label)}\n\nNenhum scrobble encontrado para @{_plain(username)} nesse período.")
+            return CapsuleResult(f"♫ Extrato da semana\n{_plain(spec.label)}\n\nNenhum registro musical encontrado nesse período.")
 
         track_counts: Counter[tuple[str, str]] = Counter()
         artist_counts: Counter[str] = Counter()
@@ -112,7 +111,7 @@ class LastfmWeeklyService(LastfmCapsuleService):
         top_artists = artist_counts.most_common(5)
         top_tracks = track_counts.most_common(5)
         top_album = album_counts.most_common(1)
-        album_artist = top_album[0][0][0] if top_album else "Last.fm"
+        album_artist = top_album[0][0][0] if top_album else "Artista"
         album_name = top_album[0][0][1] if top_album else "Sem disco identificado"
         album_count = top_album[0][1] if top_album else 0
         hero_key = top_tracks[0][0] if top_tracks else None
@@ -144,7 +143,7 @@ class LastfmWeeklyService(LastfmCapsuleService):
             album_name=album_name,
             album_artist=album_artist,
             album_count=album_count,
-            total_scrobbles=total_reported,
+            total_registros=total_reported,
             minutes=minutes,
         )
 
@@ -157,7 +156,7 @@ class LastfmWeeklyService(LastfmCapsuleService):
         ]
 
         for idx, (artist, count) in enumerate(top_artists, 1):
-            lines.append(f"{idx}. {_plain(_shorten(artist))} — {_format_number(count)} scrobbles")
+            lines.append(f"{idx}. {_plain(_shorten(artist))} — {_format_number(count)} registros")
 
         lines.extend(["", "♫ Top músicas"])
         for idx, ((artist, track), count) in enumerate(top_tracks, 1):
@@ -166,19 +165,19 @@ class LastfmWeeklyService(LastfmCapsuleService):
         lines.extend(["", "◌ Disco mais ouvido"])
         if top_album:
             lines.append(_plain(_shorten(album_name, 44)))
-            lines.append(f"{_plain(_shorten(album_artist, 30))} · {_format_number(album_count)} scrobbles")
+            lines.append(f"{_plain(_shorten(album_artist, 30))} · {_format_number(album_count)} registros")
         else:
-            lines.append("Sem álbum identificado nos scrobbles da semana.")
+            lines.append("Sem álbum identificado nos registros da semana.")
 
         lines.extend(["", "⌁ Total da semana"])
-        lines.append(f"{_format_number(total_reported)} scrobbles")
+        lines.append(f"{_format_number(total_reported)} registros")
         if minutes is not None:
             lines.append(f"aprox. {_format_number(minutes)} minutos ouvidos")
         else:
             lines.append("minutos ouvidos indisponíveis")
 
         if capped:
-            lines.extend(["", "Resultado parcial: o período tem mais scrobbles do que o limite seguro de leitura do bot."])
+            lines.extend(["", "Resultado parcial: o período tem mais registros do que o limite seguro de leitura do bot."])
 
         return CapsuleResult("\n".join(lines), photo_bytes=photo_bytes, card_data=card_data)
 

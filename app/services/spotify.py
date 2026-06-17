@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 
+from app.services.spotify_links import extract_spotify_track_id, first_spotify_url, is_allowed_spotify_short_url
+
 import httpx
 
 from app.config.settings import (
@@ -103,7 +105,7 @@ class SpotifyService:
         if secret is None:
             logger.error("Spotify OAuth: TELEGRAM_BOT_TOKEN ausente — login bloqueado")
             raise RuntimeError(
-                "TELEGRAM_BOT_TOKEN não configurado — Spotify login indisponível."
+                "TELEGRAM_BOT_TOKEN não configurado — login indisponível."
             )
         expiry = int(time.time()) + _STATE_TTL_SECONDS
         payload = f"{user_id}.{expiry}"
@@ -270,10 +272,20 @@ class SpotifyService:
                 mapped = self._map_track(item, source="spotify_current", played_at=None)
                 if mapped is not None:
                     # Spotify pode responder 200 com is_playing=false quando o
-                    # usuário pausou. Propagamos a flag (default True quando
-                    # ausente, preservando o comportamento legado) para que
-                    # consumidores como /tnow possam filtrar pausados.
+                    # usuário pausou. Propagamos a flag e preservamos o timestamp
+                    # da mudança de estado para consumidores como /tnow exibirem
+                    # a última música recente com cor de recência.
                     mapped["is_playing"] = bool(data.get("is_playing", True))
+                    timestamp_ms = data.get("timestamp")
+                    mapped["player_timestamp_ms"] = timestamp_ms
+                    if not mapped["is_playing"] and timestamp_ms:
+                        try:
+                            mapped["played_at"] = datetime.fromtimestamp(
+                                int(timestamp_ms) / 1000,
+                                tz=timezone.utc,
+                            ).isoformat().replace("+00:00", "Z")
+                        except Exception:
+                            logger.debug("Spotify current timestamp parse failed: %s", timestamp_ms, exc_info=True)
                 return mapped
 
         recent = await fetch_recent(token.access_token)
@@ -337,7 +349,7 @@ class SpotifyService:
         self._client_token_expiration = _utcnow_naive() + timedelta(seconds=int(expires_in))
         return self._client_access_token
 
-    async def get_track_by_id(self, track_id: str) -> dict[str, Any] | None:
+    async def get_track_by_id(self, track_id: str, *, market: str | None = "BR") -> dict[str, Any] | None:
         clean_track_id = (track_id or "").strip()
         if not clean_track_id:
             return None
@@ -346,9 +358,11 @@ class SpotifyService:
         if not access_token:
             return None
 
+        params = {"market": market} if market else None
         client = self._client()
         response = await client.get(
             f"https://api.spotify.com/v1/tracks/{clean_track_id}",
+            params=params,
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
@@ -357,6 +371,42 @@ class SpotifyService:
             return None
 
         return self._map_track(response.json(), source="spotify_link", played_at=None)
+
+    async def resolve_track_from_shared_link(self, raw_link: str | None) -> dict[str, Any] | None:
+        """Resolve uma faixa a partir de link/URI compartilhado do Spotify.
+
+        Não busca hosts arbitrários: URLs curtas só são seguidas quando o
+        domínio inicial está na allow-list do Spotify. O resultado final só é
+        aceito quando resolve para open.spotify.com/track/{id}.
+        """
+        raw = (raw_link or "").strip()
+        if not raw:
+            return None
+
+        track_id = extract_spotify_track_id(raw)
+        if track_id:
+            return await self.get_track_by_id(track_id, market="BR")
+
+        if not is_allowed_spotify_short_url(raw):
+            return None
+
+        url = first_spotify_url(raw)
+        if not url or len(url) > 2048:
+            return None
+
+        try:
+            client = self._client()
+            response = await client.get(url, follow_redirects=True)
+            final_url = str(response.url)
+        except Exception:
+            logger.warning("Spotify shared link resolve failed", exc_info=True)
+            return None
+
+        track_id = extract_spotify_track_id(final_url)
+        if not track_id:
+            logger.warning("Spotify shared link did not resolve to track URL: %s", final_url[:160])
+            return None
+        return await self.get_track_by_id(track_id, market="BR")
 
     def _map_track(self, item: dict[str, Any], source: str, played_at: str | None) -> dict[str, Any] | None:
         if not item:
@@ -376,6 +426,8 @@ class SpotifyService:
             "spotify_url": (item.get("external_urls") or {}).get("spotify"),
             "album_url": (album.get("external_urls") or {}).get("spotify"),
             "album_image_url": images[0].get("url") if images else None,
+            "preview_url": item.get("preview_url"),
+            "duration_ms": item.get("duration_ms"),
         }
 
     async def search_track(self, artist: str, title: str) -> dict[str, str | None] | None:

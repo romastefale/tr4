@@ -239,7 +239,7 @@ class SpotifyCanvasService:
         if not clean_track_id:
             logger.info("Spotify Canvas skipped: empty track_id")
             return None
-        # Defesa: track_id "lfm:<hash>" é hash interno Last.fm, NUNCA
+        # Defesa: track_id "lfm:<hash>" é hash interno Last fm, NUNCA
         # resolve no canvaz-cache nem no proxy. O chamador (tcanvas.py)
         # deveria ter resolvido pra Spotify ID base62 antes — se chegou
         # aqui é porque a resolução falhou. Skip rápido pra não poluir
@@ -653,11 +653,11 @@ async def fetch_canvas_video_bytes(
     artist: str | None = None,
     track_name: str | None = None,
 ) -> bytes | None:
-    """Resolve track_id Last.fm -> Spotify ID se preciso, busca Canvas URL,
-    baixa bytes. Centraliza o fluxo usado por /tcanvas e fluxos musicais avançados.
+    """Resolve track_id Last fm -> Spotify ID se preciso, busca Canvas URL,
+    baixa bytes. Centraliza o fluxo usado por /tcanvas e /tly.
 
     Retorna `bytes` do mp4 se tudo deu certo, ou `None` em qualquer falha
-    (sem Canvas, download falhou, resolução Last.fm->Spotify falhou).
+    (sem Canvas, download falhou, resolução Last fm->Spotify falhou).
     Loga cada etapa pra debugging em produção.
     """
     canvas_track_id = (track_id or "").strip()

@@ -1,4 +1,4 @@
-"""/tcanvas — manda o Spotify Canvas (vídeo curto vertical) da música atual.
+"""/tcanvas — manda o canvas (vídeo curto vertical) da música atual.
 
 Mesma legenda e botões do /playing. Se a música não tiver Canvas (ou o
 download falhar), cai SILENCIOSAMENTE no fluxo do /playing — o user sempre
@@ -80,7 +80,7 @@ async def tcanvas(message: Message) -> None:
     track = await music_service.get_current_or_last_played(message.from_user.id)
     if not track:
         await message.answer(
-            "Nada está tocando agora. Bota algo pra rolar no Spotify ou Last.fm e tenta de novo."
+            "Não encontrei música atual. Tente novamente em alguns instantes."
         )
         return
 

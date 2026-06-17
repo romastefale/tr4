@@ -22,11 +22,11 @@ LASTFM_TRACK_INFO_TIMEOUT_SECONDS = 2.5
 
 
 def _clean_username(username: str) -> str:
-    """Aceita o que o user manda e tenta extrair o username puro do Last.fm.
+    """Aceita o que o user manda e tenta extrair o username puro do Last fm.
 
     Tolera @ no começo, URL completa (`https://www.last.fm/user/<nome>`),
     espaços extras e barras finais. Só levanta ValueError se mesmo depois
-    da limpeza o resultado não casar com o formato aceito pelo Last.fm.
+    da limpeza o resultado não casar com o formato aceito pelo Last fm.
     """
     value = (username or "").strip()
     # URL do tipo "https://www.last.fm/user/romastefale[/...]"
@@ -37,7 +37,7 @@ def _clean_username(username: str) -> str:
     value = value.strip().strip("/").strip()
     value = value.lstrip("@").strip()
     if not re.fullmatch(r"[A-Za-z0-9_.-]{2,64}", value):
-        raise ValueError("username Last.fm inválido")
+        raise ValueError("perfil musical inválido")
     return value
 
 
@@ -96,7 +96,7 @@ _USERNAME_CACHE_MAX = 4096
 
 class LastfmService:
     def __init__(self) -> None:
-        # Sprint 4 (S4.1): pool httpx compartilhado pra Last.fm + Deezer.
+        # Sprint 4 (S4.1): pool httpx compartilhado pra Last fm + Deezer.
         # Antes /tnow abria 3 sockets novos por chamada (recent + deezer +
         # track.getInfo) — agora keepalive reaproveita conexões. Como os
         # 3 endpoints têm timeouts diferentes, o pool é criado com o
@@ -104,11 +104,11 @@ class LastfmService:
         # precisa de algo mais agressivo passa `timeout=` explícito.
         self._http: httpx.AsyncClient | None = None
         # Sprint 4 (S4.5): cache user_id -> username|None. `None` cacheia
-        # "sabidamente sem Last.fm" pra evitar SELECT idêntico repetido
+        # "sabidamente sem Last fm" pra evitar SELECT idêntico repetido
         # (hot path: /songcharts agrega N membros do grupo, cada um
         # passava por get_username; /tnow chama uma vez por execução).
-        # Sem TTL — invalidação acontece nas 3 rotas de mutação
-        # (set_username, manual_register, clear_username). Single-process
+        # Sem TTL — invalidação acontece nas rotas de mutação
+        # (set_username, clear_username). Single-process
         # no Railway, então cache fica coerente. Cap em 4096 entradas
         # com eviction simples dos mais antigos pra bounded memory.
         self._username_cache: dict[int, str | None] = {}
@@ -134,12 +134,12 @@ class LastfmService:
             try:
                 await self._http.aclose()
             except Exception:
-                logger.exception("Last.fm httpx pool close failed")
+                logger.exception("Last fm httpx pool close failed")
             self._http = None
-        logger.info("Last.fm service stopped.")
+        logger.info("Last fm service stopped.")
 
     async def set_username(self, user_id: int, username: str) -> tuple[str, str | None]:
-        """Salva (ou substitui) o Last.fm do usuário.
+        """Salva (ou substitui) o Last fm do usuário.
 
         Devolve `(novo_username, username_anterior_ou_None)` pra que o handler
         possa avisar quando substituiu uma conexão antiga.
@@ -160,36 +160,6 @@ class LastfmService:
         # evita um SELECT extra na próxima leitura).
         self._username_cache_set(user_id, clean)
         return clean, previous
-
-    async def manual_register(self, user_id: int, username: str) -> tuple[str, int]:
-        """Cadastro manual (admin) do Last.fm de um terceiro.
-
-        Apaga TODAS as linhas de `lastfm_profiles` daquele `user_id` (defesa
-        em profundidade contra qualquer sujeira de tentativa anterior) e
-        cria uma linha nova. Tudo numa única transação — ou tudo entra ou
-        nada muda.
-
-        Retorna `(novo_username, qtd_de_linhas_apagadas)`.
-        """
-        clean = _clean_username(username)
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        with SessionLocal() as db:
-            deleted = (
-                db.query(LastfmProfile).filter_by(user_id=user_id).delete(synchronize_session=False)
-            )
-            db.add(
-                LastfmProfile(
-                    user_id=user_id,
-                    username=clean,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            db.commit()
-        # Sprint 4 (S4.5): write-through. manual_register substitui tudo
-        # do user_id, então gravar `clean` direto é seguro.
-        self._username_cache_set(user_id, clean)
-        return clean, int(deleted or 0)
 
     async def clear_username(self, user_id: int) -> bool:
         with SessionLocal() as db:
@@ -220,11 +190,11 @@ class LastfmService:
         return username
 
     async def get_all_profiles(self) -> list[tuple[int, str]]:
-        """Lista todos os Last.fm conectados como tuplas (user_id, username).
+        """Lista todos os Last fm conectados como tuplas (user_id, username).
 
         Usado pelo ranking do grupo (`/songcharts`) pra enumerar a base e,
         em seguida, filtrar por presença no chat (no fluxo do grupo) ou
-        agregar globalmente (no fluxo do owner em DM).
+        agregar globalmente.
         """
         with SessionLocal() as db:
             rows = (
@@ -260,11 +230,11 @@ class LastfmService:
                 timeout=LASTFM_TRACK_INFO_TIMEOUT_SECONDS,
             )
         except Exception:
-            logger.info("Last.fm track.getInfo failed silently | user_id=%s | artist=%s | track=%s", user_id, artist, track_name)
+            logger.info("Last fm track.getInfo failed silently | user_id=%s | artist=%s | track=%s", user_id, artist, track_name)
             return None
 
         if response.status_code != 200:
-            logger.info("Last.fm track.getInfo returned %s | user_id=%s | artist=%s | track=%s", response.status_code, user_id, artist, track_name)
+            logger.info("Last fm track.getInfo returned %s | user_id=%s | artist=%s | track=%s", response.status_code, user_id, artist, track_name)
             return None
 
         data = response.json()
@@ -274,7 +244,7 @@ class LastfmService:
 
         user_playcount = _safe_int(track_data.get("userplaycount"))
         if user_playcount is not None:
-            logger.info("Last.fm userplaycount matched | user_id=%s | artist=%s | track=%s | plays=%s", user_id, artist, track_name, user_playcount)
+            logger.info("Last fm userplaycount matched | user_id=%s | artist=%s | track=%s | plays=%s", user_id, artist, track_name, user_playcount)
         return user_playcount
 
     async def get_current_or_last_played(self, user_id: int) -> dict[str, Any] | None:
@@ -294,11 +264,11 @@ class LastfmService:
             client = self._client()
             response = await client.get(LASTFM_API_BASE_URL, params=params)
         except Exception:
-            logger.exception("Last.fm request failed | user_id=%s | username=%s", user_id, username)
+            logger.exception("Last fm request failed | user_id=%s | username=%s", user_id, username)
             return None
 
         if response.status_code != 200:
-            logger.error("Last.fm error %s: %s", response.status_code, response.text)
+            logger.error("Last fm error %s: %s", response.status_code, response.text)
             return None
 
         data = response.json()
@@ -415,7 +385,7 @@ class LastfmService:
                 cover = deezer_cover
                 cover_source = "deezer"
         logger.info(
-            "Last.fm track mapped | username=%s | artist=%s | track=%s | cover_source=%s | cover=%s",
+            "Last fm track mapped | username=%s | artist=%s | track=%s | cover_source=%s | cover=%s",
             username,
             artist,
             track_name,

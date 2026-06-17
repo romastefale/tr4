@@ -4,7 +4,7 @@ O Telegram guarda cada arquivo enviado e devolve um `file_id` que pode ser
 REENVIADO pra qualquer chat (pelo MESMO bot) sem re-upload — padrão oficial
 documentado (Bot FAQ / grammY docs) e usado por inúmeros projetos de "canal
 como storage". Aqui guardamos `track_id (Spotify) -> file_id` em DB pra que
-/tcanvas e /tly parem de rebaixar do CDN e re-subir o mesmo vídeo a cada uso.
+/tcanvas e /tstory parem de rebaixar do CDN e re-subir o mesmo vídeo a cada uso.
 
 Robustez (file_id PODE mudar com o tempo — não é garantido estável):
 - `file_id` é o que reenvia; se o Telegram rejeitar ("wrong file_id"/400), o

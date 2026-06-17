@@ -81,7 +81,7 @@ async def myself(message: Message) -> None:
     await _answer_with_effect(
         message,
         "♫ Qual extrato você quer?\n"
-        "Escolha o período do seu Last.fm:",
+        "Escolha o período do seu extrato:",
         _EFFECT_PARTY,
         reply_markup=_menu_keyboard(requester.id),
     )
@@ -116,12 +116,12 @@ async def myself_callback(query: CallbackQuery) -> None:
     display_name = query.from_user.full_name or "Usuário"
     label = "semana" if period == "w" else "mês"
     try:
-        await query.message.edit_text(f"Gerando extrato do {label} no Last.fm...")
+        await query.message.edit_text(f"Gerando extrato do {label}...")
         status = query.message
     except Exception:
-        # Mensagem não pôde ser editada (idade, permissões) — manda nova.
+        # Mensagem não pôde ser editada; manda nova.
         logger.warning("MYSELF_EDIT_FAILED", exc_info=True)
-        status = await query.message.answer(f"Gerando extrato do {label} no Last.fm...")
+        status = await query.message.answer(f"Gerando extrato do {label}...")
 
     if period == "w":
         _spawn_bg_task(

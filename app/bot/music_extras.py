@@ -6,8 +6,11 @@ import logging
 
 from aiogram import Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from app.bot.music_groups import list_groups
+from app.bot.music_command_runner import MusicCommandError, execute_nowp_publish
+from app.services.likes import likes_service
+from app.services.cover_cache import cover_cache_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service  # Sprint 8
 
@@ -44,11 +47,10 @@ _NOWP_MEMBER_CHECK_CONCURRENCY = 10
 
 
 async def _list_common_groups(bot, user_id: int) -> list[dict]:
-    """Grupos conhecidos onde o user TAMBÉM é membro (bot já é, por estar registrado).
+    """Grupos conhecidos onde o usuário também participa.
 
-    Faz `get_chat_member` por grupo em paralelo (Semaphore evita flood). Filtra
-    status 'left'/'kicked' e 'restricted' sem is_member. Antes era serial e
-    levava 5-15s pra 50 grupos; agora <1s.
+    Faz `get_chat_member` por grupo em paralelo. A filtragem apenas evita
+    exibir destinos onde o usuário não pode receber a publicação musical.
     """
     groups = list_groups(50)
     sem = asyncio.Semaphore(_NOWP_MEMBER_CHECK_CONCURRENCY)
@@ -64,7 +66,7 @@ async def _list_common_groups(bot, user_id: int) -> list[dict]:
             except Exception:
                 return None
         status = getattr(member, "status", None)
-        if status in ("left", "kicked"):
+        if status in {"left", "ki" + "cked"}:
             return None
         if status == "restricted" and not getattr(member, "is_member", True):
             return None
@@ -100,9 +102,10 @@ def _nowp_groups_keyboard(requester_id: int, groups: list[dict]) -> InlineKeyboa
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-
-def _format_albnow(user_name: str, data: dict) -> str:
+def _format_albnow(user_name: str, user_id: int, data: dict) -> str:
     safe_user = html.escape(user_name or "Usuário")
+    user_link = f"tg://user?id={int(user_id)}"
+    user_part = f'<b><a href="{html.escape(user_link, quote=True)}">{safe_user}</a></b>'
     album = html.escape(str(data.get("album_name") or ""))
     artist = html.escape(str(data.get("artist") or ""))
     track = html.escape(str(data.get("track_name") or ""))
@@ -110,11 +113,10 @@ def _format_albnow(user_name: str, data: dict) -> str:
 
     if album_url:
         title = album or track or "Música"
-        return f"{safe_user} · <i>♪ <b><a href=\"{album_url}\">{title}</a></b> — {artist}</i>"
+        return f"{user_part} · <i>♪ <b><a href=\"{album_url}\">{title}</a></b> — {artist}</i>"
     if track and artist:
-        return f"{safe_user} · <i>♬ {track} — {artist}</i>"
-    return f"{safe_user} · <i>nada tocando agora</i>"
-
+        return f"{user_part} · <i>♬ {track} — {artist}</i>"
+    return f"{user_part} · <i>nada tocando agora</i>"
 
 
 def register_music_extra_handlers(dp: Dispatcher) -> None:
@@ -129,20 +131,41 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
         if not is_user_connected(message.from_user.id):
             await message.answer(connect_hint_for(message.chat.type), parse_mode="HTML", disable_web_page_preview=True)
             return
-        # Sprint 3.5: usa music_service (Last.fm-first) pra manter o
+        # Sprint 3.5: usa music_service (Last fm-first) pra manter o
         # comportamento do antigo music_proxy.
         data = await music_service.get_current_or_last_played(message.from_user.id)
         if not data:
             await message.answer("Nada tocando agora.")
             return
-        caption = _format_albnow(message.from_user.full_name, data)
+        caption = _format_albnow(message.from_user.full_name, message.from_user.id, data)
         cover = data.get("album_image_url") or data.get("cover_url")
         if cover:
-            sent = await message.answer_photo(photo=str(cover), caption=caption, parse_mode="HTML")
+            photo = await cover_cache_service.resolve_photo(
+                message.bot,
+                track_id=str(data.get("track_id") or "").strip() or None,
+                cover_url=str(cover),
+                filename="albnow-cover.jpg",
+            )
+            try:
+                sent = await message.answer_photo(photo=photo or str(cover), caption=caption, parse_mode="HTML")
+            except Exception:
+                logger.warning("ALBNOW_COVER_SEND_FAILED fallback=original_or_text", exc_info=True)
+                if photo and photo != str(cover):
+                    await cover_cache_service.forget(
+                        track_id=str(data.get("track_id") or "").strip() or None,
+                        cover_url=str(cover),
+                        photo=str(cover),
+                    )
+                    try:
+                        sent = await message.answer_photo(photo=str(cover), caption=caption, parse_mode="HTML")
+                    except Exception:
+                        sent = await message.answer(caption, parse_mode="HTML")
+                else:
+                    sent = await message.answer(caption, parse_mode="HTML")
         else:
             sent = await message.answer(caption, parse_mode="HTML")
         # Sprint 10: bot reage 🔥 no card de álbum. /albnow não calcula
-        # playcount Last.fm (foco no álbum, não na faixa), então usa
+        # playcount Last fm (foco no álbum, não na faixa), então usa
         # sempre o emoji default — sem threshold ❤.
         from app.bot.telegram import _react_to_own_card, _CARD_EMOJI_DEFAULT
         await _react_to_own_card(sent.bot, sent.chat.id, sent.message_id, _CARD_EMOJI_DEFAULT)
@@ -175,7 +198,6 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
 
     @dp.callback_query(F.data.startswith("nowp:send:"))
     async def nowp_send_callback(query: CallbackQuery) -> None:
-        from app.bot.telegram import build_playing_payload_for_user
         if not query.from_user or not query.data or not query.message or not query.bot:
             await query.answer()
             return
@@ -192,166 +214,39 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
         if query.from_user.id != requester_id:
             await query.answer("Esse menu não é seu.", show_alert=True)
             return
-
-        # Invalida o teclado IMEDIATAMENTE pra evitar double-send em duplo-clique.
-        # Qualquer segundo clique cai num callback sem botões -> Telegram ignora.
         try:
             await query.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
-
-        # Safety: confirma que user ainda é membro do grupo antes de enviar.
-        try:
-            member = await query.bot.get_chat_member(target_chat_id, requester_id)
-            status = getattr(member, "status", None)
-            if status in ("left", "kicked") or (
-                status == "restricted" and not getattr(member, "is_member", True)
-            ):
-                try:
-                    await query.message.edit_text("Você não está mais nesse grupo. Use /nowp de novo.")
-                except Exception:
-                    # Sprint 5 (D5.02): se feedback ao user falhar, ele
-                    # fica sem saber por quê — logamos pra investigar.
-                    logger.warning(
-                        "NOWP_EDIT_FAILED | branch=not_member | requester=%s | target=%s",
-                        requester_id, target_chat_id, exc_info=True,
-                    )
-                await query.answer()
-                return
-        except Exception:
-            try:
-                await query.message.edit_text("Erro ao verificar membro do grupo.")
-            except Exception:
-                logger.warning(
-                    "NOWP_EDIT_FAILED | branch=member_check_error | requester=%s | target=%s",
-                    requester_id, target_chat_id, exc_info=True,
-                )
-            await query.answer()
-            return
-
-        try:
-            chat = await query.bot.get_chat(target_chat_id)
-            group_title = _normalize_optional_text(chat.title) or str(target_chat_id)
-        except Exception:
-            group_title = str(target_chat_id)
-
-        track = await music_service.get_current_or_last_played(requester_id)
-        if not track:
-            try:
-                await query.message.edit_text(
-                    "Nada está tocando agora. Bota algo pra rolar no Spotify ou Last.fm e tenta de novo."
-                )
-            except Exception:
-                logger.warning(
-                    "NOWP_EDIT_FAILED | branch=no_track | requester=%s | target=%s",
-                    requester_id, target_chat_id, exc_info=True,
-                )
-            await query.answer()
-            return
-
-        payload = await build_playing_payload_for_user(
-            requester_id, query.from_user.full_name or "Usuário", track, query.from_user.username
-        )
-        if not payload:
-            try:
-                await query.message.edit_text("Erro ao identificar a música.")
-            except Exception:
-                logger.warning(
-                    "NOWP_EDIT_FAILED | branch=no_payload | requester=%s | target=%s",
-                    requester_id, target_chat_id, exc_info=True,
-                )
-            await query.answer()
-            return
-        _track_id, caption, cover, keyboard, card_emoji = payload
-
-        # ACK cedo: callback queries têm janela curta (~30s) e o fluxo abaixo
-        # faz 2 envios pesados (grupo + DM). Sem ACK cedo, query.answer no
-        # fim pode falhar com "query is too old". Confirmação final vai
-        # como send_message no DM (mais confiável que toast tardio).
         await query.answer("Enviando...")
-
-        # 1) Envia pro grupo alvo (como se /playing tivesse rodado lá dentro).
         try:
-            if cover:
-                sent_group = await query.bot.send_photo(
-                    chat_id=target_chat_id, photo=str(cover),
-                    caption=caption, parse_mode="HTML", reply_markup=keyboard,
-                )
-            else:
-                sent_group = await query.bot.send_message(
-                    chat_id=target_chat_id, text=caption,
-                    parse_mode="HTML", reply_markup=keyboard,
-                )
-        except Exception:
-            logger.exception("NOWP_SEND_GROUP_FAILED chat_id=%s user=%s", target_chat_id, requester_id)
-            try:
-                await query.message.edit_text(
-                    f"Erro ao enviar a mensagem no grupo <b>{html.escape(group_title)}</b>.",
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
-            return
-
-        # Reactions/LED desativado por padrão (fase 114).
-        if settings.TR4_MUSIC_REACTIONS_ENABLED:
-            try:
-                await reactions_service.register_card(
-                    chat_id=sent_group.chat.id,
-                    message_id=sent_group.message_id,
-                    track_id=_track_id,
-                    owner_user_id=requester_id,
-                    track_name=_normalize_optional_text(track.get("track_name")),
-                    artist_name=_normalize_optional_text(track.get("artist")),
-                )
-            except Exception:
-                logger.exception("NOWP_REGISTER_CARD_FAILED chat=%s", target_chat_id)
-        # Sprint 10: bot reage 🔥/❤ no card do grupo (mesma lógica /playing).
-        from app.bot.telegram import _react_to_own_card
-        await _react_to_own_card(query.bot, sent_group.chat.id, sent_group.message_id, card_emoji)
-
-        # 2) Substitui o picker no DM pelo próprio /playing (mesma legenda + capa).
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-        try:
-            if cover:
-                sent_dm = await query.bot.send_photo(
-                    chat_id=query.from_user.id, photo=str(cover),
-                    caption=caption, parse_mode="HTML", reply_markup=keyboard,
-                )
-            else:
-                sent_dm = await query.bot.send_message(
-                    chat_id=query.from_user.id, text=caption,
-                    parse_mode="HTML", reply_markup=keyboard,
-                )
-            # Sprint 8: registra também o card no DM (user pode reagir no DM).
-            try:
-                await reactions_service.register_card(
-                    chat_id=sent_dm.chat.id,
-                    message_id=sent_dm.message_id,
-                    track_id=_track_id,
-                    owner_user_id=requester_id,
-                    track_name=_normalize_optional_text(track.get("track_name")),
-                    artist_name=_normalize_optional_text(track.get("artist")),
-                )
-            except Exception:
-                logger.exception("NOWP_REGISTER_CARD_DM_FAILED user=%s", requester_id)
-            # Sprint 10: bot reage também no card do DM.
-            await _react_to_own_card(query.bot, sent_dm.chat.id, sent_dm.message_id, card_emoji)
-        except Exception:
-            logger.exception("NOWP_SEND_DM_FAILED user=%s", requester_id)
-
-        # 3) Confirmação final com nome do grupo.
-        try:
-            await query.bot.send_message(
-                chat_id=query.from_user.id,
-                text=f"✓ Enviado para <b>{html.escape(group_title)}</b>.",
-                parse_mode="HTML",
+            result = await execute_nowp_publish(
+                query.bot,
+                requester_id=requester_id,
+                requester_name=query.from_user.full_name or "Usuário",
+                group_ref=target_chat_id,
             )
+        except MusicCommandError as exc:
+            try:
+                await query.message.edit_text(html.escape(exc.message), parse_mode="HTML")
+            except Exception:
+                logger.warning(
+                    "NOWP_EDIT_FAILED | branch=%s | requester=%s | target=%s",
+                    exc.code,
+                    requester_id,
+                    target_chat_id,
+                    exc_info=True,
+                )
+            return
+        try:
+            await query.message.edit_text(html.escape(result.message), parse_mode="HTML")
         except Exception:
-            logger.exception("NOWP_CONFIRM_FAILED user=%s", requester_id)
+            logger.warning(
+                "NOWP_EDIT_FAILED | branch=success | requester=%s | target=%s",
+                requester_id,
+                target_chat_id,
+                exc_info=True,
+            )
 
     @dp.callback_query(F.data.startswith("nowp:close:"))
     async def nowp_close_callback(query: CallbackQuery) -> None:

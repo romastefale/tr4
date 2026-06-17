@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from aiogram import Bot
 from aiogram.types import (
     BotCommand,
-    BotCommandScopeAllChatAdministrators,
     BotCommandScopeAllGroupChats,
     BotCommandScopeAllPrivateChats,
+    BotCommandScopeChat,
     BotCommandScopeDefault,
 )
+
+from app.config.settings import CODE_OWNER_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -21,30 +23,56 @@ class CommandDef:
     description: str
 
 
-_PUBLIC_COMMANDS: tuple[CommandDef, ...] = (
-    CommandDef("playing", "Música tocando agora"),
-    CommandDef("albnow", "Álbum atual"),
-    CommandDef("tcanvas", "Canvas do Spotify"),
-    CommandDef("tstory", "Story da música"),
-    CommandDef("tly", "Trecho com letra"),
-    CommandDef("radiofm", "Buscar música"),
-    CommandDef("tnow", "Mosaico do grupo"),
-    CommandDef("nowp", "Enviar música ao grupo"),
-    CommandDef("myself", "Extrato pessoal"),
-    CommandDef("weekfm", "Resumo semanal"),
-    CommandDef("monthfm", "Resumo mensal"),
-    CommandDef("songcharts", "Ranking do grupo"),
-    CommandDef("lastfm", "Conectar Last.fm"),
-    CommandDef("lastfmoff", "Desconectar Last.fm"),
-    CommandDef("login", "Conectar Spotify"),
-    CommandDef("help", "Ajuda"),
-    CommandDef("start", "Boas-vindas"),
+_PRIVATE_COMMANDS: tuple[CommandDef, ...] = (
+    CommandDef("start", "Boas-vindas e conexão"),
+    CommandDef("help", "Comandos disponíveis"),
+    CommandDef("lastfm", "Conectar perfil musical"),
+    CommandDef("lastfmoff", "Remover perfil musical"),
+    CommandDef("login", "Conectar conta musical"),
+    CommandDef("logout", "Remover conexão musical"),
+    CommandDef("playing", "Sua música tocando agora"),
+    CommandDef("albnow", "Álbum da música atual"),
+    CommandDef("tcanvas", "Canvas da música atual"),
+    CommandDef("tstory", "Story da música atual"),
+    CommandDef("tly", "Trecho de letra da música atual"),
+    CommandDef("radiofm", "Buscar uma música"),
+    CommandDef("nowp", "Enviar sua música para grupo"),
+    CommandDef("myself", "Menu de extratos pessoais"),
+    CommandDef("weekfm", "Extrato semanal"),
+    CommandDef("monthfm", "Extrato mensal"),
 )
 
-_PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PUBLIC_COMMANDS + (
-    CommandDef("show", "Painel owner do Equalizador"),
-    CommandDef("broadcast", "Broadcast musical owner"),
+_GROUP_COMMANDS: tuple[CommandDef, ...] = (
+    CommandDef("help", "Comandos musicais do grupo"),
+    CommandDef("lastfm", "Conectar perfil musical"),
+    CommandDef("lastfmoff", "Remover perfil musical"),
+    CommandDef("playing", "Sua música no grupo"),
+    CommandDef("albnow", "Álbum da música atual"),
+    CommandDef("tcanvas", "Canvas da música atual"),
+    CommandDef("tstory", "Story da música atual"),
+    CommandDef("tly", "Trecho de letra da música atual"),
+    CommandDef("radiofm", "Buscar uma música no grupo"),
+    CommandDef("tnow", "Mosaico de ouvintes do grupo"),
+    CommandDef("myself", "Menu de extratos pessoais"),
+    CommandDef("weekfm", "Extrato semanal"),
+    CommandDef("monthfm", "Extrato mensal"),
+    CommandDef("songcharts", "Ranking musical do grupo"),
 )
+
+_OWNER_ONLY_COMMANDS: tuple[CommandDef, ...] = (
+    CommandDef("tnowall", "Mosaico consolidado por DM"),
+    CommandDef("songchartsall", "Ranking consolidado por DM"),
+    CommandDef("weekall", "Ranking semanal consolidado"),
+    CommandDef("monthall", "Ranking mensal consolidado"),
+    CommandDef("tmn", "Cadastrar perfil musical manualmente"),
+    CommandDef("tpv", "Privacidade visual no mosaico"),
+)
+
+_OWNER_PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PRIVATE_COMMANDS + _OWNER_ONLY_COMMANDS
+
+# Compatibilidade com testes e scripts antigos: "public" representa os comandos
+# comuns de DM. Os escopos reais são private, group e owner_private.
+_PUBLIC_COMMANDS = _PRIVATE_COMMANDS
 
 
 def _to_bot_commands(commands: tuple[CommandDef, ...]) -> list[BotCommand]:
@@ -52,26 +80,37 @@ def _to_bot_commands(commands: tuple[CommandDef, ...]) -> list[BotCommand]:
 
 
 def command_scope_summary() -> dict[str, object]:
-    return {"public": [item.command for item in _PUBLIC_COMMANDS], "private": [item.command for item in _PRIVATE_COMMANDS]}
+    return {
+        "public": [item.command for item in _PUBLIC_COMMANDS],
+        "private": [item.command for item in _PRIVATE_COMMANDS],
+        "group": [item.command for item in _GROUP_COMMANDS],
+        "owner_private": [item.command for item in _OWNER_PRIVATE_COMMANDS],
+        "owner_only": [item.command for item in _OWNER_ONLY_COMMANDS],
+    }
 
 
 async def setup_bot_commands(bot: Bot) -> None:
-    public_commands = _to_bot_commands(_PUBLIC_COMMANDS)
     private_commands = _to_bot_commands(_PRIVATE_COMMANDS)
-    public_scopes = (
-        BotCommandScopeDefault(),
-        BotCommandScopeAllGroupChats(),
-        BotCommandScopeAllChatAdministrators(),
-    )
+    group_commands = _to_bot_commands(_GROUP_COMMANDS)
+    owner_commands = _to_bot_commands(_OWNER_PRIVATE_COMMANDS)
     try:
-        for scope in public_scopes:
-            await bot.set_my_commands(public_commands, scope=scope)
+        await bot.set_my_commands(private_commands, scope=BotCommandScopeDefault())
         await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
         logger.info(
-            "BOT_COMMANDS_SET | public=%s | private=%s | public_scopes=%s",
-            len(public_commands),
+            "BOT_COMMANDS_MUSIC_ONLY_SET | private=%s group=%s owner_ids=%s",
             len(private_commands),
-            len(public_scopes),
+            len(group_commands),
+            len(CODE_OWNER_IDS),
         )
     except Exception:
-        logger.warning("BOT_COMMANDS_PUBLIC_FAILED", exc_info=True)
+        logger.warning("BOT_COMMANDS_MUSIC_ONLY_FAILED", exc_info=True)
+        return
+
+    for owner_id in CODE_OWNER_IDS:
+        try:
+            await bot.set_my_commands(owner_commands, scope=BotCommandScopeChat(chat_id=owner_id))
+        except Exception:
+            logger.warning("BOT_OWNER_COMMANDS_SET_FAILED", exc_info=True)
+        else:
+            logger.info("BOT_OWNER_COMMANDS_SET | count=%s", len(owner_commands))

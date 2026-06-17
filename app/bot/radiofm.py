@@ -1,16 +1,15 @@
 """/radiofm — busca uma música por termo livre e envia o card avulso.
 
-Fluxo: `/radiofm <termo>` busca candidatos (Deezer) e mostra uma lista de
-botões (título - artista). Ao escolher, o bot envia o card final (capa +
-"título - artista") e apaga sozinho as mensagens de processo (o comando e a
-lista de escolha), deixando só o card.
+Fluxo: `/radiofm <termo>` busca candidatos e mostra uma lista de botões
+(título - artista). `/radiofm` sem termo pergunta qual música buscar e aceita
+uma resposta direta ao prompt ou a próxima mensagem do mesmo autor no mesmo
+chat. Ao escolher, o bot envia o card final sem apagar mensagens do grupo.
 
 Sem contador de play/like e sem registro de reações (diferente de /playing e
 /tcanvas). ZERO emojis na interface.
 """
 from __future__ import annotations
 
-import asyncio
 import html
 import logging
 import time
@@ -18,7 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -26,6 +25,8 @@ from aiogram.types import (
     Message,
 )
 
+from app.services.cover_cache import cover_cache_service
+from app.services.spotify import spotify_service
 from app.services.track_search import TrackHit, search_tracks
 
 logger = logging.getLogger(__name__)
@@ -33,31 +34,33 @@ router = Router(name="radiofm")
 
 _MAX_RESULTS = 8
 _CACHE_BOUND = 500
-_AUTOCLEAN_DELAY = 6.0
 _PENDING_TTL = 300.0  # 5min: tempo de sobra pra escolher; depois expira.
-
-# Tasks de autolimpeza: ref forte pra o GC não coletar antes de rodar.
-_BG_TASKS: set[asyncio.Task] = set()
-
-
-def _spawn(coro) -> asyncio.Task:
-    task = asyncio.create_task(coro)
-    _BG_TASKS.add(task)
-    task.add_done_callback(_BG_TASKS.discard)
-    return task
+_PROMPT_TTL = 180.0  # 3min pra responder a pergunta do /radiofm sem termo.
 
 
 @dataclass
 class _Pending:
     hits: list[TrackHit]
     user_id: int
+    user_name: str
     command_chat_id: int
     command_msg_id: int
     ts: float = field(default_factory=time.monotonic)
 
 
+@dataclass
+class _PromptPending:
+    user_id: int
+    chat_id: int
+    command_msg_id: int
+    prompt_msg_id: int
+    ts: float = field(default_factory=time.monotonic)
+
+
 # token -> resultados pendentes de escolha. Bound simples (clear ao estourar).
 _pending: dict[str, _Pending] = {}
+# (chat_id, user_id) -> pergunta pendente do /radiofm sem termo.
+_prompt_pending: dict[tuple[int, int], _PromptPending] = {}
 
 
 def _purge_expired() -> None:
@@ -65,25 +68,108 @@ def _purge_expired() -> None:
     stale = [k for k, v in _pending.items() if now - v.ts > _PENDING_TTL]
     for k in stale:
         _pending.pop(k, None)
+    prompt_stale = [k for k, v in _prompt_pending.items() if now - v.ts > _PROMPT_TTL]
+    for k in prompt_stale:
+        _prompt_pending.pop(k, None)
 
 
-def _card_caption(hit: TrackHit) -> str:
+def _user_anchor(user_id: int, user_name: str) -> str:
+    safe_name = html.escape(user_name or "Usuário")
+    user_link = f"tg://user?id={int(user_id)}"
+    return f'<b><a href="{html.escape(user_link, quote=True)}">{safe_name}</a></b>'
+
+
+def _card_caption(hit: TrackHit, *, user_id: int, user_name: str, spotify_url: str | None) -> str:
     title = html.escape(hit.title)
     artist = html.escape(hit.artist)
-    if hit.url:
-        return f'<b><a href="{html.escape(hit.url, quote=True)}">{title}</a></b> - <i>{artist}</i>'
-    return f"<b>{title}</b> - <i>{artist}</i>"
+    safe_url = html.escape(spotify_url or "", quote=True)
+    track_part = f'<a href="{safe_url}">{title}</a>' if safe_url else title
+    return f"{_user_anchor(user_id, user_name)}\n\n♫ <b>{track_part}</b> — <i>{artist}</i>"
 
 
-async def _autoclean(bot, chat_id: int, message_ids: list[int], delay: float = _AUTOCLEAN_DELAY) -> None:
-    await asyncio.sleep(delay)
-    for mid in message_ids:
-        if mid is None:
-            continue
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception:
-            logger.debug("RADIOFM_AUTOCLEAN_DELETE_FAILED chat=%s msg=%s", chat_id, mid)
+def _question_key(message: Message) -> tuple[int, int] | None:
+    if not message.from_user:
+        return None
+    return int(message.chat.id), int(message.from_user.id)
+
+
+def _is_radiofm_prompt_answer(message: Message) -> bool:
+    key = _question_key(message)
+    if key is None:
+        return False
+    _purge_expired()
+    pending = _prompt_pending.get(key)
+    if pending is None:
+        return False
+    reply = getattr(message, "reply_to_message", None)
+    reply_id = getattr(reply, "message_id", None)
+    if reply_id == pending.prompt_msg_id:
+        return True
+    try:
+        return int(message.message_id) > int(pending.prompt_msg_id)
+    except Exception:
+        return False
+
+
+async def _resolve_spotify_output(hit: TrackHit) -> tuple[str | None, str | None]:
+    """Resolve URL/capa do Spotify para o resultado escolhido.
+
+    O Deezer continua sendo usado só como motor de busca pública. O card final
+    prioriza link e capa do Spotify para manter o mesmo padrão das demais
+    interações musicais.
+    """
+    try:
+        match = await spotify_service.search_track(hit.artist, hit.title)
+    except Exception:
+        logger.warning("RADIOFM_SPOTIFY_RESOLVE_FAILED track=%s", hit.track_id, exc_info=True)
+        match = None
+    if match:
+        return match.get("url"), match.get("cover") or hit.cover_big
+    return None, hit.cover_big
+
+
+async def _present_radiofm_results(
+    message: Message,
+    *,
+    term: str,
+    requester_id: int,
+    requester_name: str,
+    command_msg_id: int,
+) -> None:
+    clean_term = (term or "").strip()
+    if not clean_term:
+        await message.answer("Manda o nome da música ou artista para buscar no RadioFM.")
+        return
+
+    try:
+        await message.bot.send_chat_action(message.chat.id, "typing")
+    except Exception:
+        pass
+
+    hits = await search_tracks(clean_term, limit=_MAX_RESULTS)
+    if not hits:
+        await message.answer(f'Nada encontrado para "{html.escape(clean_term)}".')
+        return
+
+    token = uuid.uuid4().hex[:10]
+    _purge_expired()
+    if len(_pending) >= _CACHE_BOUND:
+        _pending.clear()
+    _pending[token] = _Pending(
+        hits=hits,
+        user_id=requester_id,
+        user_name=requester_name or "Usuário",
+        command_chat_id=message.chat.id,
+        command_msg_id=command_msg_id,
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"{h.title} - {h.artist}", callback_data=f"rfm:{token}:{i}")]
+            for i, h in enumerate(hits)
+        ]
+    )
+    await message.answer("Escolha a faixa:", reply_markup=keyboard)
 
 
 @router.message(Command("radiofm"))
@@ -95,42 +181,46 @@ async def radiofm(message: Message, command: CommandObject) -> None:
         return
 
     term = (command.args or "").strip()
+    requester_id = int(message.from_user.id)
+    requester_name = message.from_user.full_name or "Usuário"
     if not term:
-        await message.answer(
-            "Uso: <code>/radiofm nome da música ou artista</code>",
-            parse_mode="HTML",
+        prompt = await message.answer(
+            "Qual música você quer buscar no RadioFM?\n"
+            "Responda esta mensagem ou envie o nome da música na sua próxima mensagem."
+        )
+        _purge_expired()
+        _prompt_pending[(int(message.chat.id), requester_id)] = _PromptPending(
+            user_id=requester_id,
+            chat_id=int(message.chat.id),
+            command_msg_id=int(message.message_id),
+            prompt_msg_id=int(prompt.message_id),
         )
         return
 
-    try:
-        await message.bot.send_chat_action(message.chat.id, "typing")
-    except Exception:
-        pass
+    await _present_radiofm_results(
+        message,
+        term=term,
+        requester_id=requester_id,
+        requester_name=requester_name,
+        command_msg_id=int(message.message_id),
+    )
 
-    hits = await search_tracks(term, limit=_MAX_RESULTS)
-    if not hits:
-        sent = await message.answer(f'Nada encontrado para "{html.escape(term)}".')
-        _spawn(_autoclean(message.bot, message.chat.id, [message.message_id, sent.message_id]))
+
+@router.message(StateFilter(None), F.text, ~F.text.startswith("/"), _is_radiofm_prompt_answer)
+async def radiofm_prompt_answer(message: Message) -> None:
+    if not message.from_user:
         return
-
-    token = uuid.uuid4().hex[:10]
-    _purge_expired()
-    if len(_pending) >= _CACHE_BOUND:
-        _pending.clear()
-    _pending[token] = _Pending(
-        hits=hits,
-        user_id=message.from_user.id,
-        command_chat_id=message.chat.id,
-        command_msg_id=message.message_id,
+    key = _question_key(message)
+    pending = _prompt_pending.pop(key, None) if key else None
+    if pending is None:
+        return
+    await _present_radiofm_results(
+        message,
+        term=message.text or "",
+        requester_id=int(message.from_user.id),
+        requester_name=message.from_user.full_name or "Usuário",
+        command_msg_id=pending.command_msg_id,
     )
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=f"{h.title} - {h.artist}", callback_data=f"rfm:{token}:{i}")]
-            for i, h in enumerate(hits)
-        ]
-    )
-    await message.answer("Escolha a faixa:", reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("rfm:"))
@@ -171,27 +261,43 @@ async def radiofm_pick(query: CallbackQuery) -> None:
 
     bot = query.bot
     chat_id = query.message.chat.id
-    caption = _card_caption(hit)
+    spotify_url, cover_url = await _resolve_spotify_output(hit)
+    caption = _card_caption(
+        hit,
+        user_id=pending.user_id,
+        user_name=pending.user_name,
+        spotify_url=spotify_url,
+    )
 
     sent = None
-    if hit.cover_big:
+    if cover_url:
+        photo = await cover_cache_service.resolve_photo(
+            bot,
+            track_id=str(hit.track_id or "").strip() or None,
+            cover_url=cover_url,
+            filename="radiofm-cover.jpg",
+        )
         try:
             sent = await bot.send_photo(
-                chat_id, photo=hit.cover_big, caption=caption, parse_mode="HTML"
+                chat_id, photo=photo or cover_url, caption=caption, parse_mode="HTML"
             )
         except Exception:
             logger.warning("RADIOFM_SEND_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
+            if photo and photo != cover_url:
+                await cover_cache_service.forget(
+                    track_id=str(hit.track_id or "").strip() or None,
+                    cover_url=cover_url,
+                    photo=cover_url,
+                )
+                try:
+                    sent = await bot.send_photo(
+                        chat_id, photo=cover_url, caption=caption, parse_mode="HTML"
+                    )
+                except Exception:
+                    logger.warning("RADIOFM_SEND_ORIGINAL_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
     if sent is None:
         await bot.send_message(
             chat_id, caption, parse_mode="HTML", disable_web_page_preview=True
         )
 
-    # Autolimpeza: apaga a lista de escolha e o comando original, deixa só o card.
-    try:
-        await query.message.delete()
-    except Exception:
-        logger.debug("RADIOFM_LIST_DELETE_FAILED chat=%s", chat_id, exc_info=True)
-    try:
-        await bot.delete_message(pending.command_chat_id, pending.command_msg_id)
-    except Exception:
-        logger.debug("RADIOFM_COMMAND_DELETE_FAILED chat=%s", pending.command_chat_id, exc_info=True)
+    # Music-only clean: não apaga comando/lista no grupo.

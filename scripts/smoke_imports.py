@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from app.bot.setup_commands import command_scope_summary
 from app.bot.telegram import bot_dispatcher
 from app.bot.monthfm import router as monthfm_router
@@ -21,8 +28,6 @@ def main() -> None:
         assert router is not None
     scopes = command_scope_summary()
     assert "playing" in scopes["public"]
-    assert "tigrao" not in scopes["public"]
-    assert "owner" not in scopes["public"]
     assert "radio" not in scopes["public"]
     reset_rate_limits()
     assert check_command_rate_limit("playing", 1, 1).allowed

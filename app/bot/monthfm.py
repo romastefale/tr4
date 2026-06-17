@@ -10,21 +10,14 @@ from aiogram.types import BufferedInputFile, Message
 
 from app.services.lastfm_capsule import lastfm_capsule_service
 from app.services.monthfm_card import render_monthfm_card
-from app.equalizador.identity import public_tme_url
 
 logger = logging.getLogger(__name__)
 router = Router(name="monthfm")
 
 
-async def _safe_delete(message: Message) -> None:
-    try:
-        await message.delete()
-    except Exception:
-        logger.warning("monthfm status delete failed | message_id=%s", message.message_id, exc_info=True)
-
-
-def _format_caption(card_data, raw_month: str | None, display_name: str, user_id: int, username: str | None = None) -> str:
-    """Legenda enxuta: '♫ <período> de <user>'. <user> usa link t.me quando houver @username público.
+def _format_caption(card_data, raw_month: str | None, display_name: str, user_id: int) -> str:
+    """Legenda enxuta: '♫ <período> de <user>'. <user> é o autor do comando,
+    marcado via link tg://user.
 
     Prioriza `period_value` do card (já resolvido em PT-BR, ex: 'FEVEREIRO 2026'),
     cai para o input do usuário e por fim para um rótulo genérico.
@@ -36,13 +29,10 @@ def _format_caption(card_data, raw_month: str | None, display_name: str, user_id
     else:
         period = "este mês"
     safe_name = html.escape(display_name or "Usuário")
-    contato_url = public_tme_url(username)
-    if contato_url:
-        return f'♫ {html.escape(period)} de <a href="{html.escape(contato_url, quote=True)}">{safe_name}</a>'
-    return f'♫ {html.escape(period)} de {safe_name}'
+    return f'♫ {html.escape(period)} de <b><a href="tg://user?id={user_id}">{safe_name}</a></b>'
 
 
-async def _finish_monthfm(message: Message, user_id: int, display_name: str, raw_month: str | None, username: str | None = None) -> None:
+async def _finish_monthfm(message: Message, user_id: int, display_name: str, raw_month: str | None) -> None:
     try:
         result = await lastfm_capsule_service.build_capsule(
             user_id=user_id,
@@ -57,16 +47,14 @@ async def _finish_monthfm(message: Message, user_id: int, display_name: str, raw
             # Quando o card visual é gerado, dispensamos a mensagem-texto
             # com o mesmo conteúdo (evita duplicação na thread). O texto
             # continua disponível como fallback nos branches seguintes.
-            await _safe_delete(message)
             sent = await message.answer_photo(
                 photo=BufferedInputFile(card_bytes, filename="monthfm-card.jpg"),
-                caption=_format_caption(result.card_data, raw_month, display_name, user_id, username),
+                caption=_format_caption(result.card_data, raw_month, display_name, user_id),
                 parse_mode="HTML",
             )
             await _react_to_own_card(sent.bot, sent.chat.id, sent.message_id, _CARD_EMOJI_EXTRACT)
             return
         if result.photo_bytes and len(text) <= 1024:
-            await _safe_delete(message)
             sent = await message.answer_photo(
                 photo=BufferedInputFile(result.photo_bytes, filename="monthfm.jpg"),
                 caption=text,
@@ -75,7 +63,6 @@ async def _finish_monthfm(message: Message, user_id: int, display_name: str, raw
             await _react_to_own_card(sent.bot, sent.chat.id, sent.message_id, _CARD_EMOJI_EXTRACT)
             return
         if result.photo_bytes:
-            await _safe_delete(message)
             sent = await message.answer_photo(
                 photo=BufferedInputFile(result.photo_bytes, filename="monthfm.jpg"),
                 caption="♫ Extrato mensal",
@@ -119,14 +106,13 @@ async def monthfm(message: Message) -> None:
         await message.bot.send_chat_action(message.chat.id, "upload_photo")
     except Exception:
         pass
-    status = await message.answer("Gerando extrato mensal do Last.fm...")
+    status = await message.answer("Gerando extrato mensal...")
     task = asyncio.create_task(
         _finish_monthfm(
             status,
             user_id=message.from_user.id,
             display_name=message.from_user.full_name or "Usuário",
             raw_month=raw_month,
-            username=message.from_user.username,
         )
     )
     _BG_TASKS.add(task)
