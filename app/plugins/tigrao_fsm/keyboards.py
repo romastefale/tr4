@@ -38,6 +38,7 @@ CALLBACK_ACTIONS = frozenset({
     "confirm",
     "back",
     "close",
+    *(f"g{i}" for i in range(50)),
 })
 
 
@@ -173,5 +174,43 @@ def to_inline_keyboard_markup(rows: list[list[TigraoButtonSpec]]) -> Any:
 def home_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
     return [
         [button("Selecionar grupo", make_callback(session_id, "grp"), style="primary")],
+        [button("Fechar", make_callback(session_id, "close"), style="danger")],
+    ]
+
+
+def group_selection_keyboard(session_id: str, groups: list[dict]) -> list[list[TigraoButtonSpec]]:
+    rows: list[list[TigraoButtonSpec]] = []
+    for idx, group in enumerate(groups[:50]):
+        title = str(group.get("title") or group.get("username") or group.get("chat_id") or "Grupo")[:40]
+        rows.append([button(title, make_callback(session_id, f"g{idx}"), style="primary")])
+    rows.append([button("Voltar", make_callback(session_id, "back"), style="primary")])
+    rows.append([button("Fechar", make_callback(session_id, "close"), style="danger")])
+    return rows
+
+
+def back_close_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+    return [
+        [button("Voltar", make_callback(session_id, "back"), style="primary")],
+        [button("Fechar", make_callback(session_id, "close"), style="danger")],
+    ]
+
+
+def group_admin_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+    return [
+        [button("Logs", make_callback(session_id, "logs"), style="primary")],
+        [button("Solicitações de entrada", make_callback(session_id, "join"), style="primary")],
+        [button("Voltar", make_callback(session_id, "back"), style="primary")],
+        [button("Fechar", make_callback(session_id, "close"), style="danger")],
+    ]
+
+
+def logs_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+    return [
+        [button("Moderação", make_callback(session_id, "log_mod"), style="primary")],
+        [button("Música", make_callback(session_id, "log_music"), style="primary")],
+        [button("Uso", make_callback(session_id, "log_use"), style="primary")],
+        [button("Entradas", make_callback(session_id, "log_join"), style="primary")],
+        [button("Erros", make_callback(session_id, "log_err"), style="primary")],
+        [button("Voltar", make_callback(session_id, "back"), style="primary")],
         [button("Fechar", make_callback(session_id, "close"), style="danger")],
     ]

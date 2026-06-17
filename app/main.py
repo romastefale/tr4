@@ -36,12 +36,13 @@ from app.bot.weekfm import router as weekfm_router
 from app.bot.music_inline import router as music_inline_router
 from app.bot.music_extras import register_music_extra_handlers
 from app.bot.music_groups import ensure_tables as ensure_music_group_tables, remember_group
-from app.config.settings import BASE_URL, TELEGRAM_BOT_TOKEN, telegram_webhook_secret, validate_required_env
+from app.config.settings import BASE_URL, TELEGRAM_BOT_TOKEN, TIGRAO_FSM_ENABLED, telegram_webhook_secret, validate_required_env
 from app.db.database import engine, init_db, run_migrations
 from app.security.rate_limit import rate_limit_status
 from app.services.telegram_user_profiles import telegram_user_profile_service
 from app.web_music.router import router as web_music_router
 from app.web_music.state import set_web_music_bot
+from app.plugins.tigrao_fsm import build_tigrao_fsm_plugin
 
 app = FastAPI(title="TR4 Music Only")
 app.include_router(web_music_router)
@@ -53,12 +54,52 @@ _telegram_dispatcher_configured = False
 _telegram_startup_task: asyncio.Task | None = None
 _telegram_startup_status = "pending"
 _telegram_startup_error: str | None = None
+tigrao_plugin = build_tigrao_fsm_plugin() if TIGRAO_FSM_ENABLED else None
 _db_startup_status = "pending"
 _db_startup_error: str | None = None
 
 
 def _message_from_update(update: Update):
     return getattr(update, "message", None) or getattr(update, "edited_message", None)
+
+
+def _tigrao_user_id_from_update(update: Update) -> int | None:
+    for attr, user_attrs in (
+        ("message", ("from_user",)),
+        ("edited_message", ("from_user",)),
+        ("callback_query", ("from_user",)),
+        ("inline_query", ("from_user",)),
+        ("chosen_inline_result", ("from_user",)),
+        ("message_reaction", ("user",)),
+        ("chat_member", ("from_user",)),
+        ("my_chat_member", ("from_user",)),
+        ("chat_join_request", ("from_user",)),
+    ):
+        obj = getattr(update, attr, None)
+        if obj is None:
+            continue
+        for user_attr in user_attrs:
+            user = getattr(obj, user_attr, None)
+            if user is None:
+                continue
+            try:
+                return int(getattr(user, "id"))
+            except Exception:
+                return None
+    return None
+
+
+def _telegram_allowed_updates() -> list[str]:
+    base = set(dispatcher.resolve_used_update_types()) | {"chosen_inline_result"}
+    if TIGRAO_FSM_ENABLED:
+        base |= {
+            "chat_join_request",
+            "chat_member",
+            "message_reaction",
+            "message_reaction_count",
+            "callback_query",
+        }
+    return sorted(base)
 
 
 def _remember_music_group_from_update(update: Update) -> None:
@@ -141,12 +182,14 @@ async def _configure_telegram_bot_background() -> None:
             dispatcher.include_router(songcharts_router)
             dispatcher.include_router(music_inline_router)
             register_music_extra_handlers(dispatcher)
+            if TIGRAO_FSM_ENABLED and tigrao_plugin is not None:
+                tigrao_plugin.mount(dispatcher)
             _register_handlers(dispatcher)
             _telegram_dispatcher_configured = True
         webhook_secret = telegram_webhook_secret()
         await local_bot.set_webhook(
             f"{BASE_URL}/webhook",
-            allowed_updates=sorted(set(dispatcher.resolve_used_update_types()) | {"chosen_inline_result"}),
+            allowed_updates=_telegram_allowed_updates(),
             secret_token=webhook_secret,
         )
         await setup_bot_commands(local_bot)
@@ -293,7 +336,16 @@ async def telegram_webhook(request: Request) -> object:
         update = Update.model_validate(payload, context={"bot": bot})
         _remember_music_group_from_update(update)
         _remember_telegram_users_from_update(update)
-        await dispatcher.feed_update(bot, update)
+        consumed = False
+        if TIGRAO_FSM_ENABLED and tigrao_plugin is not None:
+            try:
+                tigrao_plugin.set_current_user(_tigrao_user_id_from_update(update))
+                consumed = await tigrao_plugin.before_dispatch(bot, update)
+            except Exception:
+                logger.exception("TIGRAO_FSM_BEFORE_DISPATCH_ERROR")
+                consumed = False
+        if not consumed:
+            await dispatcher.feed_update(bot, update)
     except Exception:
         logger.exception("WEBHOOK_ERROR_MUSIC_ONLY")
         return {"ok": True}
