@@ -52,6 +52,7 @@ bot: Bot | None = None
 dispatcher: Dispatcher = bot_dispatcher
 _telegram_dispatcher_configured = False
 _telegram_startup_task: asyncio.Task | None = None
+_db_startup_task: asyncio.Task | None = None
 _telegram_startup_status = "pending"
 _telegram_startup_error: str | None = None
 tigrao_plugin = build_tigrao_fsm_plugin() if TIGRAO_FSM_ENABLED else None
@@ -225,11 +226,12 @@ def _initialize_database_safely() -> None:
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    global _telegram_startup_task, _telegram_startup_status, _telegram_startup_error
+    global _telegram_startup_task, _telegram_startup_status, _telegram_startup_error, _db_startup_task
     missing_env = validate_required_env()
     if missing_env:
         logger.warning("STARTUP_MISSING_ENV_VARS vars=%s", ",".join(missing_env))
-    _initialize_database_safely()
+    if _db_startup_task is None or _db_startup_task.done():
+        _db_startup_task = asyncio.create_task(asyncio.to_thread(_initialize_database_safely))
     if not TELEGRAM_BOT_TOKEN:
         _telegram_startup_status = "skipped_missing_token"
         logger.warning("TELEGRAM_STARTUP_SKIPPED reason=missing_token")
