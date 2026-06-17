@@ -268,7 +268,21 @@ class LastfmService:
             return None
 
         if response.status_code != 200:
-            logger.error("Last fm error %s: %s", response.status_code, response.text)
+            body = str(response.text or "")
+            body_lower = body.lower()
+            if response.status_code == 404 and "user not found" in body_lower:
+                logger.warning(
+                    "Last fm recent unavailable | user_id=%s | status=%s | reason=user_not_found",
+                    user_id,
+                    response.status_code,
+                )
+            else:
+                logger.warning(
+                    "Last fm recent unavailable | user_id=%s | status=%s | body=%s",
+                    user_id,
+                    response.status_code,
+                    body[:240],
+                )
             return None
 
         data = response.json()

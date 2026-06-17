@@ -295,7 +295,21 @@ class SpotifyService:
                 recent = await fetch_recent(refreshed.access_token)
 
         if recent.status_code != 200:
-            logger.error("Spotify recent error: %s", recent.text)
+            body = str(recent.text or "")
+            body_lower = body.lower()
+            if recent.status_code in {401, 403} and "not registered" in body_lower:
+                logger.warning(
+                    "Spotify recent unavailable | user_id=%s | status=%s | reason=user_not_registered",
+                    user_id,
+                    recent.status_code,
+                )
+            else:
+                logger.warning(
+                    "Spotify recent unavailable | user_id=%s | status=%s | body=%s",
+                    user_id,
+                    recent.status_code,
+                    body[:240],
+                )
             return None
 
         items = recent.json().get("items") or []

@@ -661,10 +661,10 @@ async def tpv(message: Message) -> None:
     """Owner-only DM command to mask a Telegram user as User in /tnow/mosaico.
 
     Usage:
-    /tpv <telegram_id> tnow
-    /tpv <telegram_id> mosaico
-    /tpv <telegram_id> all
-    /tpv <telegram_id> off
+    /tpv ID_Telegram tnow
+    /tpv ID_Telegram mosaico
+    /tpv ID_Telegram all
+    /tpv ID_Telegram off
     """
     if not message.from_user:
         return
@@ -673,7 +673,7 @@ async def tpv(message: Message) -> None:
 
     user_id, mode_raw, label = _parse_tpv_args(message.text)
     if user_id is None or not mode_raw:
-        await message.answer("Uso: /tpv <ID Telegram> tnow|mosaico|all|off")
+        await message.answer("Uso: /tpv ID_Telegram tnow|mosaico|all|off")
         return
 
     if mode_raw == "off":

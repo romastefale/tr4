@@ -59,6 +59,10 @@ def check_tnow_contract() -> None:
         fail("log de grade não expõe capacity/empty_slots")
     if "provider-badge" in card or "last.fm" in card.lower() or "spotify" in card.lower():
         fail("card do mosaico expõe provedor musical")
+    if "Uso: /tpv <ID Telegram>" in tnow or "<telegram_id>" in tnow:
+        fail("/tpv ainda contém placeholder com < > que quebra parse HTML")
+    if "Uso: /tpv ID_Telegram tnow|mosaico|all|off" not in tnow:
+        fail("/tpv não expõe uso seguro sem tags HTML")
     if "telegram_user_profiles" not in database or "TelegramUserProfile" not in database:
         fail("banco não cria/importa telegram_user_profiles")
     if "TPV_DEFAULT_LABEL" not in profiles or "telegram_get_chat" not in profiles:
@@ -86,11 +90,26 @@ def check_user_facing_text_contract() -> None:
         fail("runner contém nome de serviço em mensagens user-facing verificadas")
 
 
+def check_expected_provider_failures_are_not_crashes() -> None:
+    spotify = read("app/services/spotify.py")
+    lastfm = read("app/services/lastfm.py")
+
+    if 'logger.error("Spotify recent error' in spotify:
+        fail("falha esperada de conta musical externa ainda é registrada como erro crítico")
+    if 'logger.error("Last fm error' in lastfm:
+        fail("perfil musical inexistente ainda é registrado como erro crítico")
+    if "reason=user_not_registered" not in spotify or "logger.warning" not in spotify:
+        fail("spotify.py não trata usuário não autorizado como indisponibilidade esperada")
+    if "reason=user_not_found" not in lastfm or "logger.warning" not in lastfm:
+        fail("lastfm.py não trata perfil inexistente como indisponibilidade esperada")
+
+
 def main() -> int:
     check_no_python_cache()
     check_parse_and_compile()
     check_tnow_contract()
     check_user_facing_text_contract()
+    check_expected_provider_failures_are_not_crashes()
     print("TR4_RELEASE_VALIDATE_OK")
     return 0
 
