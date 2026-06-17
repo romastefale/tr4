@@ -1,10 +1,9 @@
 BRANCH:
-work
+fsm
 
 STATUS:
-?? app/plugins/
-?? artifacts/
-?? tests/test_tigrao_fsm_skeleton.py
+ M artifacts/codex_reports/ETAPA_01_TIGRAO_FSM.diff
+ M artifacts/codex_reports/ETAPA_01_TIGRAO_FSM_STATUS.txt
 
 LAST COMMIT:
-f7dc38d Add files via upload
+8f99bc3 chore: isolate tigrao fsm plugin skeleton

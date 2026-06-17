@@ -83,3 +83,6 @@ Comece por `app/plugins/tigrao_fsm/README.md`, `state.py`, `keyboards.py`, `plug
 
 ## 13. Conclusão
 Etapa concluída com sucesso quanto ao objetivo estrutural: o plugin Tigrão FSM foi preparado de forma isolada, documentada, testada estaticamente e sem alterar o fluxo musical ou conectar qualquer funcionalidade ao TR4 principal.
+## Correção pós-revisão
+A base operacional foi ajustada para a branch `fsm`. O diff completo foi gerado com `git show --stat --patch --find-renames HEAD` e o status foi gerado em seguida com a branch atual, status curto e último commit.
+
