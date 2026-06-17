@@ -240,3 +240,49 @@ def test_x9_rejects_colon_and_dash_forms() -> None:
     assert parse_x9_query("x9-alvo") is None
     assert parse_x9_query("xx9 alvo") is None
     assert parse_x9_query("123 456") is None
+
+
+def test_copy_text_fallback_never_passes_string_to_inline_keyboard(monkeypatch) -> None:
+    from app.plugins.tigrao_fsm import keyboards
+    from app.plugins.tigrao_fsm.keyboards import TigraoButtonSpec, button, to_inline_keyboard_button
+
+    calls = []
+
+    class FakeInlineKeyboardButton:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+            if isinstance(kwargs.get("copy_text"), str):
+                raise AssertionError("copy_text string must never be passed to InlineKeyboardButton")
+
+    monkeypatch.setattr(keyboards, "_AiogramCopyTextButton", None)
+    monkeypatch.setattr(keyboards, "_AiogramInlineKeyboardButton", FakeInlineKeyboardButton)
+
+    spec = button("Copiar", copy_text="https://example.com/convite")
+    built = to_inline_keyboard_button(spec)
+
+    assert isinstance(built, TigraoButtonSpec)
+    assert built.copy_text == "https://example.com/convite"
+    assert calls == []
+
+
+def test_copy_text_fallback_on_inline_keyboard_type_error(monkeypatch) -> None:
+    from app.plugins.tigrao_fsm import keyboards
+    from app.plugins.tigrao_fsm.keyboards import TigraoButtonSpec, button, to_inline_keyboard_button
+
+    class FakeCopyTextButton:
+        def __init__(self, *, text: str):
+            self.text = text
+
+    class LegacyInlineKeyboardButton:
+        def __init__(self, **kwargs):
+            if "copy_text" in kwargs:
+                raise TypeError("copy_text is unsupported in this aiogram runtime")
+
+    monkeypatch.setattr(keyboards, "_AiogramCopyTextButton", FakeCopyTextButton)
+    monkeypatch.setattr(keyboards, "_AiogramInlineKeyboardButton", LegacyInlineKeyboardButton)
+
+    spec = button("Copiar", copy_text="https://example.com/convite")
+    built = to_inline_keyboard_button(spec)
+
+    assert isinstance(built, TigraoButtonSpec)
+    assert built.copy_text == "https://example.com/convite"

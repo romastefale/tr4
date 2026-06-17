@@ -6,6 +6,15 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
+try:  # aiogram é opcional nesta fase isolada; fallback não deve quebrar import.
+    from aiogram.types import CopyTextButton as _AiogramCopyTextButton
+    from aiogram.types import InlineKeyboardButton as _AiogramInlineKeyboardButton
+    from aiogram.types import InlineKeyboardMarkup as _AiogramInlineKeyboardMarkup
+except Exception:  # pragma: no cover - depende da instalação local do aiogram.
+    _AiogramCopyTextButton = None
+    _AiogramInlineKeyboardButton = None
+    _AiogramInlineKeyboardMarkup = None
+
 ButtonStyle = Literal["primary", "success", "danger"]
 CALLBACK_PREFIX = "tgf:"
 MAX_CALLBACK_DATA_BYTES = 64
@@ -100,49 +109,65 @@ def button(
     return TigraoButtonSpec(text=text, callback_data=callback_data, url=url, copy_text=copy_text, style=style)
 
 
-def _button_kwargs(spec: TigraoButtonSpec) -> dict[str, Any]:
+def _copy_text_button(value: str) -> Any | None:
+    """Constrói CopyTextButton real ou informa que o fallback deve preservar o spec.
+
+    A Bot API/aiogram esperam um objeto CopyTextButton; nunca passe string crua
+    para InlineKeyboardButton.copy_text.
+    """
+    if _AiogramCopyTextButton is None:
+        return None
+    try:
+        return _AiogramCopyTextButton(text=value)
+    except TypeError:
+        return None
+
+
+def _button_kwargs(spec: TigraoButtonSpec) -> dict[str, Any] | None:
     kwargs: dict[str, Any] = {"text": spec.text}
     if spec.callback_data is not None:
         kwargs["callback_data"] = spec.callback_data
     elif spec.url is not None:
         kwargs["url"] = spec.url
     elif spec.copy_text is not None:
-        try:
-            from aiogram.types import CopyTextButton
-        except Exception:
-            kwargs["copy_text"] = spec.copy_text
-        else:
-            kwargs["copy_text"] = CopyTextButton(text=spec.copy_text)
+        copy_text_button = _copy_text_button(spec.copy_text)
+        if copy_text_button is None:
+            return None
+        kwargs["copy_text"] = copy_text_button
     return kwargs
 
 
 def to_inline_keyboard_button(spec: TigraoButtonSpec) -> Any:
-    try:
-        from aiogram.types import InlineKeyboardButton
-    except Exception:
+    if _AiogramInlineKeyboardButton is None:
         return spec
 
     kwargs = _button_kwargs(spec)
+    if kwargs is None:
+        return spec
     try:
-        sig = inspect.signature(InlineKeyboardButton)
+        sig = inspect.signature(_AiogramInlineKeyboardButton)
         if "style" in sig.parameters:
             kwargs["style"] = spec.style
     except (TypeError, ValueError):
         kwargs["style"] = spec.style
     try:
-        return InlineKeyboardButton(**kwargs)
+        return _AiogramInlineKeyboardButton(**kwargs)
     except TypeError:
         kwargs.pop("style", None)
-        return InlineKeyboardButton(**kwargs)
+        try:
+            return _AiogramInlineKeyboardButton(**kwargs)
+        except TypeError:
+            return spec
 
 
 def to_inline_keyboard_markup(rows: list[list[TigraoButtonSpec]]) -> Any:
     keyboard = [[to_inline_keyboard_button(spec) for spec in row] for row in rows]
-    try:
-        from aiogram.types import InlineKeyboardMarkup
-    except Exception:
+    if _AiogramInlineKeyboardMarkup is None:
         return keyboard
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    try:
+        return _AiogramInlineKeyboardMarkup(inline_keyboard=keyboard)
+    except TypeError:
+        return keyboard
 
 
 def home_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
