@@ -68,3 +68,39 @@ async def approve_pending_join_request(bot: Any, request: TigraoJoinRequest, *, 
     detail = format_join_approval_detail(request, approved_at=approved_at, autoaccept=autoaccept, origin=origin)
     request.result_detail = detail
     return detail
+
+async def approve_persistent_pending_join_request(bot: Any, *, chat_id: int, user_id: int, processed_by: int | None, origin: str = "aprovação manual por ID") -> str:
+    from .storage import find_persistent_pending_join_request, log_event, update_join_request_status
+
+    request = find_persistent_pending_join_request(chat_id=chat_id, user_id=user_id)
+    if request is None:
+        return "Nenhuma solicitação pendente desse ID foi encontrada nas últimas 2h."
+    detail = await approve_pending_join_request(bot, request, processed_by=processed_by, autoaccept=False, origin=origin)
+    update_join_request_status(
+        chat_id=chat_id,
+        user_id=user_id,
+        status=request.status,
+        processed_by=request.processed_by,
+        result_detail=request.result_detail,
+        processed_at=request.processed_at,
+    )
+    log_event(
+        chat_id=chat_id,
+        target_user_id=user_id,
+        actor_user_id=processed_by,
+        action="join_request_manual_accept",
+        result=request.status,
+        detection="direta",
+        surface="painel_solicitacoes",
+        details=detail,
+    )
+    return detail
+
+
+def format_logs_panel(entries: list[dict[str, Any]]) -> str:
+    if not entries:
+        return "Nenhum registro encontrado."
+    lines = ["Logs do Tigrão"]
+    for entry in entries:
+        lines.append(f"{entry.get('created_at')} | {entry.get('action')} | {entry.get('result')} | ID Telegram: {entry.get('target_user_id') or entry.get('actor_user_id') or 'não informado'}")
+    return "\n".join(lines)
