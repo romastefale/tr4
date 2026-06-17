@@ -1,0 +1,8 @@
+BRANCH:
+fsm
+
+STATUS:
+ M artifacts/codex_reports/ETAPA_01_TIGRAO_FSM_STATUS.txt
+
+LAST COMMIT:
+28b76dd Adicionar esqueleto isolado do plugin Tigrão FSM (Etapa 01)

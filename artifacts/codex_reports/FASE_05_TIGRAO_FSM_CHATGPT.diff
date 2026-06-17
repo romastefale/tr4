@@ -1,0 +1,1414 @@
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/.gitignore ./.pytest_cache/.gitignore
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/.gitignore	2026-06-17 13:11:59.000000000 +0000
++++ ./.pytest_cache/.gitignore	1970-01-01 00:00:00.000000000 +0000
+@@ -1,2 +0,0 @@
+-# Created by pytest automatically.
+-*
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/CACHEDIR.TAG ./.pytest_cache/CACHEDIR.TAG
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/CACHEDIR.TAG	2026-06-17 13:11:59.000000000 +0000
++++ ./.pytest_cache/CACHEDIR.TAG	1970-01-01 00:00:00.000000000 +0000
+@@ -1,4 +0,0 @@
+-Signature: 8a477f597d28d172789f06886806bc55
+-# This file is a cache directory tag created by pytest.
+-# For information about cache directory tags, see:
+-#	https://bford.info/cachedir/spec.html
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/README.md ./.pytest_cache/README.md
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/README.md	2026-06-17 13:11:59.000000000 +0000
++++ ./.pytest_cache/README.md	1970-01-01 00:00:00.000000000 +0000
+@@ -1,8 +0,0 @@
+-# pytest cache directory #
+-
+-This directory contains data from the pytest's cache plugin,
+-which provides the `--lf` and `--ff` options, as well as the `cache` fixture.
+-
+-**Do not** commit this to version control.
+-
+-See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more information.
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/v/cache/nodeids ./.pytest_cache/v/cache/nodeids
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/.pytest_cache/v/cache/nodeids	2026-06-17 13:16:22.000000000 +0000
++++ ./.pytest_cache/v/cache/nodeids	1970-01-01 00:00:00.000000000 +0000
+@@ -1,53 +0,0 @@
+-[
+-  "tests/test_tigrao_fsm_skeleton.py::test_callback_namespace_is_own_prefix",
+-  "tests/test_tigrao_fsm_skeleton.py::test_main_py_not_changed_to_import_internal_tigrao_fsm_plugin",
+-  "tests/test_tigrao_fsm_skeleton.py::test_no_active_dispatcher_connection_in_skeleton",
+-  "tests/test_tigrao_fsm_skeleton.py::test_no_public_group_panel_response_is_implemented",
+-  "tests/test_tigrao_fsm_skeleton.py::test_plugin_documentation_exists",
+-  "tests/test_tigrao_fsm_skeleton.py::test_plugin_does_not_import_app_main",
+-  "tests/test_tigrao_fsm_skeleton.py::test_tigrao_fsm_folder_exists",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_approve_pending_join_request_detail_with_and_without_username",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_callback_above_64_bytes_rejected",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_callback_valid",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_callback_with_internal_colon_rejected",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_copy_text_button_builds_real_or_safe_fallback",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_copy_text_fallback_never_passes_string_to_inline_keyboard",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_copy_text_fallback_on_inline_keyboard_type_error",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_copy_text_size_is_validated",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_ddx_does_not_delete_without_filter_or_permission",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_ddx_requires_matching_text_or_caption",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_empty_callback_rejected",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_future_callback_action_is_valid_and_unknown_action_rejected",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_internal_button_rejects_url_with_callback_data",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_main_py_imports_only_public_tigrao_plugin",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_music_files_do_not_reference_tigrao",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_parse_multiple_ids_and_invalids",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_parse_user_ids_rejects_negative_username_and_text",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_private_panel_surface_only_private",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_telegram_py_not_altered_for_tigrao",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_x9_only_accepts_explicit_prefix",
+-  "tests/test_tigrao_fsm_stage2_static.py::test_x9_rejects_colon_and_dash_forms",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_allowed_updates_extra_only_with_flag",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_close_delete_with_edit_fallback",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_consumed_update_skips_feed_update_static",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_group_callback_uses_session_index_not_raw_chat_id",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_group_tigrao_does_not_answer_publicly",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_main_imports_only_public_plugin_interface",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_mount_and_before_dispatch_conditioned_to_flag",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_music_forbidden_files_do_not_reference_tigrao",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_telegram_py_not_altered_for_tigrao",
+-  "tests/test_tigrao_fsm_stage3_static.py::test_tigrao_flag_exists_and_default_false",
+-  "tests/test_tigrao_fsm_stage4_static.py::test_create_join_request_link_removes_member_limit",
+-  "tests/test_tigrao_fsm_stage4_static.py::test_forbidden_music_files_do_not_reference_tigrao",
+-  "tests/test_tigrao_fsm_stage4_static.py::test_join_request_runtime_is_connected_in_plugin",
+-  "tests/test_tigrao_fsm_stage4_static.py::test_no_x9_or_destructive_actions_were_added_to_phase4",
+-  "tests/test_tigrao_fsm_stage4_static.py::test_panel_has_join_request_and_log_screens",
+-  "tests/test_tigrao_fsm_stage4_static.py::test_storage_tables_are_defined",
+-  "tests/test_tigrao_fsm_stage4_storage.py::test_autoaccept_saves_one_record_per_id_and_logs",
+-  "tests/test_tigrao_fsm_stage4_storage.py::test_chat_join_request_with_authorization_approves_and_updates_status",
+-  "tests/test_tigrao_fsm_stage4_storage.py::test_chat_join_request_with_authorization_requires_can_invite_users",
+-  "tests/test_tigrao_fsm_stage4_storage.py::test_chat_join_request_without_authorization_saves_but_does_not_approve",
+-  "tests/test_tigrao_fsm_stage4_storage.py::test_create_join_request_link_forces_request_and_removes_member_limit",
+-  "tests/test_tigrao_fsm_stage4_storage.py::test_find_pending_join_request_uses_chat_id_and_user_id",
+-  "tests/test_tigrao_fsm_stage4_storage.py::test_storage_tables_exist"
+-]
+\ No newline at end of file
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/__pycache__/__init__.cpython-313.pyc and ./app/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/__pycache__/bootstrap.cpython-313.pyc and ./app/__pycache__/bootstrap.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/__pycache__/logging_safety.cpython-313.pyc and ./app/__pycache__/logging_safety.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/__pycache__/main.cpython-313.pyc and ./app/__pycache__/main.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/__init__.cpython-313.pyc and ./app/bot/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/canvas_delivery.cpython-313.pyc and ./app/bot/__pycache__/canvas_delivery.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/intent.cpython-313.pyc and ./app/bot/__pycache__/intent.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/mention_reactor.cpython-313.pyc and ./app/bot/__pycache__/mention_reactor.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/monthfm.cpython-313.pyc and ./app/bot/__pycache__/monthfm.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/music_broadcast.cpython-313.pyc and ./app/bot/__pycache__/music_broadcast.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/music_broadcast_core.cpython-313.pyc and ./app/bot/__pycache__/music_broadcast_core.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/music_command_runner.cpython-313.pyc and ./app/bot/__pycache__/music_command_runner.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/music_extras.cpython-313.pyc and ./app/bot/__pycache__/music_extras.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/music_groups.cpython-313.pyc and ./app/bot/__pycache__/music_groups.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/music_inline.cpython-313.pyc and ./app/bot/__pycache__/music_inline.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/myself.cpython-313.pyc and ./app/bot/__pycache__/myself.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/owner_daily_summary.cpython-313.pyc and ./app/bot/__pycache__/owner_daily_summary.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/owner_manual_register.cpython-313.pyc and ./app/bot/__pycache__/owner_manual_register.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/owner_universal.cpython-313.pyc and ./app/bot/__pycache__/owner_universal.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/radiofm.cpython-313.pyc and ./app/bot/__pycache__/radiofm.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/setup_commands.cpython-313.pyc and ./app/bot/__pycache__/setup_commands.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/show_owner.cpython-313.pyc and ./app/bot/__pycache__/show_owner.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/songcharts.cpython-313.pyc and ./app/bot/__pycache__/songcharts.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/tcanvas.cpython-313.pyc and ./app/bot/__pycache__/tcanvas.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/telegram.cpython-313.pyc and ./app/bot/__pycache__/telegram.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/tly.cpython-313.pyc and ./app/bot/__pycache__/tly.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/tnow.cpython-313.pyc and ./app/bot/__pycache__/tnow.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/tstory.cpython-313.pyc and ./app/bot/__pycache__/tstory.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/bot/__pycache__/weekfm.cpython-313.pyc and ./app/bot/__pycache__/weekfm.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/config/__pycache__/__init__.cpython-313.pyc and ./app/config/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/config/__pycache__/settings.cpython-313.pyc and ./app/config/__pycache__/settings.cpython-313.pyc differ
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/config/settings.py ./app/config/settings.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/config/settings.py	2026-06-17 10:38:24.000000000 +0000
++++ ./app/config/settings.py	2026-06-17 13:21:37.785629716 +0000
+@@ -273,6 +273,9 @@
+ )
+ TIGRAO_FSM_ENABLED = _bool_env("TIGRAO_FSM_ENABLED", False)
+ TIGRAO_FSM_MODERATOR_IDS = _int_set_env("TIGRAO_FSM_MODERATOR_IDS")
++TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED = _bool_env("TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED", False)
++TIGRAO_FSM_DDX_HARD_ENABLED = _bool_env("TIGRAO_FSM_DDX_HARD_ENABLED", False)
++TIGRAO_FSM_REACTIONS_ENABLED = _bool_env("TIGRAO_FSM_REACTIONS_ENABLED", False)
+ 
+ 
+ def is_code_owner(user_id: int | str | None) -> bool:
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/db/__pycache__/__init__.cpython-313.pyc and ./app/db/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/db/__pycache__/database.cpython-313.pyc and ./app/db/__pycache__/database.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/__init__.cpython-313.pyc and ./app/equalizador/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/admin.cpython-313.pyc and ./app/equalizador/__pycache__/admin.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/afinacao.cpython-313.pyc and ./app/equalizador/__pycache__/afinacao.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/avancado.cpython-313.pyc and ./app/equalizador/__pycache__/avancado.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/configuracao.cpython-313.pyc and ./app/equalizador/__pycache__/configuracao.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/ddx.cpython-313.pyc and ./app/equalizador/__pycache__/ddx.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/entradas.cpython-313.pyc and ./app/equalizador/__pycache__/entradas.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/erros_telegram.cpython-313.pyc and ./app/equalizador/__pycache__/erros_telegram.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/governanca.cpython-313.pyc and ./app/equalizador/__pycache__/governanca.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/governante_scope.cpython-313.pyc and ./app/equalizador/__pycache__/governante_scope.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/governante_webapp.cpython-313.pyc and ./app/equalizador/__pycache__/governante_webapp.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/hardening.cpython-313.pyc and ./app/equalizador/__pycache__/hardening.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/identity.cpython-313.pyc and ./app/equalizador/__pycache__/identity.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/maestro.cpython-313.pyc and ./app/equalizador/__pycache__/maestro.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/mesa.cpython-313.pyc and ./app/equalizador/__pycache__/mesa.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/multimidia.cpython-313.pyc and ./app/equalizador/__pycache__/multimidia.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/novos_membros.cpython-313.pyc and ./app/equalizador/__pycache__/novos_membros.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/painel.cpython-313.pyc and ./app/equalizador/__pycache__/painel.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/palcos.cpython-313.pyc and ./app/equalizador/__pycache__/palcos.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/papeis.cpython-313.pyc and ./app/equalizador/__pycache__/papeis.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/permissions.cpython-313.pyc and ./app/equalizador/__pycache__/permissions.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/persistencia.cpython-313.pyc and ./app/equalizador/__pycache__/persistencia.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/radio.cpython-313.pyc and ./app/equalizador/__pycache__/radio.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/rbac_runtime.cpython-313.pyc and ./app/equalizador/__pycache__/rbac_runtime.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/reacoes.cpython-313.pyc and ./app/equalizador/__pycache__/reacoes.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/router.cpython-313.pyc and ./app/equalizador/__pycache__/router.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/security.cpython-313.pyc and ./app/equalizador/__pycache__/security.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/seguranca_avancada.cpython-313.pyc and ./app/equalizador/__pycache__/seguranca_avancada.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/equalizador/__pycache__/session_store.cpython-313.pyc and ./app/equalizador/__pycache__/session_store.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/handlers/__pycache__/__init__.cpython-313.pyc and ./app/handlers/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/__init__.cpython-313.pyc and ./app/models/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/canvas_file.cpython-313.pyc and ./app/models/__pycache__/canvas_file.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/canvas_processed_file.cpython-313.pyc and ./app/models/__pycache__/canvas_processed_file.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/card_message.cpython-313.pyc and ./app/models/__pycache__/card_message.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/cover_file.cpython-313.pyc and ./app/models/__pycache__/cover_file.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/lastfm_profile.cpython-313.pyc and ./app/models/__pycache__/lastfm_profile.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/lyrics_snippet_cache.cpython-313.pyc and ./app/models/__pycache__/lyrics_snippet_cache.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/spotify_token.cpython-313.pyc and ./app/models/__pycache__/spotify_token.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/telegram_user_profile.cpython-313.pyc and ./app/models/__pycache__/telegram_user_profile.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/tnow_private_visibility.cpython-313.pyc and ./app/models/__pycache__/tnow_private_visibility.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/tnow_recent_track.cpython-313.pyc and ./app/models/__pycache__/tnow_recent_track.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/track_like.cpython-313.pyc and ./app/models/__pycache__/track_like.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/track_play.cpython-313.pyc and ./app/models/__pycache__/track_play.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/models/__pycache__/track_reaction.cpython-313.pyc and ./app/models/__pycache__/track_reaction.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/__init__.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/keyboards.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/keyboards.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/models.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/models.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/mount.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/mount.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/parsers.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/parsers.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/permissions.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/permissions.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/plugin.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/plugin.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/services.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/services.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/state.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/state.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/storage.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/storage.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/__pycache__/texts.cpython-313.pyc and ./app/plugins/tigrao_fsm/__pycache__/texts.cpython-313.pyc differ
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/destructive_actions.py ./app/plugins/tigrao_fsm/destructive_actions.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/destructive_actions.py	1970-01-01 00:00:00.000000000 +0000
++++ ./app/plugins/tigrao_fsm/destructive_actions.py	2026-06-17 13:22:42.242378503 +0000
+@@ -0,0 +1,206 @@
++"""Ações destrutivas guardadas do Tigrão FSM.
++
++Todas as funções negam por padrão e registram log persistente. Nenhuma ação
++real deve ser executada sem confirmação explícita e permissão já verificada.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass
++from datetime import datetime, timedelta, timezone
++from typing import Any
++
++from app.config.settings import CODE_OWNER_IDS, TIGRAO_FSM_MODERATOR_IDS
++
++from .permissions import TigraoBotPermissions
++from . import storage
++
++try:  # aiogram é opcional nos testes estáticos locais.
++    from aiogram.types import ChatPermissions as _AiogramChatPermissions
++except Exception:  # pragma: no cover
++    _AiogramChatPermissions = None
++
++USER_ACTIONS = {"ban", "unban", "mute1h", "mute24h", "muteforever", "unmute"}
++DELETE_ACTIONS = {"delmsg"}
++ALL_DESTRUCTIVE_ACTIONS = USER_ACTIONS | DELETE_ACTIONS
++
++
++@dataclass(slots=True)
++class DestructiveActionRequest:
++    action: str
++    chat_id: int
++    chat_title: str
++    actor_user_id: int
++    actor_username: str | None = None
++    actor_full_name: str | None = None
++    target_user_id: int | None = None
++    target_username: str | None = None
++    target_full_name: str | None = None
++    message_id: int | None = None
++    confirmed: bool = False
++    target_is_admin: bool = False
++
++
++@dataclass(slots=True)
++class DestructiveActionResult:
++    ok: bool
++    result: str
++    detail: str
++
++
++def is_protected_target(
++    user_id: int | None,
++    *,
++    bot_user_id: int | None = None,
++    target_is_admin: bool = False,
++    owner_ids: set[int] | frozenset[int] | None = None,
++    moderator_ids: set[int] | frozenset[int] | None = None,
++) -> bool:
++    if user_id is None:
++        return True
++    protected = {int(v) for v in (owner_ids if owner_ids is not None else CODE_OWNER_IDS)}
++    protected |= {int(v) for v in (moderator_ids if moderator_ids is not None else TIGRAO_FSM_MODERATOR_IDS)}
++    if bot_user_id is not None:
++        protected.add(int(bot_user_id))
++    return int(user_id) in protected or target_is_admin is True
++
++
++def _mute_permissions() -> Any:
++    if _AiogramChatPermissions is not None:
++        return _AiogramChatPermissions(can_send_messages=False)
++    return {"can_send_messages": False}
++
++
++def _unmute_permissions() -> Any:
++    if _AiogramChatPermissions is not None:
++        return _AiogramChatPermissions(
++            can_send_messages=True,
++            can_send_audios=True,
++            can_send_documents=True,
++            can_send_photos=True,
++            can_send_videos=True,
++            can_send_video_notes=True,
++            can_send_voice_notes=True,
++            can_send_polls=True,
++            can_send_other_messages=True,
++            can_add_web_page_previews=True,
++            can_change_info=True,
++            can_invite_users=True,
++            can_pin_messages=True,
++        )
++    return {"can_send_messages": True}
++
++
++def _until_date_for(action: str) -> datetime | None:
++    now = datetime.now(timezone.utc)
++    if action == "mute1h":
++        return now + timedelta(hours=1)
++    if action == "mute24h":
++        return now + timedelta(hours=24)
++    return None
++
++
++def _required_permission(action: str) -> str:
++    if action in USER_ACTIONS:
++        return "can_restrict_members"
++    if action in DELETE_ACTIONS:
++        return "can_delete_messages"
++    return "unknown"
++
++
++def _permission_allowed(action: str, permissions: TigraoBotPermissions) -> bool:
++    if not permissions.is_admin:
++        return False
++    if action in USER_ACTIONS:
++        return permissions.can_restrict_members
++    if action in DELETE_ACTIONS:
++        return permissions.can_delete_messages
++    return False
++
++
++def _log(request: DestructiveActionRequest, *, result: str, detail: str, metadata: dict[str, Any] | None = None) -> None:
++    storage.log_event(
++        action=f"destructive_{request.action}",
++        result=result,
++        detection="direta",
++        surface="callback",
++        chat_id=request.chat_id,
++        chat_title=request.chat_title,
++        actor_user_id=request.actor_user_id,
++        actor_username=request.actor_username,
++        actor_full_name=request.actor_full_name,
++        target_user_id=request.target_user_id,
++        target_username=request.target_username,
++        target_full_name=request.target_full_name,
++        details=detail,
++        metadata={"message_id": request.message_id, **(metadata or {})},
++    )
++
++
++async def execute_destructive_action(
++    bot: Any,
++    request: DestructiveActionRequest,
++    *,
++    permissions: TigraoBotPermissions,
++    bot_user_id: int | None = None,
++) -> DestructiveActionResult:
++    """Executa ação destrutiva depois de todas as revalidações.
++
++    A função nunca levanta erro esperado: retorna falha e grava log.
++    """
++    if request.action not in ALL_DESTRUCTIVE_ACTIONS:
++        detail = "Ação desconhecida."
++        _log(request, result="bloqueado", detail=detail)
++        return DestructiveActionResult(False, "bloqueado", detail)
++    if request.confirmed is not True:
++        detail = "Ação bloqueada: confirmação explícita ausente."
++        _log(request, result="bloqueado_sem_confirmacao", detail=detail)
++        return DestructiveActionResult(False, "bloqueado_sem_confirmacao", detail)
++    if not _permission_allowed(request.action, permissions):
++        detail = f"Ação bloqueada: permissão exigida {_required_permission(request.action)} ausente."
++        _log(request, result="bloqueado_sem_permissao", detail=detail)
++        return DestructiveActionResult(False, "bloqueado_sem_permissao", detail)
++    if request.action in USER_ACTIONS:
++        if request.target_user_id is None or request.target_user_id <= 0:
++            detail = "Ação bloqueada: ID de usuário inválido."
++            _log(request, result="bloqueado_alvo_invalido", detail=detail)
++            return DestructiveActionResult(False, "bloqueado_alvo_invalido", detail)
++        if is_protected_target(request.target_user_id, bot_user_id=bot_user_id, target_is_admin=request.target_is_admin):
++            detail = "Ação bloqueada: alvo protegido."
++            _log(request, result="bloqueado_alvo_protegido", detail=detail)
++            return DestructiveActionResult(False, "bloqueado_alvo_protegido", detail)
++    if request.action == "delmsg" and (request.message_id is None or request.message_id <= 0):
++        detail = "Ação bloqueada: ID de mensagem inválido."
++        _log(request, result="bloqueado_mensagem_invalida", detail=detail)
++        return DestructiveActionResult(False, "bloqueado_mensagem_invalida", detail)
++
++    try:
++        if request.action == "ban":
++            await bot.ban_chat_member(chat_id=request.chat_id, user_id=request.target_user_id)
++        elif request.action == "unban":
++            await bot.unban_chat_member(chat_id=request.chat_id, user_id=request.target_user_id)
++        elif request.action in {"mute1h", "mute24h", "muteforever"}:
++            kwargs: dict[str, Any] = {
++                "chat_id": request.chat_id,
++                "user_id": request.target_user_id,
++                "permissions": _mute_permissions(),
++            }
++            until_date = _until_date_for(request.action)
++            if until_date is not None:
++                kwargs["until_date"] = until_date
++            await bot.restrict_chat_member(**kwargs)
++        elif request.action == "unmute":
++            await bot.restrict_chat_member(
++                chat_id=request.chat_id,
++                user_id=request.target_user_id,
++                permissions=_unmute_permissions(),
++            )
++        elif request.action == "delmsg":
++            await bot.delete_message(chat_id=request.chat_id, message_id=request.message_id)
++    except Exception as exc:
++        detail = f"Falha Telegram: {exc}"
++        _log(request, result="falhou", detail=detail)
++        return DestructiveActionResult(False, "falhou", detail)
++
++    detail = "Ação executada com sucesso."
++    _log(request, result="concluido", detail=detail)
++    return DestructiveActionResult(True, "concluido", detail)
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/keyboards.py ./app/plugins/tigrao_fsm/keyboards.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/keyboards.py	2026-06-17 13:14:10.000000000 +0000
++++ ./app/plugins/tigrao_fsm/keyboards.py	2026-06-17 13:21:57.095180866 +0000
+@@ -36,7 +36,22 @@
+     "join_pending",
+     "join_noauto",
+     "ddx",
++    "act",
++    "ban",
++    "unban",
++    "mute1h",
++    "mute24h",
++    "muteforever",
++    "unmute",
++    "delmsg",
++    "ddxon",
++    "ddxoff",
++    "ddxadd",
++    "ddxlist",
++    "ddxremove",
++    "react",
+     "confirm",
++    "cancel",
+     "back",
+     "close",
+     *(f"g{i}" for i in range(50)),
+@@ -196,13 +211,28 @@
+     ]
+ 
+ 
+-def group_admin_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+-    return [
++def group_admin_keyboard(
++    session_id: str,
++    *,
++    destructive_actions_enabled: bool = False,
++    ddx_enabled: bool = False,
++    reactions_enabled: bool = False,
++) -> list[list[TigraoButtonSpec]]:
++    rows: list[list[TigraoButtonSpec]] = [
+         [button("Logs", make_callback(session_id, "logs"), style="primary")],
+         [button("Solicitações de entrada", make_callback(session_id, "join"), style="primary")],
++    ]
++    if destructive_actions_enabled:
++        rows.append([button("Ações do grupo", make_callback(session_id, "act"), style="danger")])
++    if ddx_enabled:
++        rows.append([button("DDX hard", make_callback(session_id, "ddx"), style="danger")])
++    if reactions_enabled:
++        rows.append([button("Reações", make_callback(session_id, "react"), style="danger")])
++    rows.extend([
+         [button("Voltar", make_callback(session_id, "back"), style="primary")],
+         [button("Fechar", make_callback(session_id, "close"), style="danger")],
+-    ]
++    ])
++    return rows
+ 
+ 
+ def join_requests_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+@@ -235,3 +265,43 @@
+         [button("Voltar", make_callback(session_id, "back"), style="primary")],
+         [button("Fechar", make_callback(session_id, "close"), style="danger")],
+     ]
++
++
++def destructive_actions_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
++    return [
++        [button("Banir usuário", make_callback(session_id, "ban"), style="danger")],
++        [button("Desbanir usuário", make_callback(session_id, "unban"), style="success")],
++        [button("Mutar 1 hora", make_callback(session_id, "mute1h"), style="danger")],
++        [button("Mutar 24 horas", make_callback(session_id, "mute24h"), style="danger")],
++        [button("Mutar indefinido", make_callback(session_id, "muteforever"), style="danger")],
++        [button("Desmutar usuário", make_callback(session_id, "unmute"), style="success")],
++        [button("Apagar mensagem", make_callback(session_id, "delmsg"), style="danger")],
++        [button("Voltar", make_callback(session_id, "back"), style="primary")],
++        [button("Fechar", make_callback(session_id, "close"), style="danger")],
++    ]
++
++
++def confirm_cancel_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
++    return [
++        [button("Confirmar", make_callback(session_id, "confirm"), style="danger")],
++        [button("Cancelar", make_callback(session_id, "cancel"), style="primary")],
++    ]
++
++
++def ddx_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
++    return [
++        [button("Ativar DDX", make_callback(session_id, "ddxon"), style="success")],
++        [button("Desativar DDX", make_callback(session_id, "ddxoff"), style="danger")],
++        [button("Adicionar filtro", make_callback(session_id, "ddxadd"), style="primary")],
++        [button("Listar filtros", make_callback(session_id, "ddxlist"), style="primary")],
++        [button("Remover filtro", make_callback(session_id, "ddxremove"), style="danger")],
++        [button("Voltar", make_callback(session_id, "back"), style="primary")],
++        [button("Fechar", make_callback(session_id, "close"), style="danger")],
++    ]
++
++
++def reactions_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
++    return [
++        [button("Voltar", make_callback(session_id, "back"), style="primary")],
++        [button("Fechar", make_callback(session_id, "close"), style="danger")],
++    ]
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/__init__.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/actions.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/actions.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/customize.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/customize.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/ddx.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/ddx.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/ddx_soft.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/ddx_soft.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/inline_x9.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/inline_x9.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/join_requests.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/join_requests.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/links.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/links.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/logs.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/logs.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/member_tag.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/member_tag.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/messages.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/messages.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/panel.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/panel.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/pinned_media.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/pinned_media.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/__pycache__/reactions.cpython-313.pyc and ./app/plugins/tigrao_fsm/routers/__pycache__/reactions.cpython-313.pyc differ
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/panel.py ./app/plugins/tigrao_fsm/routers/panel.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/routers/panel.py	2026-06-17 13:15:16.000000000 +0000
++++ ./app/plugins/tigrao_fsm/routers/panel.py	2026-06-17 13:23:43.994140356 +0000
+@@ -8,12 +8,21 @@
+ from aiogram.filters import Command
+ from aiogram.types import CallbackQuery, Message
+ 
+-from app.config.settings import CODE_OWNER_IDS, TIGRAO_FSM_MODERATOR_IDS
++from app.config.settings import (
++    CODE_OWNER_IDS,
++    TIGRAO_FSM_DDX_HARD_ENABLED,
++    TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED,
++    TIGRAO_FSM_MODERATOR_IDS,
++    TIGRAO_FSM_REACTIONS_ENABLED,
++)
+ from app.bot.music_groups import list_groups
+ 
+ from .. import storage
+ from ..keyboards import (
+     back_close_keyboard,
++    confirm_cancel_keyboard,
++    ddx_keyboard,
++    destructive_actions_keyboard,
+     group_admin_keyboard,
+     group_selection_keyboard,
+     home_keyboard,
+@@ -24,6 +33,7 @@
+     to_inline_keyboard_markup,
+ )
+ from ..parsers import parse_user_ids
++from ..destructive_actions import DestructiveActionRequest, execute_destructive_action
+ from ..permissions import get_bot_permissions, is_authorized_user, permissions_from_chat_member
+ from ..services import approve_pending_join_request, create_join_request_link, format_logs
+ from ..state import close_session, create_session, get_session, get_user_session
+@@ -92,6 +102,14 @@
+         await _handle_join_auto_ids(message, bot, session, text)
+     elif session.waiting_for == "join_pending_id":
+         await _handle_join_pending_id(message, bot, session, text)
++    elif session.waiting_for == "destructive_user_id":
++        await _handle_destructive_user_id(message, session, text)
++    elif session.waiting_for == "destructive_message_id":
++        await _handle_destructive_message_id(message, session, text)
++    elif session.waiting_for == "ddx_filter_text":
++        await _handle_ddx_filter_text(message, session, text)
++    elif session.waiting_for == "ddx_remove_id":
++        await _handle_ddx_remove_id(message, session, text)
+ 
+ 
+ @router.callback_query(F.data.startswith("tgf:"))
+@@ -152,6 +170,32 @@
+         await _join_auto_or_list(callback, session)
+     elif action == "join_pending":
+         await _join_pending(callback, session)
++    elif action == "act":
++        await _show_actions(callback, session)
++    elif action in {"ban", "unban", "mute1h", "mute24h", "muteforever", "unmute"}:
++        await _prompt_destructive_user(callback, session, action)
++    elif action == "delmsg":
++        await _prompt_delete_message(callback, session)
++    elif action == "confirm":
++        await _confirm_pending_action(callback, bot, session)
++    elif action == "cancel":
++        session.selected_action = None
++        session.payload.pop("pending_destructive_action", None)
++        await _safe_edit(callback, "Ação cancelada.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++    elif action == "ddx":
++        await _show_ddx(callback, session)
++    elif action == "ddxon":
++        await _set_ddx_enabled(callback, session, True)
++    elif action == "ddxoff":
++        await _set_ddx_enabled(callback, session, False)
++    elif action == "ddxadd":
++        await _prompt_ddx_filter(callback, session)
++    elif action == "ddxlist":
++        await _list_ddx(callback, session)
++    elif action == "ddxremove":
++        await _prompt_ddx_remove(callback, session)
++    elif action == "react":
++        await _safe_edit(callback, "Reações ainda não implementadas nesta fase. Recurso mantido indisponível com segurança.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
+     else:
+         await callback.answer()
+         return
+@@ -207,7 +251,12 @@
+             f"Alterar informações: {yesno(perms.can_change_info)}\n"
+             f"Tags: {yesno(perms.can_manage_tags)}\n"
+             f"Tópicos: {yesno(perms.can_manage_topics)}")
+-    await _safe_edit(callback, text, to_inline_keyboard_markup(group_admin_keyboard(session_id)))
++    await _safe_edit(callback, text, to_inline_keyboard_markup(group_admin_keyboard(
++        session_id,
++        destructive_actions_enabled=TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED,
++        ddx_enabled=TIGRAO_FSM_DDX_HARD_ENABLED,
++        reactions_enabled=TIGRAO_FSM_REACTIONS_ENABLED,
++    )))
+ 
+ 
+ def _selected_group_or_text(session: Any) -> tuple[int | None, str | None, str | None]:
+@@ -384,6 +433,219 @@
+         session.waiting_for = None
+ 
+ 
++
++
++async def _show_actions(callback: CallbackQuery, session: Any) -> None:
++    if not TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED:
++        await _safe_edit(callback, "Ações destrutivas indisponíveis. Ative TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    text = f"Ações do grupo\n\nGrupo: {title}\nID do grupo: {chat_id}\n\nToda ação exige confirmação explícita."
++    await _safe_edit(callback, text, to_inline_keyboard_markup(destructive_actions_keyboard(session.session_id)))
++
++
++_ACTION_LABELS = {
++    "ban": "Banir usuário",
++    "unban": "Desbanir usuário",
++    "mute1h": "Mutar usuário por 1 hora",
++    "mute24h": "Mutar usuário por 24 horas",
++    "muteforever": "Mutar usuário indefinidamente",
++    "unmute": "Desmutar usuário",
++    "delmsg": "Apagar mensagem",
++}
++
++
++async def _prompt_destructive_user(callback: CallbackQuery, session: Any, action: str) -> None:
++    if not TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED:
++        await _safe_edit(callback, "Ações destrutivas indisponíveis.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    session.selected_action = action
++    session.waiting_for = "destructive_user_id"
++    await _safe_edit(callback, f"{_ACTION_LABELS[action]}\n\nEnvie o ID Telegram numérico do alvo.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++
++
++async def _prompt_delete_message(callback: CallbackQuery, session: Any) -> None:
++    if not TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED:
++        await _safe_edit(callback, "Ações destrutivas indisponíveis.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    session.selected_action = "delmsg"
++    session.waiting_for = "destructive_message_id"
++    await _safe_edit(callback, "Apagar mensagem\n\nEnvie o message_id numérico da mensagem.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++
++
++def _positive_int(text: str) -> int | None:
++    try:
++        value = int(str(text).strip())
++    except Exception:
++        return None
++    return value if value > 0 else None
++
++
++async def _handle_destructive_user_id(message: Message, session: Any, text: str) -> None:
++    user_id = _positive_int(text)
++    if user_id is None:
++        await message.answer("Envie um ID Telegram numérico positivo.")
++        return
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await message.answer(error)
++        return
++    action = str(session.selected_action or "")
++    session.payload["pending_destructive_action"] = {"action": action, "target_user_id": user_id}
++    session.waiting_for = None
++    await message.answer(
++        "Confirmar ação\n\n"
++        f"Grupo: {title}\nID do grupo: {chat_id}\n\n"
++        f"Ação: {_ACTION_LABELS.get(action, action)}\nID do alvo: {user_id}\n\n"
++        "A ação real só será executada após confirmação.",
++        reply_markup=to_inline_keyboard_markup(confirm_cancel_keyboard(session.session_id)),
++    )
++
++
++async def _handle_destructive_message_id(message: Message, session: Any, text: str) -> None:
++    message_id = _positive_int(text)
++    if message_id is None:
++        await message.answer("Envie um message_id numérico positivo.")
++        return
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await message.answer(error)
++        return
++    session.payload["pending_destructive_action"] = {"action": "delmsg", "message_id": message_id}
++    session.waiting_for = None
++    await message.answer(
++        "Confirmar ação\n\n"
++        f"Grupo: {title}\nID do grupo: {chat_id}\n\n"
++        f"Ação: Apagar mensagem\nID da mensagem: {message_id}\n\n"
++        "A ação real só será executada após confirmação.",
++        reply_markup=to_inline_keyboard_markup(confirm_cancel_keyboard(session.session_id)),
++    )
++
++
++async def _confirm_pending_action(callback: CallbackQuery, bot: Any, session: Any) -> None:
++    pending = session.payload.get("pending_destructive_action")
++    if not pending:
++        await _safe_edit(callback, "Nenhuma ação pendente para confirmar.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    try:
++        perms = await get_bot_permissions(bot, chat_id)
++        me = await bot.get_me()
++        bot_id = int(getattr(me, "id"))
++    except Exception as exc:
++        storage.log_event(action="destructive_confirm", result="falhou", detection="direta", surface="callback", chat_id=chat_id, chat_title=title, actor_user_id=session.moderator_user_id or session.owner_user_id, details=str(exc))
++        await _safe_edit(callback, f"Falha ao revalidar permissões: {exc}", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    request = DestructiveActionRequest(
++        action=str(pending.get("action")),
++        chat_id=chat_id,
++        chat_title=title,
++        actor_user_id=session.moderator_user_id or session.owner_user_id or 0,
++        target_user_id=pending.get("target_user_id"),
++        message_id=pending.get("message_id"),
++        confirmed=True,
++    )
++    result = await execute_destructive_action(bot, request, permissions=perms, bot_user_id=bot_id)
++    session.payload.pop("pending_destructive_action", None)
++    session.selected_action = None
++    await _safe_edit(callback, f"Resultado: {result.result}\n{result.detail}", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++
++
++async def _show_ddx(callback: CallbackQuery, session: Any) -> None:
++    if not TIGRAO_FSM_DDX_HARD_ENABLED:
++        await _safe_edit(callback, "DDX hard indisponível. Ative TIGRAO_FSM_DDX_HARD_ENABLED.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    await _safe_edit(callback, f"DDX hard\n\nGrupo: {title}\nID do grupo: {chat_id}", to_inline_keyboard_markup(ddx_keyboard(session.session_id)))
++
++
++async def _set_ddx_enabled(callback: CallbackQuery, session: Any, enabled: bool) -> None:
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    affected = storage.set_ddx_enabled(chat_id=chat_id, enabled=enabled)
++    storage.log_event(action="ddx_enabled" if enabled else "ddx_disabled", result="concluido", detection="direta", surface="callback", chat_id=chat_id, chat_title=title, actor_user_id=session.moderator_user_id or session.owner_user_id, details=f"Filtros atualizados: {affected}")
++    await _safe_edit(callback, f"DDX {'ativado' if enabled else 'desativado'}. Filtros atualizados: {affected}", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++
++
++async def _prompt_ddx_filter(callback: CallbackQuery, session: Any) -> None:
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    session.waiting_for = "ddx_filter_text"
++    await _safe_edit(callback, "Envie o texto exato do filtro DDX hard.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++
++
++async def _handle_ddx_filter_text(message: Message, session: Any, text: str) -> None:
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await message.answer(error)
++        return
++    if not text.strip():
++        await message.answer("Filtro vazio não permitido.")
++        return
++    filter_id = storage.create_ddx_filter(chat_id=chat_id, filter_text=text.strip(), created_by=session.moderator_user_id or session.owner_user_id or 0, enabled=True)
++    storage.log_event(action="ddx_filter_add", result="concluido", detection="direta", surface="dm", chat_id=chat_id, chat_title=title, actor_user_id=session.moderator_user_id or session.owner_user_id, details=f"Filtro #{filter_id}: {text.strip()}")
++    session.waiting_for = None
++    await message.answer(f"Filtro DDX adicionado. ID: {filter_id}")
++
++
++async def _list_ddx(callback: CallbackQuery, session: Any) -> None:
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    rows = storage.list_ddx_filters(chat_id=chat_id, limit=20)
++    if not rows:
++        text = "Nenhum filtro DDX encontrado."
++    else:
++        text = "Filtros DDX\n\n" + "\n".join(f"#{row['id']} — {'ativo' if row.get('enabled') else 'inativo'} — {row.get('filter_text')}" for row in rows)
++    await _safe_edit(callback, text, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++
++
++async def _prompt_ddx_remove(callback: CallbackQuery, session: Any) -> None:
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await _safe_edit(callback, error, to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++        return
++    session.waiting_for = "ddx_remove_id"
++    await _safe_edit(callback, "Envie o ID numérico do filtro DDX a remover.", to_inline_keyboard_markup(back_close_keyboard(session.session_id)))
++
++
++async def _handle_ddx_remove_id(message: Message, session: Any, text: str) -> None:
++    chat_id, title, error = _selected_group_or_text(session)
++    if error:
++        await message.answer(error)
++        return
++    filter_id = _positive_int(text)
++    if filter_id is None:
++        await message.answer("Envie um ID de filtro numérico positivo.")
++        return
++    removed = storage.remove_ddx_filter(chat_id=chat_id, filter_id=filter_id)
++    storage.log_event(action="ddx_filter_remove", result="concluido" if removed else "nao_encontrado", detection="direta", surface="dm", chat_id=chat_id, chat_title=title, actor_user_id=session.moderator_user_id or session.owner_user_id, details=f"Filtro removido: {filter_id}; linhas: {removed}")
++    session.waiting_for = None
++    await message.answer("Filtro removido." if removed else "Filtro não encontrado.")
++
++
+ async def _show_logs(callback: CallbackQuery, session: Any, action: str) -> None:
+     prefixes = {
+         "log_mod": "mod",
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/__pycache__/__init__.cpython-313.pyc and ./app/plugins/tigrao_fsm/runtime/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/__pycache__/before_dispatch.cpython-313.pyc and ./app/plugins/tigrao_fsm/runtime/__pycache__/before_dispatch.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/__pycache__/ddx_runtime.cpython-313.pyc and ./app/plugins/tigrao_fsm/runtime/__pycache__/ddx_runtime.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/__pycache__/ddx_soft_runtime.cpython-313.pyc and ./app/plugins/tigrao_fsm/runtime/__pycache__/ddx_soft_runtime.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/__pycache__/join_request_runtime.cpython-313.pyc and ./app/plugins/tigrao_fsm/runtime/__pycache__/join_request_runtime.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/__pycache__/reaction_runtime.cpython-313.pyc and ./app/plugins/tigrao_fsm/runtime/__pycache__/reaction_runtime.cpython-313.pyc differ
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/ddx_runtime.py ./app/plugins/tigrao_fsm/runtime/ddx_runtime.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/runtime/ddx_runtime.py	2026-06-17 10:38:24.000000000 +0000
++++ ./app/plugins/tigrao_fsm/runtime/ddx_runtime.py	2026-06-17 13:22:57.355921756 +0000
+@@ -1,9 +1,14 @@
+-"""Runtime DDX hard isolado do Tigrão FSM, ainda não conectado ao webhook."""
++"""Runtime DDX hard isolado do Tigrão FSM."""
+ from __future__ import annotations
++
+ from dataclasses import dataclass
+ from typing import Any, Awaitable, Callable
+ 
+-RUNTIME_ACTIVE = False
++from app.config.settings import TIGRAO_FSM_DDX_HARD_ENABLED
++
++from .. import storage
++from ..permissions import get_bot_permissions
++
+ 
+ @dataclass(frozen=True, slots=True)
+ class DDXConfig:
+@@ -15,6 +20,46 @@
+     return str(value or "").casefold().strip()
+ 
+ 
++def _message_from_update(update: Any) -> Any | None:
++    return getattr(update, "message", update)
++
++
++def _chat_type(message: Any) -> str | None:
++    return getattr(getattr(message, "chat", None), "type", None)
++
++
++def _text_or_caption(message: Any) -> str:
++    return "\n".join(part for part in [str(getattr(message, "text", "") or ""), str(getattr(message, "caption", "") or "")] if part)
++
++
++async def _delete_and_log(
++    bot: Any,
++    message: Any,
++    *,
++    filter_text: str,
++    logger: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
++) -> bool:
++    chat = getattr(message, "chat", None)
++    user = getattr(message, "from_user", None)
++    await bot.delete_message(chat.id, message.message_id)
++    storage.log_event(
++        action="ddx_delete",
++        result="apagado",
++        detection="direta",
++        surface="ddx_pre_dispatch",
++        chat_id=int(chat.id),
++        chat_title=getattr(chat, "title", None),
++        actor_user_id=int(getattr(user, "id")) if getattr(user, "id", None) is not None else None,
++        actor_username=getattr(user, "username", None),
++        actor_full_name=getattr(user, "full_name", None) or getattr(user, "first_name", None),
++        details=f"Filtro acionado: {filter_text}",
++        metadata={"message_id": getattr(message, "message_id", None)},
++    )
++    if logger is not None:
++        await logger({"ato": "ddx_delete", "resultado": "apagado", "onde": "before_dispatch", "filtro": filter_text})
++    return True
++
++
+ async def handle(
+     bot: Any,
+     update: Any,
+@@ -23,27 +68,40 @@
+     permissions: Any | None = None,
+     logger: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+ ) -> bool:
+-    config = config or DDXConfig()
+-    if config.active is not True:
+-        return False
+-    filter_text = _normalized(config.filter_text)
+-    if not filter_text:
++    """Executa DDX hard com negação por padrão.
++
++    Sem configuração explícita ou flag global, a função não apaga nada.
++    """
++    message = _message_from_update(update)
++    if message is None or _chat_type(message) not in {"group", "supergroup"}:
+         return False
+-    if permissions is None or getattr(permissions, "can_delete_messages", False) is not True:
++    chat = getattr(message, "chat", None)
++    chat_id = int(getattr(chat, "id"))
++    body = _normalized(_text_or_caption(message))
++    if not body:
+         return False
+ 
+-    message = getattr(update, "message", update)
+-    chat = getattr(message, "chat", None)
+-    if getattr(chat, "type", None) not in {"group", "supergroup"}:
++    if config is not None:
++        if config.active is not True:
++            return False
++        filters = [_normalized(config.filter_text)]
++    else:
++        if TIGRAO_FSM_DDX_HARD_ENABLED is not True:
++            return False
++        filters = [_normalized(item) for item in storage.get_enabled_ddx_filters(chat_id=chat_id)]
++    filters = [item for item in filters if item]
++    if not filters:
+         return False
+ 
+-    text = _normalized(getattr(message, "text", None))
+-    caption = _normalized(getattr(message, "caption", None))
+-    if filter_text not in text and filter_text not in caption:
++    if permissions is None:
++        try:
++            permissions = await get_bot_permissions(bot, chat_id)
++        except Exception:
++            return False
++    if getattr(permissions, "can_delete_messages", False) is not True:
+         return False
+ 
+-    if hasattr(bot, "delete_message"):
+-        await bot.delete_message(chat.id, message.message_id)
+-    if logger is not None:
+-        await logger({"ato": "ddx_delete", "resultado": "apagado", "onde": "before_dispatch"})
+-    return True
++    for filter_text in filters:
++        if filter_text in body:
++            return await _delete_and_log(bot, message, filter_text=filter_text, logger=logger)
++    return False
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/storage.py ./app/plugins/tigrao_fsm/storage.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/plugins/tigrao_fsm/storage.py	2026-06-17 13:13:40.000000000 +0000
++++ ./app/plugins/tigrao_fsm/storage.py	2026-06-17 13:22:16.163938344 +0000
+@@ -109,6 +109,17 @@
+             )
+         """))
+         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tigrao_join_auto_accept_lookup ON tigrao_join_auto_accept(chat_id, allowed_user_id, status, expires_at)"))
++        conn.execute(text("""
++            CREATE TABLE IF NOT EXISTS tigrao_ddx_filters (
++                id INTEGER PRIMARY KEY AUTOINCREMENT,
++                chat_id INTEGER NOT NULL,
++                filter_text TEXT NOT NULL,
++                created_by INTEGER NOT NULL,
++                created_at TEXT NOT NULL,
++                enabled INTEGER NOT NULL DEFAULT 1
++            )
++        """))
++        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tigrao_ddx_filters_chat_enabled ON tigrao_ddx_filters(chat_id, enabled)"))
+ 
+ 
+ def log_event(
+@@ -426,3 +437,69 @@
+             {"chat_id": int(chat_id), "now": _to_iso(now), "limit": int(limit)},
+         ).mappings().all()
+     return [_auto_from_row(dict(row)) for row in rows]
++
++
++def create_ddx_filter(*, chat_id: int, filter_text: str, created_by: int, enabled: bool = True) -> int:
++    ensure_tables()
++    normalized = str(filter_text or "").strip()
++    if not normalized:
++        raise ValueError("filter_text obrigatório")
++    with engine.begin() as conn:
++        result_obj = conn.execute(
++            text("""
++                INSERT INTO tigrao_ddx_filters (chat_id, filter_text, created_by, created_at, enabled)
++                VALUES (:chat_id, :filter_text, :created_by, :created_at, :enabled)
++            """),
++            {
++                "chat_id": int(chat_id),
++                "filter_text": normalized,
++                "created_by": int(created_by),
++                "created_at": _to_iso(utcnow()),
++                "enabled": 1 if enabled else 0,
++            },
++        )
++        return int(getattr(result_obj, "lastrowid", 0) or 0)
++
++
++def list_ddx_filters(*, chat_id: int, enabled_only: bool = False, limit: int = 50) -> list[dict[str, Any]]:
++    ensure_tables()
++    clauses = ["chat_id=:chat_id"]
++    params: dict[str, Any] = {"chat_id": int(chat_id), "limit": int(limit)}
++    if enabled_only:
++        clauses.append("enabled=1")
++    where = " AND ".join(clauses)
++    with engine.begin() as conn:
++        rows = conn.execute(
++            text(f"""
++                SELECT * FROM tigrao_ddx_filters
++                WHERE {where}
++                ORDER BY id DESC
++                LIMIT :limit
++            """),
++            params,
++        ).mappings().all()
++    return [dict(row) for row in rows]
++
++
++def get_enabled_ddx_filters(*, chat_id: int) -> list[str]:
++    return [str(row.get("filter_text") or "") for row in list_ddx_filters(chat_id=chat_id, enabled_only=True, limit=100) if row.get("filter_text")]
++
++
++def set_ddx_enabled(*, chat_id: int, enabled: bool) -> int:
++    ensure_tables()
++    with engine.begin() as conn:
++        result = conn.execute(
++            text("UPDATE tigrao_ddx_filters SET enabled=:enabled WHERE chat_id=:chat_id"),
++            {"enabled": 1 if enabled else 0, "chat_id": int(chat_id)},
++        )
++        return int(getattr(result, "rowcount", 0) or 0)
++
++
++def remove_ddx_filter(*, chat_id: int, filter_id: int) -> int:
++    ensure_tables()
++    with engine.begin() as conn:
++        result = conn.execute(
++            text("DELETE FROM tigrao_ddx_filters WHERE chat_id=:chat_id AND id=:filter_id"),
++            {"chat_id": int(chat_id), "filter_id": int(filter_id)},
++        )
++        return int(getattr(result, "rowcount", 0) or 0)
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/security/__pycache__/__init__.cpython-313.pyc and ./app/security/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/security/__pycache__/rate_limit.cpython-313.pyc and ./app/security/__pycache__/rate_limit.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/__init__.cpython-313.pyc and ./app/services/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/bot_identity.cpython-313.pyc and ./app/services/__pycache__/bot_identity.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/canvas_asset.cpython-313.pyc and ./app/services/__pycache__/canvas_asset.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/canvas_audio.cpython-313.pyc and ./app/services/__pycache__/canvas_audio.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/canvas_cache.cpython-313.pyc and ./app/services/__pycache__/canvas_cache.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/canvas_processed_cache.cpython-313.pyc and ./app/services/__pycache__/canvas_processed_cache.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/connection_check.cpython-313.pyc and ./app/services/__pycache__/connection_check.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/cover_cache.cpython-313.pyc and ./app/services/__pycache__/cover_cache.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/lastfm.cpython-313.pyc and ./app/services/__pycache__/lastfm.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/lastfm_capsule.cpython-313.pyc and ./app/services/__pycache__/lastfm_capsule.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/lastfm_group.cpython-313.pyc and ./app/services/__pycache__/lastfm_group.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/lastfm_weekly.cpython-313.pyc and ./app/services/__pycache__/lastfm_weekly.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/likes.cpython-313.pyc and ./app/services/__pycache__/likes.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/lyrics.cpython-313.pyc and ./app/services/__pycache__/lyrics.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/lyrics_archive.cpython-313.pyc and ./app/services/__pycache__/lyrics_archive.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/lyrics_cache.cpython-313.pyc and ./app/services/__pycache__/lyrics_cache.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/monthfm_card.cpython-313.pyc and ./app/services/__pycache__/monthfm_card.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/music.cpython-313.pyc and ./app/services/__pycache__/music.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/reactions.cpython-313.pyc and ./app/services/__pycache__/reactions.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/spotify.cpython-313.pyc and ./app/services/__pycache__/spotify.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/spotify_canvas.cpython-313.pyc and ./app/services/__pycache__/spotify_canvas.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/spotify_links.cpython-313.pyc and ./app/services/__pycache__/spotify_links.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/telegram_user_profiles.cpython-313.pyc and ./app/services/__pycache__/telegram_user_profiles.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/tnow_activity_cache.cpython-313.pyc and ./app/services/__pycache__/tnow_activity_cache.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/tnow_card.cpython-313.pyc and ./app/services/__pycache__/tnow_card.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/tnow_privacy.cpython-313.pyc and ./app/services/__pycache__/tnow_privacy.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/track_search.cpython-313.pyc and ./app/services/__pycache__/track_search.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/tstory_card.cpython-313.pyc and ./app/services/__pycache__/tstory_card.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/tstory_video.cpython-313.pyc and ./app/services/__pycache__/tstory_video.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/services/__pycache__/viga_palette.cpython-313.pyc and ./app/services/__pycache__/viga_palette.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/utils/__pycache__/__init__.cpython-313.pyc and ./app/utils/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/utils/__pycache__/datetime.cpython-313.pyc and ./app/utils/__pycache__/datetime.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/web_music/__pycache__/__init__.cpython-313.pyc and ./app/web_music/__pycache__/__init__.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/web_music/__pycache__/auth.cpython-313.pyc and ./app/web_music/__pycache__/auth.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/web_music/__pycache__/router.cpython-313.pyc and ./app/web_music/__pycache__/router.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/app/web_music/__pycache__/state.cpython-313.pyc and ./app/web_music/__pycache__/state.cpython-313.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/__pycache__/test_tigrao_fsm_skeleton.cpython-313-pytest-9.0.2.pyc and ./tests/__pycache__/test_tigrao_fsm_skeleton.cpython-313-pytest-9.0.2.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/__pycache__/test_tigrao_fsm_stage2_static.cpython-313-pytest-9.0.2.pyc and ./tests/__pycache__/test_tigrao_fsm_stage2_static.cpython-313-pytest-9.0.2.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/__pycache__/test_tigrao_fsm_stage3_static.cpython-313-pytest-9.0.2.pyc and ./tests/__pycache__/test_tigrao_fsm_stage3_static.cpython-313-pytest-9.0.2.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/__pycache__/test_tigrao_fsm_stage4_static.cpython-313-pytest-9.0.2.pyc and ./tests/__pycache__/test_tigrao_fsm_stage4_static.cpython-313-pytest-9.0.2.pyc differ
+Binary files /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/__pycache__/test_tigrao_fsm_stage4_storage.cpython-313-pytest-9.0.2.pyc and ./tests/__pycache__/test_tigrao_fsm_stage4_storage.cpython-313-pytest-9.0.2.pyc differ
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage4_static.py ./tests/test_tigrao_fsm_stage4_static.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage4_static.py	2026-06-17 13:16:11.000000000 +0000
++++ ./tests/test_tigrao_fsm_stage4_static.py	2026-06-17 13:25:15.887365450 +0000
+@@ -37,12 +37,13 @@
+     assert 'kwargs.pop("member_limit", None)' in services
+ 
+ 
+-def test_no_x9_or_destructive_actions_were_added_to_phase4() -> None:
++def test_no_x9_was_added_and_destructive_actions_are_flagged() -> None:
+     plugin_text = "\n".join(read(str(path.relative_to(ROOT))) for path in (ROOT / "app/plugins/tigrao_fsm").rglob("*.py"))
+-    assert "ban_chat_member" not in plugin_text
+-    assert "restrict_chat_member" not in plugin_text
+-    assert "delete_message_reaction" not in plugin_text
++    settings = read("app/config/settings.py")
+     assert "InlineQueryResult" not in plugin_text
++    assert "delete_message_reaction" not in plugin_text
++    assert "TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED = _bool_env" in settings
++    assert "TIGRAO_FSM_DDX_HARD_ENABLED = _bool_env" in settings
+ 
+ 
+ def test_forbidden_music_files_do_not_reference_tigrao() -> None:
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage5_actions.py ./tests/test_tigrao_fsm_stage5_actions.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage5_actions.py	1970-01-01 00:00:00.000000000 +0000
++++ ./tests/test_tigrao_fsm_stage5_actions.py	2026-06-17 13:24:48.614368874 +0000
+@@ -0,0 +1,135 @@
++from __future__ import annotations
++
++from types import SimpleNamespace
++
++import pytest
++from sqlalchemy import create_engine
++
++
++@pytest.fixture()
++def isolated_storage(monkeypatch, tmp_path):
++    from app.plugins.tigrao_fsm import storage
++
++    engine = create_engine(f"sqlite:///{tmp_path / 'tigrao_action_test.db'}", connect_args={"check_same_thread": False})
++    monkeypatch.setattr(storage, "engine", engine)
++    storage.ensure_tables()
++    return storage
++
++
++class FakeBot:
++    def __init__(self):
++        self.banned = []
++        self.unbanned = []
++        self.restricted = []
++        self.deleted = []
++
++    async def ban_chat_member(self, **kwargs):
++        self.banned.append(kwargs)
++
++    async def unban_chat_member(self, **kwargs):
++        self.unbanned.append(kwargs)
++
++    async def restrict_chat_member(self, **kwargs):
++        self.restricted.append(kwargs)
++
++    async def delete_message(self, **kwargs):
++        self.deleted.append(kwargs)
++
++
++@pytest.fixture()
++def permissions():
++    from app.plugins.tigrao_fsm.permissions import TigraoBotPermissions
++
++    return TigraoBotPermissions(is_admin=True, can_restrict_members=True, can_delete_messages=True)
++
++
++def request(action: str, **kwargs):
++    from app.plugins.tigrao_fsm.destructive_actions import DestructiveActionRequest
++
++    return DestructiveActionRequest(
++        action=action,
++        chat_id=-1001,
++        chat_title="Grupo",
++        actor_user_id=999,
++        target_user_id=kwargs.get("target_user_id", 123),
++        message_id=kwargs.get("message_id"),
++        confirmed=kwargs.get("confirmed", True),
++    )
++
++
++@pytest.mark.asyncio
++async def test_action_without_confirmation_does_not_execute(isolated_storage, permissions) -> None:
++    from app.plugins.tigrao_fsm.destructive_actions import execute_destructive_action
++
++    bot = FakeBot()
++    result = await execute_destructive_action(bot, request("ban", confirmed=False), permissions=permissions, bot_user_id=777)
++    assert result.ok is False
++    assert bot.banned == []
++    assert isolated_storage.list_logs(chat_id=-1001)[0]["result"] == "bloqueado_sem_confirmacao"
++
++
++@pytest.mark.asyncio
++async def test_ban_requires_can_restrict_members(isolated_storage) -> None:
++    from app.plugins.tigrao_fsm.destructive_actions import execute_destructive_action
++    from app.plugins.tigrao_fsm.permissions import TigraoBotPermissions
++
++    bot = FakeBot()
++    perms = TigraoBotPermissions(is_admin=True, can_restrict_members=False, can_delete_messages=True)
++    result = await execute_destructive_action(bot, request("ban"), permissions=perms, bot_user_id=777)
++    assert result.ok is False
++    assert bot.banned == []
++    assert isolated_storage.list_logs(chat_id=-1001)[0]["result"] == "bloqueado_sem_permissao"
++
++
++@pytest.mark.asyncio
++async def test_protected_target_is_blocked(isolated_storage, permissions) -> None:
++    from app.plugins.tigrao_fsm.destructive_actions import execute_destructive_action
++
++    bot = FakeBot()
++    result = await execute_destructive_action(bot, request("ban", target_user_id=777), permissions=permissions, bot_user_id=777)
++    assert result.ok is False
++    assert bot.banned == []
++    assert isolated_storage.list_logs(chat_id=-1001)[0]["result"] == "bloqueado_alvo_protegido"
++
++
++@pytest.mark.asyncio
++async def test_ban_executes_once_and_logs(isolated_storage, permissions) -> None:
++    from app.plugins.tigrao_fsm.destructive_actions import execute_destructive_action
++
++    bot = FakeBot()
++    result = await execute_destructive_action(bot, request("ban"), permissions=permissions, bot_user_id=777)
++    assert result.ok is True
++    assert len(bot.banned) == 1
++    assert isolated_storage.list_logs(chat_id=-1001)[0]["result"] == "concluido"
++
++
++@pytest.mark.asyncio
++async def test_mute_and_unmute_use_restrict_chat_member(isolated_storage, permissions) -> None:
++    from app.plugins.tigrao_fsm.destructive_actions import execute_destructive_action
++
++    bot = FakeBot()
++    assert (await execute_destructive_action(bot, request("mute1h"), permissions=permissions, bot_user_id=777)).ok is True
++    assert (await execute_destructive_action(bot, request("unmute"), permissions=permissions, bot_user_id=777)).ok is True
++    assert len(bot.restricted) == 2
++
++
++@pytest.mark.asyncio
++async def test_delete_requires_can_delete_messages(isolated_storage) -> None:
++    from app.plugins.tigrao_fsm.destructive_actions import execute_destructive_action
++    from app.plugins.tigrao_fsm.permissions import TigraoBotPermissions
++
++    bot = FakeBot()
++    perms = TigraoBotPermissions(is_admin=True, can_restrict_members=True, can_delete_messages=False)
++    result = await execute_destructive_action(bot, request("delmsg", message_id=55), permissions=perms, bot_user_id=777)
++    assert result.ok is False
++    assert bot.deleted == []
++
++
++@pytest.mark.asyncio
++async def test_delete_executes_and_logs(isolated_storage, permissions) -> None:
++    from app.plugins.tigrao_fsm.destructive_actions import execute_destructive_action
++
++    bot = FakeBot()
++    result = await execute_destructive_action(bot, request("delmsg", message_id=55), permissions=permissions, bot_user_id=777)
++    assert result.ok is True
++    assert bot.deleted == [{"chat_id": -1001, "message_id": 55}]
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage5_ddx.py ./tests/test_tigrao_fsm_stage5_ddx.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage5_ddx.py	1970-01-01 00:00:00.000000000 +0000
++++ ./tests/test_tigrao_fsm_stage5_ddx.py	2026-06-17 13:24:48.623034100 +0000
+@@ -0,0 +1,78 @@
++from __future__ import annotations
++
++from types import SimpleNamespace
++
++import pytest
++from sqlalchemy import create_engine
++
++
++@pytest.fixture()
++def isolated_storage(monkeypatch, tmp_path):
++    from app.plugins.tigrao_fsm import storage
++
++    engine = create_engine(f"sqlite:///{tmp_path / 'tigrao_ddx_test.db'}", connect_args={"check_same_thread": False})
++    monkeypatch.setattr(storage, "engine", engine)
++    storage.ensure_tables()
++    return storage
++
++
++class FakeBot:
++    def __init__(self):
++        self.deleted = []
++
++    async def delete_message(self, chat_id, message_id):
++        self.deleted.append((chat_id, message_id))
++
++
++def update(text="palavra proibida"):
++    user = SimpleNamespace(id=123, username="u", full_name="User", first_name="User")
++    chat = SimpleNamespace(id=-1001, title="Grupo", type="supergroup")
++    msg = SimpleNamespace(chat=chat, from_user=user, message_id=99, text=text, caption=None)
++    return SimpleNamespace(message=msg)
++
++
++@pytest.mark.asyncio
++async def test_ddx_without_flag_or_config_is_noop(isolated_storage, monkeypatch) -> None:
++    from app.plugins.tigrao_fsm.runtime import ddx_runtime
++    from app.plugins.tigrao_fsm.permissions import TigraoBotPermissions
++
++    monkeypatch.setattr(ddx_runtime, "TIGRAO_FSM_DDX_HARD_ENABLED", False)
++    bot = FakeBot()
++    assert await ddx_runtime.handle(bot, update(), permissions=TigraoBotPermissions(is_admin=True, can_delete_messages=True)) is False
++    assert bot.deleted == []
++
++
++@pytest.mark.asyncio
++async def test_ddx_without_filter_is_noop(isolated_storage, monkeypatch) -> None:
++    from app.plugins.tigrao_fsm.runtime import ddx_runtime
++    from app.plugins.tigrao_fsm.permissions import TigraoBotPermissions
++
++    monkeypatch.setattr(ddx_runtime, "TIGRAO_FSM_DDX_HARD_ENABLED", True)
++    bot = FakeBot()
++    assert await ddx_runtime.handle(bot, update(), permissions=TigraoBotPermissions(is_admin=True, can_delete_messages=True)) is False
++    assert bot.deleted == []
++
++
++@pytest.mark.asyncio
++async def test_ddx_without_permission_is_noop(isolated_storage, monkeypatch) -> None:
++    from app.plugins.tigrao_fsm.runtime import ddx_runtime
++    from app.plugins.tigrao_fsm.permissions import TigraoBotPermissions
++
++    monkeypatch.setattr(ddx_runtime, "TIGRAO_FSM_DDX_HARD_ENABLED", True)
++    isolated_storage.create_ddx_filter(chat_id=-1001, filter_text="proibida", created_by=999, enabled=True)
++    bot = FakeBot()
++    assert await ddx_runtime.handle(bot, update(), permissions=TigraoBotPermissions(is_admin=True, can_delete_messages=False)) is False
++    assert bot.deleted == []
++
++
++@pytest.mark.asyncio
++async def test_ddx_with_filter_and_permission_deletes_and_consumes(isolated_storage, monkeypatch) -> None:
++    from app.plugins.tigrao_fsm.runtime import ddx_runtime
++    from app.plugins.tigrao_fsm.permissions import TigraoBotPermissions
++
++    monkeypatch.setattr(ddx_runtime, "TIGRAO_FSM_DDX_HARD_ENABLED", True)
++    isolated_storage.create_ddx_filter(chat_id=-1001, filter_text="proibida", created_by=999, enabled=True)
++    bot = FakeBot()
++    assert await ddx_runtime.handle(bot, update(), permissions=TigraoBotPermissions(is_admin=True, can_delete_messages=True)) is True
++    assert bot.deleted == [(-1001, 99)]
++    assert isolated_storage.list_logs(chat_id=-1001)[0]["action"] == "ddx_delete"
+diff -ruN /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage5_static.py ./tests/test_tigrao_fsm_stage5_static.py
+--- /mnt/data/orig_phase5/tr4-622d99bcb80106e735250824e7276240cf7e9bc6/tests/test_tigrao_fsm_stage5_static.py	1970-01-01 00:00:00.000000000 +0000
++++ ./tests/test_tigrao_fsm_stage5_static.py	2026-06-17 13:24:48.603703150 +0000
+@@ -0,0 +1,76 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def read(path: str) -> str:
++    return (ROOT / path).read_text(encoding="utf-8")
++
++
++def test_destructive_flags_exist_and_default_false() -> None:
++    settings = read("app/config/settings.py")
++    for name in [
++        "TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED",
++        "TIGRAO_FSM_DDX_HARD_ENABLED",
++        "TIGRAO_FSM_REACTIONS_ENABLED",
++    ]:
++        assert f'{name} = _bool_env("{name}", False)' in settings
++
++
++def test_destructive_actions_are_behind_flags_in_panel() -> None:
++    panel = read("app/plugins/tigrao_fsm/routers/panel.py")
++    assert "TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED" in panel
++    assert "Ações destrutivas indisponíveis" in panel
++    assert "TIGRAO_FSM_DDX_HARD_ENABLED" in panel
++    assert "DDX hard indisponível" in panel
++    assert "TIGRAO_FSM_REACTIONS_ENABLED" in panel
++
++
++def test_action_callbacks_and_confirmation_exist() -> None:
++    keyboards = read("app/plugins/tigrao_fsm/keyboards.py")
++    for action in ["act", "ban", "unban", "mute1h", "mute24h", "muteforever", "unmute", "delmsg", "ddxadd", "ddxlist", "ddxremove"]:
++        assert f'"{action}"' in keyboards
++    panel = read("app/plugins/tigrao_fsm/routers/panel.py")
++    assert "pending_destructive_action" in panel
++    assert "Confirmar ação" in panel
++    assert "execute_destructive_action" in panel
++
++
++def test_ddx_storage_and_runtime_are_present() -> None:
++    storage = read("app/plugins/tigrao_fsm/storage.py")
++    assert "CREATE TABLE IF NOT EXISTS tigrao_ddx_filters" in storage
++    assert "create_ddx_filter" in storage
++    assert "get_enabled_ddx_filters" in storage
++    runtime = read("app/plugins/tigrao_fsm/runtime/ddx_runtime.py")
++    assert "TIGRAO_FSM_DDX_HARD_ENABLED" in runtime
++    assert "get_bot_permissions" in runtime
++    assert "storage.get_enabled_ddx_filters" in runtime
++    assert "delete_message" in runtime
++
++
++def test_reactions_are_not_implemented_as_unchecked_hack() -> None:
++    plugin_text = "\n".join(read(str(p.relative_to(ROOT))) for p in (ROOT / "app/plugins/tigrao_fsm").rglob("*.py"))
++    assert "delete_message_reaction" not in plugin_text
++    assert "delete_all_message_reactions" not in plugin_text
++    assert "Reações ainda não implementadas" in plugin_text
++
++
++def test_forbidden_music_files_do_not_reference_tigrao() -> None:
++    paths = [
++        "app/bot/telegram.py",
++        "app/bot/radiofm.py",
++        "app/bot/tnow.py",
++        "app/bot/tly.py",
++        "app/bot/music_inline.py",
++    ]
++    paths.extend(str(p.relative_to(ROOT)) for p in (ROOT / "app/bot").glob("playing*.py"))
++    paths.extend(str(p.relative_to(ROOT)) for p in (ROOT / "app/web_music").rglob("*.py"))
++    for path in paths:
++        if (ROOT / path).exists():
++            assert "tigrao_fsm" not in read(path).lower()
++
++
++def test_app_bot_telegram_not_touched_for_tigrao() -> None:
++    assert "tigrao_fsm" not in read("app/bot/telegram.py").lower()

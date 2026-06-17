@@ -1,0 +1,1234 @@
+commit d057e7003e181eb7de37e5ae981ca7641252a3c8
+Author: Codex <codex@openai.com>
+Date:   Wed Jun 17 09:21:01 2026 +0000
+
+    feat: update isolated tigrao fsm scope
+---
+ app/plugins/tigrao_fsm/keyboards.py                | 119 +++++--
+ app/plugins/tigrao_fsm/models.py                   |  70 ++++
+ app/plugins/tigrao_fsm/mount.py                    |   9 +-
+ app/plugins/tigrao_fsm/parsers.py                  |  40 +++
+ app/plugins/tigrao_fsm/permissions.py              |  58 +++-
+ app/plugins/tigrao_fsm/plugin.py                   |  37 +-
+ app/plugins/tigrao_fsm/runtime/ddx_runtime.py      |  31 +-
+ app/plugins/tigrao_fsm/services.py                 |  68 ++++
+ artifacts/codex_reports/ETAPA_02_TIGRAO_FSM.diff   | 383 +++++++++++++++++++++
+ .../codex_reports/ETAPA_02_TIGRAO_FSM_RELATORIO.md |  97 ++++++
+ .../codex_reports/ETAPA_02_TIGRAO_FSM_STATUS.txt   |  33 ++
+ tests/test_tigrao_fsm_skeleton.py                  |  14 +-
+ tests/test_tigrao_fsm_stage2_static.py             | 105 ++++++
+ 13 files changed, 1015 insertions(+), 49 deletions(-)
+
+diff --git a/app/plugins/tigrao_fsm/keyboards.py b/app/plugins/tigrao_fsm/keyboards.py
+index 560935d..ad9fdfe 100644
+--- a/app/plugins/tigrao_fsm/keyboards.py
++++ b/app/plugins/tigrao_fsm/keyboards.py
+@@ -1,43 +1,122 @@
+-"""Utilitários de teclados do Tigrão FSM isolado.
+-
+-Stub estrutural: cria especificações de botões e tenta usar recursos coloridos quando o aiogram instalado permitir.
+-"""
++"""Teclados seguros do Tigrão FSM isolado."""
+ from __future__ import annotations
+ 
++import inspect
++import re
+ from dataclasses import dataclass
+-from typing import Literal
++from typing import Any, Literal
+ 
+ ButtonStyle = Literal["primary", "success", "danger"]
+ CALLBACK_PREFIX = "tgf:"
++MAX_CALLBACK_DATA_BYTES = 64
+ ALLOWED_BUTTON_STYLES: tuple[ButtonStyle, ...] = ("primary", "success", "danger")
++_ALLOWED_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
++_ALLOWED_ACTIONS = {"home", "grp", "logs", "close", "confirm"}
++
+ 
+ @dataclass(frozen=True, slots=True)
+ class TigraoButtonSpec:
+     text: str
+-    callback_data: str
++    callback_data: str | None = None
++    url: str | None = None
++    copy_text: str | None = None
+     style: ButtonStyle = "primary"
+ 
+ 
+-def make_callback(session_id: str, *parts: str) -> str:
+-    clean_parts = [str(part).strip(":") for part in parts if str(part)]
+-    return f"{CALLBACK_PREFIX}{session_id}:" + ":".join(clean_parts)
++def _valid_token(value: str | None) -> bool:
++    return bool(value) and ":" not in value and bool(_ALLOWED_TOKEN_RE.fullmatch(value))
+ 
+ 
+-def parse_callback(data: str) -> tuple[str, tuple[str, ...]] | None:
++def _callback_is_valid(data: str) -> bool:
++    if not data or len(data.encode("utf-8")) > MAX_CALLBACK_DATA_BYTES:
++        return False
+     if not data.startswith(CALLBACK_PREFIX):
+-        return None
++        return False
+     tail = data[len(CALLBACK_PREFIX):]
+-    if not tail:
+-        return None
+-    sid, *parts = tail.split(":")
+-    if not sid or any(len(part) > 48 for part in parts):
++    pieces = tail.split(":")
++    if len(pieces) != 2:
++        return False
++    sid, action = pieces
++    return _valid_token(sid) and _valid_token(action) and action in _ALLOWED_ACTIONS
++
++
++def make_callback(session_id: str, *parts: str) -> str:
++    if not _valid_token(session_id):
++        raise ValueError("invalid Tigrão session_id")
++    if len(parts) != 1 or not _valid_token(parts[0]) or parts[0] not in _ALLOWED_ACTIONS:
++        raise ValueError("invalid Tigrão callback action")
++    callback = f"{CALLBACK_PREFIX}{session_id}:{parts[0]}"
++    if not _callback_is_valid(callback):
++        raise ValueError("invalid or too long Tigrão callback_data")
++    return callback
++
++
++def parse_callback(data: str) -> tuple[str, tuple[str, ...]] | None:
++    if not isinstance(data, str) or not _callback_is_valid(data):
+         return None
+-    return sid, tuple(parts)
++    sid, action = data[len(CALLBACK_PREFIX):].split(":")
++    return sid, (action,)
+ 
+ 
+-def button(text: str, callback_data: str, *, style: ButtonStyle = "primary") -> TigraoButtonSpec:
++def _validate_single_action(callback_data: str | None, url: str | None, copy_text: str | None) -> None:
++    actions = [callback_data is not None, url is not None, copy_text is not None]
++    if sum(actions) != 1:
++        raise ValueError("exactly one button action is required")
++    if callback_data is not None and not _callback_is_valid(callback_data):
++        raise ValueError("invalid internal Tigrão callback_data")
++
++
++def button(
++    text: str,
++    callback_data: str | None = None,
++    *,
++    url: str | None = None,
++    copy_text: str | None = None,
++    style: ButtonStyle = "primary",
++) -> TigraoButtonSpec:
+     if style not in ALLOWED_BUTTON_STYLES:
+         raise ValueError(f"unsupported Tigrão button style: {style}")
+-    if not callback_data.startswith(CALLBACK_PREFIX):
+-        raise ValueError("Tigrão callback must use the tgf: namespace")
+-    return TigraoButtonSpec(text=text, callback_data=callback_data, style=style)
++    _validate_single_action(callback_data, url, copy_text)
++    return TigraoButtonSpec(text=text, callback_data=callback_data, url=url, copy_text=copy_text, style=style)
++
++
++def _button_kwargs(spec: TigraoButtonSpec) -> dict[str, Any]:
++    kwargs: dict[str, Any] = {"text": spec.text}
++    if spec.callback_data is not None:
++        kwargs["callback_data"] = spec.callback_data
++    elif spec.url is not None:
++        kwargs["url"] = spec.url
++    elif spec.copy_text is not None:
++        kwargs["copy_text"] = spec.copy_text
++    return kwargs
++
++
++def to_inline_keyboard_button(spec: TigraoButtonSpec) -> Any:
++    from aiogram.types import InlineKeyboardButton
++
++    kwargs = _button_kwargs(spec)
++    try:
++        sig = inspect.signature(InlineKeyboardButton)
++        if "style" in sig.parameters:
++            kwargs["style"] = spec.style
++    except (TypeError, ValueError):
++        kwargs["style"] = spec.style
++    try:
++        return InlineKeyboardButton(**kwargs)
++    except TypeError:
++        kwargs.pop("style", None)
++        return InlineKeyboardButton(**kwargs)
++
++
++def to_inline_keyboard_markup(rows: list[list[TigraoButtonSpec]]) -> Any:
++    from aiogram.types import InlineKeyboardMarkup
++
++    keyboard = [[to_inline_keyboard_button(spec) for spec in row] for row in rows]
++    return InlineKeyboardMarkup(inline_keyboard=keyboard)
++
++
++def home_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
++    return [
++        [button("Selecionar grupo", make_callback(session_id, "grp"), style="primary")],
++        [button("Fechar", make_callback(session_id, "close"), style="danger")],
++    ]
+diff --git a/app/plugins/tigrao_fsm/models.py b/app/plugins/tigrao_fsm/models.py
+new file mode 100644
+index 0000000..a5b056c
+--- /dev/null
++++ b/app/plugins/tigrao_fsm/models.py
+@@ -0,0 +1,70 @@
++"""Modelos internos para armazenamento futuro do Tigrão FSM."""
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from datetime import datetime, timedelta, timezone
++from typing import Any
++
++JOIN_REQUEST_TTL = timedelta(hours=2)
++USER_CHAT_DM_TTL = timedelta(minutes=5)
++
++@dataclass(slots=True)
++class TigraoJoinRequest:
++    chat_id: int
++    chat_title: str
++    user_id: int
++    username: str | None
++    full_name: str
++    user_chat_id: int | None
++    bio: str | None
++    invite_link: str | None
++    request_date: datetime
++    received_at: datetime
++    expires_at: datetime
++    status: str = "pendente"
++    processed_at: datetime | None = None
++    processed_by: int | None = None
++    result_detail: str | None = None
++
++    @classmethod
++    def create(cls, **kwargs: Any) -> "TigraoJoinRequest":
++        now = kwargs.setdefault("received_at", datetime.now(timezone.utc))
++        kwargs.setdefault("expires_at", now + JOIN_REQUEST_TTL)
++        return cls(**kwargs)
++
++@dataclass(slots=True)
++class TigraoJoinAutoAccept:
++    chat_id: int
++    chat_title: str
++    invite_link: str
++    allowed_user_id: int
++    allowed_username: str | None
++    allowed_full_name: str | None
++    created_by_owner_id: int
++    created_at: datetime
++    expires_at: datetime
++    status: str = "aguardando_solicitação"
++    approved_at: datetime | None = None
++    result_detail: str | None = None
++
++@dataclass(slots=True)
++class TigraoLogEntry:
++    data: str
++    hora: str
++    chat_id: int | None = None
++    chat_title: str | None = None
++    actor_user_id: int | None = None
++    actor_username: str | None = None
++    actor_full_name: str | None = None
++    target_user_id: int | None = None
++    target_username: str | None = None
++    target_full_name: str | None = None
++    ato: str | None = None
++    resultado: str | None = None
++    deteccao: str | None = None
++    onde: str | None = None
++    detalhe: str | None = None
++    metadata_json: dict[str, Any] = field(default_factory=dict)
++    musica: str = "não detectada"
++    artista: str = "não detectado"
++    fonte_detectada: str | None = None
+diff --git a/app/plugins/tigrao_fsm/mount.py b/app/plugins/tigrao_fsm/mount.py
+index b806c78..d5e50e1 100644
+--- a/app/plugins/tigrao_fsm/mount.py
++++ b/app/plugins/tigrao_fsm/mount.py
+@@ -1,6 +1,6 @@
+ """Ponto de montagem futuro do Tigrão FSM.
+ 
+-Não chama dispatcher.include_router nesta etapa.
++Não conecta o plugin ao dispatcher real nesta etapa.
+ """
+ from __future__ import annotations
+ 
+@@ -9,6 +9,7 @@ from .plugin import TigraoFSMPlugin
+ 
+ 
+ def build_tigrao_fsm_plugin(*, dispatcher: Any | None = None) -> TigraoFSMPlugin:
+-    """Cria o plugin isolado sem conectá-lo ao dispatcher real."""
+-    _ = dispatcher
+-    return TigraoFSMPlugin(mounted=False)
++    plugin = TigraoFSMPlugin(mounted=False)
++    if dispatcher is not None:
++        plugin.mount(dispatcher)
++    return plugin
+diff --git a/app/plugins/tigrao_fsm/parsers.py b/app/plugins/tigrao_fsm/parsers.py
+new file mode 100644
+index 0000000..7558384
+--- /dev/null
++++ b/app/plugins/tigrao_fsm/parsers.py
+@@ -0,0 +1,40 @@
++"""Parsers isolados do Tigrão FSM."""
++from __future__ import annotations
++
++import re
++from dataclasses import dataclass
++
++_SPLIT_RE = re.compile(r"[\s,]+")
++
++@dataclass(frozen=True, slots=True)
++class ParsedUserIds:
++    valid: list[int]
++    invalid: list[str]
++
++
++def parse_user_ids(text: str) -> ParsedUserIds:
++    seen: set[int] = set()
++    valid: list[int] = []
++    invalid: list[str] = []
++    for token in [t for t in _SPLIT_RE.split((text or "").strip()) if t]:
++        if not token.isdecimal():
++            invalid.append(token)
++            continue
++        value = int(token)
++        if value <= 0:
++            invalid.append(token)
++            continue
++        if value not in seen:
++            seen.add(value)
++            valid.append(value)
++    return ParsedUserIds(valid=valid, invalid=invalid)
++
++
++def parse_x9_query(query: str) -> str | None:
++    clean = (query or "").strip()
++    if not clean.lower().startswith("x9"):
++        return None
++    if len(clean) > 2 and not clean[2].isspace() and clean[2] not in {":", "-"}:
++        return None
++    body = clean[2:].lstrip(" :-\t")
++    return body or ""
+diff --git a/app/plugins/tigrao_fsm/permissions.py b/app/plugins/tigrao_fsm/permissions.py
+index ef6f435..975bbc6 100644
+--- a/app/plugins/tigrao_fsm/permissions.py
++++ b/app/plugins/tigrao_fsm/permissions.py
+@@ -1,10 +1,9 @@
+-"""Permissões isoladas do Tigrão FSM.
+-
+-Stub da Etapa 01: autorização real será revisada na integração futura.
+-"""
++"""Permissões e superfície do painel isolado do Tigrão FSM."""
+ from __future__ import annotations
+ 
+ from collections.abc import Iterable
++from dataclasses import dataclass
++from typing import Any
+ 
+ 
+ def is_authorized_user(user_id: int | None, *, owner_ids: Iterable[int] = (), moderator_ids: Iterable[int] = ()) -> bool:
+@@ -13,6 +12,53 @@ def is_authorized_user(user_id: int | None, *, owner_ids: Iterable[int] = (), mo
+     return int(user_id) in {int(v) for v in owner_ids} | {int(v) for v in moderator_ids}
+ 
+ 
+-def should_answer_panel_publicly(chat_type: str | None) -> bool:
+-    """Painel nunca deve responder publicamente em grupo nesta etapa."""
++def is_private_panel_surface(chat_type: str | None) -> bool:
+     return chat_type == "private"
++
++
++@dataclass(frozen=True, slots=True)
++class TigraoBotPermissions:
++    is_admin: bool = False
++    can_delete_messages: bool = False
++    can_restrict_members: bool = False
++    can_invite_users: bool = False
++    can_pin_messages: bool = False
++    can_change_info: bool = False
++    can_manage_topics: bool = False
++    can_manage_tags: bool = False
++    can_manage_chat: bool = False
++
++    @property
++    def can_manage_user_actions(self) -> bool:
++        return self.can_restrict_members
++
++    @property
++    def can_manage_links_and_join_approval(self) -> bool:
++        return self.can_invite_users
++
++    @property
++    def can_delete_link_or_ddx_messages(self) -> bool:
++        return self.can_delete_messages
++
++
++def permissions_from_chat_member(member: Any) -> TigraoBotPermissions:
++    status = getattr(member, "status", None)
++    status_value = getattr(status, "value", status)
++    is_admin = status_value in {"administrator", "creator"}
++    return TigraoBotPermissions(
++        is_admin=is_admin,
++        can_delete_messages=bool(getattr(member, "can_delete_messages", False)),
++        can_restrict_members=bool(getattr(member, "can_restrict_members", False)),
++        can_invite_users=bool(getattr(member, "can_invite_users", False)),
++        can_pin_messages=bool(getattr(member, "can_pin_messages", False)),
++        can_change_info=bool(getattr(member, "can_change_info", False)),
++        can_manage_topics=bool(getattr(member, "can_manage_topics", False)),
++        can_manage_tags=bool(getattr(member, "can_manage_tags", False)),
++        can_manage_chat=bool(getattr(member, "can_manage_chat", False)),
++    )
++
++
++async def get_bot_permissions(bot: Any, chat_id: int) -> TigraoBotPermissions:
++    me = await bot.get_me()
++    member = await bot.get_chat_member(chat_id, me.id)
++    return permissions_from_chat_member(member)
+diff --git a/app/plugins/tigrao_fsm/plugin.py b/app/plugins/tigrao_fsm/plugin.py
+index d0fbf08..6442391 100644
+--- a/app/plugins/tigrao_fsm/plugin.py
++++ b/app/plugins/tigrao_fsm/plugin.py
+@@ -1,22 +1,51 @@
+ """Objeto do plugin Tigrão FSM isolado.
+ 
+-Etapa 01: não registra routers, não conecta hooks e não altera dispatcher.
++Etapa 02 prepara a interface final, sem conectar ao dispatcher real do TR4.
+ """
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
++from .permissions import is_private_panel_surface
++from .runtime.ddx_runtime import handle as ddx_handle
++
+ @dataclass(slots=True)
+ class TigraoFSMPlugin:
+     """Contêiner isolado para montagem futura do Tigrão FSM."""
+     mounted: bool = False
+     routers: list[Any] = field(default_factory=list)
++    current_user_id: int | None = None
++
++    def mount(self, dispatcher: Any) -> None:
++        """Prepara routers internos sem incluir no dispatcher global nesta etapa."""
++        _ = dispatcher
++        self.mounted = True
+ 
+     async def before_dispatch(self, bot: Any, update: Any) -> bool:
+-        """Hook futuro para DDX/runtime; sempre inativo na Etapa 01."""
+-        return False
++        """Runtime isolado para DDX hard futuro; não conectado ao webhook real."""
++        return await ddx_handle(bot, update)
++
++    def set_current_user(self, user_id: int | None) -> None:
++        self.current_user_id = int(user_id) if user_id is not None else None
+ 
+     def register_router_stub(self, router: Any) -> None:
+-        """Guarda routers para etapa futura sem chamar dispatcher.include_router."""
++        """Guarda routers para etapa futura sem chamar o dispatcher real."""
+         self.routers.append(router)
++
++    async def handle_tigrao_command(self, bot: Any, message: Any, *, authorized: bool) -> bool:
++        """Implementa regra DM-only do painel de modo testável e isolado."""
++        chat = getattr(message, "chat", None)
++        chat_type = getattr(chat, "type", None)
++        if is_private_panel_surface(chat_type):
++            if authorized and hasattr(message, "answer"):
++                await message.answer("Tigrão")
++            return True
++        if authorized:
++            user_id = getattr(getattr(message, "from_user", None), "id", None)
++            if user_id is not None:
++                try:
++                    await bot.send_message(user_id, "Tigrão")
++                except Exception:
++                    return True
++        return True
+diff --git a/app/plugins/tigrao_fsm/runtime/ddx_runtime.py b/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
+index c102f8d..2bafab9 100644
+--- a/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
++++ b/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
+@@ -1,12 +1,27 @@
+-"""Stub runtime do Tigrão FSM isolado.
+-
+-Etapa 01: nenhum hook é conectado ao webhook real.
+-"""
++"""Runtime DDX hard isolado do Tigrão FSM, ainda não conectado ao webhook."""
+ from __future__ import annotations
+-from typing import Any
++from dataclasses import dataclass
++from typing import Any, Callable, Awaitable
+ 
+ RUNTIME_ACTIVE = False
+ 
+-async def handle(*args: Any, **kwargs: Any) -> bool:
+-    """Retorna False para indicar que o runtime não processou o update."""
+-    return False
++@dataclass(frozen=True, slots=True)
++class DDXConfig:
++    active: bool = False
++    filter_text: str | None = None
++
++
++async def handle(bot: Any, update: Any, *, config: DDXConfig | None = None, logger: Callable[[dict[str, Any]], Awaitable[None]] | None = None) -> bool:
++    config = config or DDXConfig()
++    message = getattr(update, "message", update)
++    chat = getattr(message, "chat", None)
++    if not config.active or getattr(chat, "type", None) not in {"group", "supergroup"}:
++        return False
++    text = getattr(message, "text", "") or ""
++    if config.filter_text and config.filter_text not in text:
++        return False
++    if hasattr(bot, "delete_message"):
++        await bot.delete_message(chat.id, message.message_id)
++    if logger is not None:
++        await logger({"ato": "ddx_delete", "resultado": "apagado", "onde": "before_dispatch"})
++    return True
+diff --git a/app/plugins/tigrao_fsm/services.py b/app/plugins/tigrao_fsm/services.py
+new file mode 100644
+index 0000000..08e831f
+--- /dev/null
++++ b/app/plugins/tigrao_fsm/services.py
+@@ -0,0 +1,68 @@
++"""Serviços internos isolados do Tigrão FSM."""
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from typing import Any
++
++from .models import JOIN_REQUEST_TTL, TigraoJoinRequest
++
++
++def build_group_unavailable_text(name: str, chat_id: int) -> str:
++    return (
++        f"Grupo selecionado: {name}\n"
++        f"ID do grupo: {chat_id}\n"
++        "Status do bot: não administrador\n"
++        "Painel indisponível para este grupo.\n"
++        "Promova o bot a administrador para usar o Tigrão aqui."
++    )
++
++
++async def create_join_request_link(bot: Any, chat_id: int, **kwargs: Any) -> Any:
++    kwargs["creates_join_request"] = True
++    kwargs.pop("member_limit", None)
++    return await bot.create_chat_invite_link(chat_id=chat_id, **kwargs)
++
++
++def find_pending_join_request(requests: list[TigraoJoinRequest], *, chat_id: int, user_id: int, now: datetime | None = None) -> TigraoJoinRequest | None:
++    now = now or datetime.now(timezone.utc)
++    cutoff = now - JOIN_REQUEST_TTL
++    for request in requests:
++        if request.chat_id == chat_id and request.user_id == user_id and request.status == "pendente" and request.received_at >= cutoff:
++            return request
++    return None
++
++
++async def approve_pending_join_request(bot: Any, request: TigraoJoinRequest, *, processed_by: int | None, autoaccept: bool, origin: str) -> str:
++    approved_at = datetime.now(timezone.utc)
++    try:
++        await bot.approve_chat_join_request(chat_id=request.chat_id, user_id=request.user_id)
++    except Exception as exc:  # serviço isolado registra falha real sem afirmar aprovação
++        request.status = "falhou"
++        request.processed_at = approved_at
++        request.processed_by = processed_by
++        request.result_detail = f"falha ao aprovar: {exc}"
++        return request.result_detail
++    request.status = "aprovado"
++    request.processed_at = approved_at
++    request.processed_by = processed_by
++    request.result_detail = (
++        "Entrada aprovada\n"
++        f"Usuário: {request.full_name}\n"
++        f"Username: @{request.username}" if request.username else "Username: não informado"
++    )
++    return (
++        "Entrada aprovada\n"
++        f"Usuário: {request.full_name}\n"
++        f"Username: {'@' + request.username if request.username else 'não informado'}\n"
++        f"ID: {request.user_id}\n"
++        f"Grupo: {request.chat_title}\n"
++        f"ID do grupo: {request.chat_id}\n"
++        "Resultado: solicitação aprovada\n"
++        "Método: approveChatJoinRequest\n"
++        "Detecção: direta\n"
++        "Onde: chat_join_request\n"
++        f"Data/hora do pedido: {request.request_date.isoformat()}\n"
++        f"Data/hora da aprovação: {approved_at.isoformat()}\n"
++        f"Autoaceite: {'sim' if autoaccept else 'não'}\n"
++        f"Origem: {origin}"
++    )
+diff --git a/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM.diff b/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM.diff
+new file mode 100644
+index 0000000..9ded845
+--- /dev/null
++++ b/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM.diff
+@@ -0,0 +1,383 @@
++ app/plugins/tigrao_fsm/keyboards.py           | 119 +++++++++++++++++++++-----
++ app/plugins/tigrao_fsm/mount.py               |   9 +-
++ app/plugins/tigrao_fsm/permissions.py         |  58 +++++++++++--
++ app/plugins/tigrao_fsm/plugin.py              |  37 +++++++-
++ app/plugins/tigrao_fsm/runtime/ddx_runtime.py |  31 +++++--
++ tests/test_tigrao_fsm_skeleton.py             |  14 +--
++ 6 files changed, 219 insertions(+), 49 deletions(-)
++
++diff --git a/app/plugins/tigrao_fsm/keyboards.py b/app/plugins/tigrao_fsm/keyboards.py
++index 560935d..ad9fdfe 100644
++--- a/app/plugins/tigrao_fsm/keyboards.py
+++++ b/app/plugins/tigrao_fsm/keyboards.py
++@@ -1,43 +1,122 @@
++-"""Utilitários de teclados do Tigrão FSM isolado.
++-
++-Stub estrutural: cria especificações de botões e tenta usar recursos coloridos quando o aiogram instalado permitir.
++-"""
+++"""Teclados seguros do Tigrão FSM isolado."""
++ from __future__ import annotations
++ 
+++import inspect
+++import re
++ from dataclasses import dataclass
++-from typing import Literal
+++from typing import Any, Literal
++ 
++ ButtonStyle = Literal["primary", "success", "danger"]
++ CALLBACK_PREFIX = "tgf:"
+++MAX_CALLBACK_DATA_BYTES = 64
++ ALLOWED_BUTTON_STYLES: tuple[ButtonStyle, ...] = ("primary", "success", "danger")
+++_ALLOWED_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+++_ALLOWED_ACTIONS = {"home", "grp", "logs", "close", "confirm"}
+++
++ 
++ @dataclass(frozen=True, slots=True)
++ class TigraoButtonSpec:
++     text: str
++-    callback_data: str
+++    callback_data: str | None = None
+++    url: str | None = None
+++    copy_text: str | None = None
++     style: ButtonStyle = "primary"
++ 
++ 
++-def make_callback(session_id: str, *parts: str) -> str:
++-    clean_parts = [str(part).strip(":") for part in parts if str(part)]
++-    return f"{CALLBACK_PREFIX}{session_id}:" + ":".join(clean_parts)
+++def _valid_token(value: str | None) -> bool:
+++    return bool(value) and ":" not in value and bool(_ALLOWED_TOKEN_RE.fullmatch(value))
++ 
++ 
++-def parse_callback(data: str) -> tuple[str, tuple[str, ...]] | None:
+++def _callback_is_valid(data: str) -> bool:
+++    if not data or len(data.encode("utf-8")) > MAX_CALLBACK_DATA_BYTES:
+++        return False
++     if not data.startswith(CALLBACK_PREFIX):
++-        return None
+++        return False
++     tail = data[len(CALLBACK_PREFIX):]
++-    if not tail:
++-        return None
++-    sid, *parts = tail.split(":")
++-    if not sid or any(len(part) > 48 for part in parts):
+++    pieces = tail.split(":")
+++    if len(pieces) != 2:
+++        return False
+++    sid, action = pieces
+++    return _valid_token(sid) and _valid_token(action) and action in _ALLOWED_ACTIONS
+++
+++
+++def make_callback(session_id: str, *parts: str) -> str:
+++    if not _valid_token(session_id):
+++        raise ValueError("invalid Tigrão session_id")
+++    if len(parts) != 1 or not _valid_token(parts[0]) or parts[0] not in _ALLOWED_ACTIONS:
+++        raise ValueError("invalid Tigrão callback action")
+++    callback = f"{CALLBACK_PREFIX}{session_id}:{parts[0]}"
+++    if not _callback_is_valid(callback):
+++        raise ValueError("invalid or too long Tigrão callback_data")
+++    return callback
+++
+++
+++def parse_callback(data: str) -> tuple[str, tuple[str, ...]] | None:
+++    if not isinstance(data, str) or not _callback_is_valid(data):
++         return None
++-    return sid, tuple(parts)
+++    sid, action = data[len(CALLBACK_PREFIX):].split(":")
+++    return sid, (action,)
++ 
++ 
++-def button(text: str, callback_data: str, *, style: ButtonStyle = "primary") -> TigraoButtonSpec:
+++def _validate_single_action(callback_data: str | None, url: str | None, copy_text: str | None) -> None:
+++    actions = [callback_data is not None, url is not None, copy_text is not None]
+++    if sum(actions) != 1:
+++        raise ValueError("exactly one button action is required")
+++    if callback_data is not None and not _callback_is_valid(callback_data):
+++        raise ValueError("invalid internal Tigrão callback_data")
+++
+++
+++def button(
+++    text: str,
+++    callback_data: str | None = None,
+++    *,
+++    url: str | None = None,
+++    copy_text: str | None = None,
+++    style: ButtonStyle = "primary",
+++) -> TigraoButtonSpec:
++     if style not in ALLOWED_BUTTON_STYLES:
++         raise ValueError(f"unsupported Tigrão button style: {style}")
++-    if not callback_data.startswith(CALLBACK_PREFIX):
++-        raise ValueError("Tigrão callback must use the tgf: namespace")
++-    return TigraoButtonSpec(text=text, callback_data=callback_data, style=style)
+++    _validate_single_action(callback_data, url, copy_text)
+++    return TigraoButtonSpec(text=text, callback_data=callback_data, url=url, copy_text=copy_text, style=style)
+++
+++
+++def _button_kwargs(spec: TigraoButtonSpec) -> dict[str, Any]:
+++    kwargs: dict[str, Any] = {"text": spec.text}
+++    if spec.callback_data is not None:
+++        kwargs["callback_data"] = spec.callback_data
+++    elif spec.url is not None:
+++        kwargs["url"] = spec.url
+++    elif spec.copy_text is not None:
+++        kwargs["copy_text"] = spec.copy_text
+++    return kwargs
+++
+++
+++def to_inline_keyboard_button(spec: TigraoButtonSpec) -> Any:
+++    from aiogram.types import InlineKeyboardButton
+++
+++    kwargs = _button_kwargs(spec)
+++    try:
+++        sig = inspect.signature(InlineKeyboardButton)
+++        if "style" in sig.parameters:
+++            kwargs["style"] = spec.style
+++    except (TypeError, ValueError):
+++        kwargs["style"] = spec.style
+++    try:
+++        return InlineKeyboardButton(**kwargs)
+++    except TypeError:
+++        kwargs.pop("style", None)
+++        return InlineKeyboardButton(**kwargs)
+++
+++
+++def to_inline_keyboard_markup(rows: list[list[TigraoButtonSpec]]) -> Any:
+++    from aiogram.types import InlineKeyboardMarkup
+++
+++    keyboard = [[to_inline_keyboard_button(spec) for spec in row] for row in rows]
+++    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+++
+++
+++def home_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+++    return [
+++        [button("Selecionar grupo", make_callback(session_id, "grp"), style="primary")],
+++        [button("Fechar", make_callback(session_id, "close"), style="danger")],
+++    ]
++diff --git a/app/plugins/tigrao_fsm/mount.py b/app/plugins/tigrao_fsm/mount.py
++index b806c78..d5e50e1 100644
++--- a/app/plugins/tigrao_fsm/mount.py
+++++ b/app/plugins/tigrao_fsm/mount.py
++@@ -1,6 +1,6 @@
++ """Ponto de montagem futuro do Tigrão FSM.
++ 
++-Não chama dispatcher.include_router nesta etapa.
+++Não conecta o plugin ao dispatcher real nesta etapa.
++ """
++ from __future__ import annotations
++ 
++@@ -9,6 +9,7 @@ from .plugin import TigraoFSMPlugin
++ 
++ 
++ def build_tigrao_fsm_plugin(*, dispatcher: Any | None = None) -> TigraoFSMPlugin:
++-    """Cria o plugin isolado sem conectá-lo ao dispatcher real."""
++-    _ = dispatcher
++-    return TigraoFSMPlugin(mounted=False)
+++    plugin = TigraoFSMPlugin(mounted=False)
+++    if dispatcher is not None:
+++        plugin.mount(dispatcher)
+++    return plugin
++diff --git a/app/plugins/tigrao_fsm/permissions.py b/app/plugins/tigrao_fsm/permissions.py
++index ef6f435..975bbc6 100644
++--- a/app/plugins/tigrao_fsm/permissions.py
+++++ b/app/plugins/tigrao_fsm/permissions.py
++@@ -1,10 +1,9 @@
++-"""Permissões isoladas do Tigrão FSM.
++-
++-Stub da Etapa 01: autorização real será revisada na integração futura.
++-"""
+++"""Permissões e superfície do painel isolado do Tigrão FSM."""
++ from __future__ import annotations
++ 
++ from collections.abc import Iterable
+++from dataclasses import dataclass
+++from typing import Any
++ 
++ 
++ def is_authorized_user(user_id: int | None, *, owner_ids: Iterable[int] = (), moderator_ids: Iterable[int] = ()) -> bool:
++@@ -13,6 +12,53 @@ def is_authorized_user(user_id: int | None, *, owner_ids: Iterable[int] = (), mo
++     return int(user_id) in {int(v) for v in owner_ids} | {int(v) for v in moderator_ids}
++ 
++ 
++-def should_answer_panel_publicly(chat_type: str | None) -> bool:
++-    """Painel nunca deve responder publicamente em grupo nesta etapa."""
+++def is_private_panel_surface(chat_type: str | None) -> bool:
++     return chat_type == "private"
+++
+++
+++@dataclass(frozen=True, slots=True)
+++class TigraoBotPermissions:
+++    is_admin: bool = False
+++    can_delete_messages: bool = False
+++    can_restrict_members: bool = False
+++    can_invite_users: bool = False
+++    can_pin_messages: bool = False
+++    can_change_info: bool = False
+++    can_manage_topics: bool = False
+++    can_manage_tags: bool = False
+++    can_manage_chat: bool = False
+++
+++    @property
+++    def can_manage_user_actions(self) -> bool:
+++        return self.can_restrict_members
+++
+++    @property
+++    def can_manage_links_and_join_approval(self) -> bool:
+++        return self.can_invite_users
+++
+++    @property
+++    def can_delete_link_or_ddx_messages(self) -> bool:
+++        return self.can_delete_messages
+++
+++
+++def permissions_from_chat_member(member: Any) -> TigraoBotPermissions:
+++    status = getattr(member, "status", None)
+++    status_value = getattr(status, "value", status)
+++    is_admin = status_value in {"administrator", "creator"}
+++    return TigraoBotPermissions(
+++        is_admin=is_admin,
+++        can_delete_messages=bool(getattr(member, "can_delete_messages", False)),
+++        can_restrict_members=bool(getattr(member, "can_restrict_members", False)),
+++        can_invite_users=bool(getattr(member, "can_invite_users", False)),
+++        can_pin_messages=bool(getattr(member, "can_pin_messages", False)),
+++        can_change_info=bool(getattr(member, "can_change_info", False)),
+++        can_manage_topics=bool(getattr(member, "can_manage_topics", False)),
+++        can_manage_tags=bool(getattr(member, "can_manage_tags", False)),
+++        can_manage_chat=bool(getattr(member, "can_manage_chat", False)),
+++    )
+++
+++
+++async def get_bot_permissions(bot: Any, chat_id: int) -> TigraoBotPermissions:
+++    me = await bot.get_me()
+++    member = await bot.get_chat_member(chat_id, me.id)
+++    return permissions_from_chat_member(member)
++diff --git a/app/plugins/tigrao_fsm/plugin.py b/app/plugins/tigrao_fsm/plugin.py
++index d0fbf08..6442391 100644
++--- a/app/plugins/tigrao_fsm/plugin.py
+++++ b/app/plugins/tigrao_fsm/plugin.py
++@@ -1,22 +1,51 @@
++ """Objeto do plugin Tigrão FSM isolado.
++ 
++-Etapa 01: não registra routers, não conecta hooks e não altera dispatcher.
+++Etapa 02 prepara a interface final, sem conectar ao dispatcher real do TR4.
++ """
++ from __future__ import annotations
++ 
++ from dataclasses import dataclass, field
++ from typing import Any
++ 
+++from .permissions import is_private_panel_surface
+++from .runtime.ddx_runtime import handle as ddx_handle
+++
++ @dataclass(slots=True)
++ class TigraoFSMPlugin:
++     """Contêiner isolado para montagem futura do Tigrão FSM."""
++     mounted: bool = False
++     routers: list[Any] = field(default_factory=list)
+++    current_user_id: int | None = None
+++
+++    def mount(self, dispatcher: Any) -> None:
+++        """Prepara routers internos sem incluir no dispatcher global nesta etapa."""
+++        _ = dispatcher
+++        self.mounted = True
++ 
++     async def before_dispatch(self, bot: Any, update: Any) -> bool:
++-        """Hook futuro para DDX/runtime; sempre inativo na Etapa 01."""
++-        return False
+++        """Runtime isolado para DDX hard futuro; não conectado ao webhook real."""
+++        return await ddx_handle(bot, update)
+++
+++    def set_current_user(self, user_id: int | None) -> None:
+++        self.current_user_id = int(user_id) if user_id is not None else None
++ 
++     def register_router_stub(self, router: Any) -> None:
++-        """Guarda routers para etapa futura sem chamar dispatcher.include_router."""
+++        """Guarda routers para etapa futura sem chamar o dispatcher real."""
++         self.routers.append(router)
+++
+++    async def handle_tigrao_command(self, bot: Any, message: Any, *, authorized: bool) -> bool:
+++        """Implementa regra DM-only do painel de modo testável e isolado."""
+++        chat = getattr(message, "chat", None)
+++        chat_type = getattr(chat, "type", None)
+++        if is_private_panel_surface(chat_type):
+++            if authorized and hasattr(message, "answer"):
+++                await message.answer("Tigrão")
+++            return True
+++        if authorized:
+++            user_id = getattr(getattr(message, "from_user", None), "id", None)
+++            if user_id is not None:
+++                try:
+++                    await bot.send_message(user_id, "Tigrão")
+++                except Exception:
+++                    return True
+++        return True
++diff --git a/app/plugins/tigrao_fsm/runtime/ddx_runtime.py b/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
++index c102f8d..2bafab9 100644
++--- a/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
+++++ b/app/plugins/tigrao_fsm/runtime/ddx_runtime.py
++@@ -1,12 +1,27 @@
++-"""Stub runtime do Tigrão FSM isolado.
++-
++-Etapa 01: nenhum hook é conectado ao webhook real.
++-"""
+++"""Runtime DDX hard isolado do Tigrão FSM, ainda não conectado ao webhook."""
++ from __future__ import annotations
++-from typing import Any
+++from dataclasses import dataclass
+++from typing import Any, Callable, Awaitable
++ 
++ RUNTIME_ACTIVE = False
++ 
++-async def handle(*args: Any, **kwargs: Any) -> bool:
++-    """Retorna False para indicar que o runtime não processou o update."""
++-    return False
+++@dataclass(frozen=True, slots=True)
+++class DDXConfig:
+++    active: bool = False
+++    filter_text: str | None = None
+++
+++
+++async def handle(bot: Any, update: Any, *, config: DDXConfig | None = None, logger: Callable[[dict[str, Any]], Awaitable[None]] | None = None) -> bool:
+++    config = config or DDXConfig()
+++    message = getattr(update, "message", update)
+++    chat = getattr(message, "chat", None)
+++    if not config.active or getattr(chat, "type", None) not in {"group", "supergroup"}:
+++        return False
+++    text = getattr(message, "text", "") or ""
+++    if config.filter_text and config.filter_text not in text:
+++        return False
+++    if hasattr(bot, "delete_message"):
+++        await bot.delete_message(chat.id, message.message_id)
+++    if logger is not None:
+++        await logger({"ato": "ddx_delete", "resultado": "apagado", "onde": "before_dispatch"})
+++    return True
++diff --git a/tests/test_tigrao_fsm_skeleton.py b/tests/test_tigrao_fsm_skeleton.py
++index 93ce54f..664f65a 100644
++--- a/tests/test_tigrao_fsm_skeleton.py
+++++ b/tests/test_tigrao_fsm_skeleton.py
++@@ -26,10 +26,10 @@ def test_main_py_not_changed_to_import_internal_tigrao_fsm_plugin() -> None:
++ def test_callback_namespace_is_own_prefix() -> None:
++     from app.plugins.tigrao_fsm.keyboards import CALLBACK_PREFIX, make_callback, parse_callback
++ 
++-    callback = make_callback("abc123", "logs", "2")
+++    callback = make_callback("abc123", "logs")
++     assert CALLBACK_PREFIX == "tgf:"
++-    assert callback == "tgf:abc123:logs:2"
++-    assert parse_callback(callback) == ("abc123", ("logs", "2"))
+++    assert callback == "tgf:abc123:logs"
+++    assert parse_callback(callback) == ("abc123", ("logs",))
++ 
++ 
++ def test_plugin_documentation_exists() -> None:
++@@ -46,8 +46,8 @@ def test_no_active_dispatcher_connection_in_skeleton() -> None:
++ 
++ 
++ def test_no_public_group_panel_response_is_implemented() -> None:
++-    from app.plugins.tigrao_fsm.permissions import should_answer_panel_publicly
+++    from app.plugins.tigrao_fsm.permissions import is_private_panel_surface
++ 
++-    assert should_answer_panel_publicly("group") is False
++-    assert should_answer_panel_publicly("supergroup") is False
++-    assert should_answer_panel_publicly("private") is True
+++    assert is_private_panel_surface("group") is False
+++    assert is_private_panel_surface("supergroup") is False
+++    assert is_private_panel_surface("private") is True
+diff --git a/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_RELATORIO.md b/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_RELATORIO.md
+new file mode 100644
+index 0000000..3201f83
+--- /dev/null
++++ b/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_RELATORIO.md
+@@ -0,0 +1,97 @@
++# Relatório Codex — Tigrão FSM — Etapa 02
++## 1. Resumo objetivo
++Etapa 02 concluída com atualização isolada do plugin `app/plugins/tigrao_fsm/`, sem conexão ao `main.py`, sem montagem no dispatcher global e sem alteração do fluxo musical do TR4.
++
++## 2. Correções feitas sobre a Etapa 1
++- Callbacks corrigidos com limite de 64 bytes, validação UTF-8, namespace `tgf:`, tokens internos seguros, rejeição de vazio, `:` interno, partes ambíguas e ações fora do formato permitido.
++- Função de superfície renomeada para `is_private_panel_surface`, retornando `True` somente para `private`.
++- Botões reais preparados com fallback para `aiogram`, validação de ação única e suporte seguro a `style` quando disponível.
++- Interface interna final exposta via `mount(dispatcher)`, `before_dispatch(bot, update)` e `set_current_user(user_id)`, ainda isolada.
++- Testes estáticos ampliados para callback, botões, superfície DM-only, parsers, X9 e isolamento.
++
++## 3. Arquivos criados
++- `app/plugins/tigrao_fsm/parsers.py`
++- `app/plugins/tigrao_fsm/models.py`
++- `app/plugins/tigrao_fsm/services.py`
++- `tests/test_tigrao_fsm_stage2_static.py`
++- `artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_RELATORIO.md`
++- `artifacts/codex_reports/ETAPA_02_TIGRAO_FSM.diff`
++- `artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_STATUS.txt`
++
++## 4. Arquivos alterados
++- `app/plugins/tigrao_fsm/keyboards.py`
++- `app/plugins/tigrao_fsm/permissions.py`
++- `app/plugins/tigrao_fsm/plugin.py`
++- `app/plugins/tigrao_fsm/mount.py`
++- `app/plugins/tigrao_fsm/runtime/ddx_runtime.py`
++- `tests/test_tigrao_fsm_skeleton.py`
++
++## 5. Arquivos removidos
++Nenhum.
++
++## 6. Escopo aplicado
++- Painel DM-only preparado internamente.
++- Home limpa com botões `Selecionar grupo` e `Fechar`.
++- Texto de grupo indisponível quando o bot não é administrador.
++- Estrutura de permissões do bot e mapeamentos internos.
++- Estruturas de join requests, autoaceite e logs.
++- Link de solicitação preparado sem `member_limit` quando `creates_join_request=True`.
++- Parser de múltiplos IDs positivos com inválidos e deduplicação preservando ordem.
++- Serviço isolado para aceitar ID pendente salvo.
++- Confirmação com ID Telegram e sem afirmar confirmação pós-entrada sem `chat_member`.
++- Parser X9 isolado que só aceita prefixo explícito `x9`.
++- Runtime DDX hard isolado via `before_dispatch`, ainda sem conexão real.
++
++## 7. Escopo não aplicado
++- Não houve conexão ao `main.py`.
++- Não houve alteração em `app/bot/telegram.py`.
++- Não houve ativação no dispatcher real.
++- Não houve ativação real de X9, DDX ou webhook.
++- Não houve alteração de `/playing`, `/radiofm`, `/tnow`, `/tly`, inline musical ou WebApp musical.
++
++## 8. Garantias de isolamento musical
++- `app/main.py`: não tocado para importar ou montar o Tigrão.
++- `app/bot/telegram.py`: não alterado.
++- `app/bot/playing*`: não alterado.
++- `app/bot/radiofm.py`: não alterado.
++- `app/bot/tnow.py`: não alterado.
++- `app/bot/tly.py`: não alterado.
++- `app/bot/music_inline.py`: não alterado.
++- `app/web_music/`: não alterado.
++
++## 9. Segurança aplicada
++- `callback_data` limitado a 64 bytes e validado por bytes UTF-8.
++- Payload grande mantido fora do callback; callback contém apenas sessão e ação.
++- Painel somente por DM, sem fallback público em grupo.
++- Autoaceite exige ID numérico positivo; `@username`, texto, IDs negativos e chat IDs negativos são rejeitados.
++
++## 10. Telegram/Bot API aplicado
++- `callback_data`: respeitado contrato de 1 a 64 bytes.
++- `style`: preparado para `primary`, `success` e `danger` quando aceito pela versão instalada; fallback sem `style` quando incompatível.
++- `createChatInviteLink`: quando `creates_join_request=True`, o helper remove `member_limit`.
++- `approve/decline` e `chat_join_request`: estruturas e permissões usam `can_invite_users` como permissão necessária.
++- `user_chat_id`: armazenável como inteiro de 64 bits e modelado como dado auxiliar para tentativa de DM por até 5 minutos, sem ser chave operacional de aprovação.
++
++## 11. Validações executadas
++- `python -m compileall -q app`: passou.
++- `python -m pytest -q tests/test_tigrao_fsm_skeleton.py`: passou, 7 testes.
++- `python -m pytest -q tests/test_tigrao_fsm_stage2_static.py`: passou, 12 testes.
++
++## 12. Testes que não rodaram
++Nenhum teste obrigatório deixou de rodar.
++
++## 13. Riscos ou pendências
++- Etapa 3 ainda deve conectar o plugin ao dispatcher real com revisão humana.
++- Storage persistente real ainda precisa ser integrado.
++- Aprovação/declínio reais dependem de permissões do bot em runtime.
++- Logs finais e telas de abas ainda precisam de integração real.
++
++## 14. Como revisar esta etapa
++- Revisar `app/plugins/tigrao_fsm/keyboards.py` para segurança de callbacks e botões.
++- Revisar `app/plugins/tigrao_fsm/permissions.py` para superfície DM-only e permissões.
++- Revisar `app/plugins/tigrao_fsm/parsers.py` para IDs e X9.
++- Rodar os três comandos de validação da seção 11.
++- Confirmar que `app/main.py`, `app/bot/telegram.py` e arquivos musicais não receberam import ou referência ao Tigrão.
++
++## 15. Conclusão
++Concluída. A Etapa 02 foi implementada em modo isolado, sem avançar para a Etapa 3.
+diff --git a/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_STATUS.txt b/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_STATUS.txt
+new file mode 100644
+index 0000000..0d63454
+--- /dev/null
++++ b/artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_STATUS.txt
+@@ -0,0 +1,33 @@
++BRANCH:
++work
++
++STATUS:
++ M app/plugins/tigrao_fsm/keyboards.py
++ M app/plugins/tigrao_fsm/mount.py
++ M app/plugins/tigrao_fsm/permissions.py
++ M app/plugins/tigrao_fsm/plugin.py
++ M app/plugins/tigrao_fsm/runtime/ddx_runtime.py
++ M tests/test_tigrao_fsm_skeleton.py
++?? app/plugins/tigrao_fsm/models.py
++?? app/plugins/tigrao_fsm/parsers.py
++?? app/plugins/tigrao_fsm/services.py
++?? artifacts/codex_reports/ETAPA_02_TIGRAO_FSM.diff
++?? artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_RELATORIO.md
++?? artifacts/codex_reports/ETAPA_02_TIGRAO_FSM_STATUS.txt
++?? tests/test_tigrao_fsm_stage2_static.py
++
++
++STATUS SEM ARTIFACTS:
++ M app/plugins/tigrao_fsm/keyboards.py
++ M app/plugins/tigrao_fsm/mount.py
++ M app/plugins/tigrao_fsm/permissions.py
++ M app/plugins/tigrao_fsm/plugin.py
++ M app/plugins/tigrao_fsm/runtime/ddx_runtime.py
++ M tests/test_tigrao_fsm_skeleton.py
++?? app/plugins/tigrao_fsm/models.py
++?? app/plugins/tigrao_fsm/parsers.py
++?? app/plugins/tigrao_fsm/services.py
++?? tests/test_tigrao_fsm_stage2_static.py
++
++LAST COMMIT:
++90b38ff Merge pull request #5 from romastefale/codex/preparar-estrutura-isolada-do-tigrao-fsm-4adwdj
+diff --git a/tests/test_tigrao_fsm_skeleton.py b/tests/test_tigrao_fsm_skeleton.py
+index 93ce54f..664f65a 100644
+--- a/tests/test_tigrao_fsm_skeleton.py
++++ b/tests/test_tigrao_fsm_skeleton.py
+@@ -26,10 +26,10 @@ def test_main_py_not_changed_to_import_internal_tigrao_fsm_plugin() -> None:
+ def test_callback_namespace_is_own_prefix() -> None:
+     from app.plugins.tigrao_fsm.keyboards import CALLBACK_PREFIX, make_callback, parse_callback
+ 
+-    callback = make_callback("abc123", "logs", "2")
++    callback = make_callback("abc123", "logs")
+     assert CALLBACK_PREFIX == "tgf:"
+-    assert callback == "tgf:abc123:logs:2"
+-    assert parse_callback(callback) == ("abc123", ("logs", "2"))
++    assert callback == "tgf:abc123:logs"
++    assert parse_callback(callback) == ("abc123", ("logs",))
+ 
+ 
+ def test_plugin_documentation_exists() -> None:
+@@ -46,8 +46,8 @@ def test_no_active_dispatcher_connection_in_skeleton() -> None:
+ 
+ 
+ def test_no_public_group_panel_response_is_implemented() -> None:
+-    from app.plugins.tigrao_fsm.permissions import should_answer_panel_publicly
++    from app.plugins.tigrao_fsm.permissions import is_private_panel_surface
+ 
+-    assert should_answer_panel_publicly("group") is False
+-    assert should_answer_panel_publicly("supergroup") is False
+-    assert should_answer_panel_publicly("private") is True
++    assert is_private_panel_surface("group") is False
++    assert is_private_panel_surface("supergroup") is False
++    assert is_private_panel_surface("private") is True
+diff --git a/tests/test_tigrao_fsm_stage2_static.py b/tests/test_tigrao_fsm_stage2_static.py
+new file mode 100644
+index 0000000..1992320
+--- /dev/null
++++ b/tests/test_tigrao_fsm_stage2_static.py
+@@ -0,0 +1,105 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def read(path: str) -> str:
++    return (ROOT / path).read_text(encoding="utf-8")
++
++
++def test_callback_valid() -> None:
++    from app.plugins.tigrao_fsm.keyboards import make_callback, parse_callback
++
++    callback = make_callback("sid_123", "home")
++    assert callback == "tgf:sid_123:home"
++    assert parse_callback(callback) == ("sid_123", ("home",))
++
++
++def test_callback_above_64_bytes_rejected() -> None:
++    from app.plugins.tigrao_fsm.keyboards import make_callback, parse_callback
++
++    with pytest.raises(ValueError):
++        make_callback("s" * 60, "confirm")
++    assert parse_callback("tgf:" + "s" * 60 + ":confirm") is None
++
++
++def test_callback_with_internal_colon_rejected() -> None:
++    from app.plugins.tigrao_fsm.keyboards import make_callback, parse_callback
++
++    with pytest.raises(ValueError):
++        make_callback("sid:bad", "home")
++    with pytest.raises(ValueError):
++        make_callback("sid", "ho:me")
++    assert parse_callback("tgf:sid:home:extra") is None
++
++
++def test_empty_callback_rejected() -> None:
++    from app.plugins.tigrao_fsm.keyboards import parse_callback
++
++    assert parse_callback("") is None
++
++
++def test_internal_button_rejects_url_with_callback_data() -> None:
++    from app.plugins.tigrao_fsm.keyboards import button, make_callback
++
++    with pytest.raises(ValueError):
++        button("bad", make_callback("sid", "home"), url="https://example.com")
++
++
++def test_parse_multiple_ids_and_invalids() -> None:
++    from app.plugins.tigrao_fsm.parsers import parse_user_ids
++
++    parsed = parse_user_ids("123456789 987654321, 555444333\n777888999 123456789")
++    assert parsed.valid == [123456789, 987654321, 555444333, 777888999]
++    assert parsed.invalid == []
++
++
++def test_parse_user_ids_rejects_negative_username_and_text() -> None:
++    from app.plugins.tigrao_fsm.parsers import parse_user_ids
++
++    parsed = parse_user_ids("123 -456 @usuario texto -100987")
++    assert parsed.valid == [123]
++    assert parsed.invalid == ["-456", "@usuario", "texto", "-100987"]
++
++
++def test_x9_only_accepts_explicit_prefix() -> None:
++    from app.plugins.tigrao_fsm.parsers import parse_x9_query
++
++    assert parse_x9_query("x9 123 456") == "123 456"
++    assert parse_x9_query("123 456") is None
++    assert parse_x9_query("xx9 123") is None
++
++
++def test_private_panel_surface_only_private() -> None:
++    from app.plugins.tigrao_fsm.permissions import is_private_panel_surface
++
++    assert is_private_panel_surface("private") is True
++    assert is_private_panel_surface("group") is False
++    assert is_private_panel_surface("supergroup") is False
++    assert is_private_panel_surface("channel") is False
++
++
++def test_main_py_does_not_import_tigrao_plugin() -> None:
++    assert "app.plugins.tigrao_fsm" not in read("app/main.py")
++
++
++def test_telegram_py_not_altered_for_tigrao() -> None:
++    assert "tigrao_fsm" not in read("app/bot/telegram.py").lower()
++
++
++def test_music_files_do_not_reference_tigrao() -> None:
++    paths = [
++        "app/bot/radiofm.py",
++        "app/bot/tnow.py",
++        "app/bot/tly.py",
++        "app/bot/music_inline.py",
++    ]
++    paths.extend(str(p.relative_to(ROOT)) for p in (ROOT / "app/bot").glob("playing*.py"))
++    paths.extend(str(p.relative_to(ROOT)) for p in (ROOT / "app/web_music").rglob("*.py"))
++    for path in paths:
++        if (ROOT / path).exists():
++            assert "tigrao_fsm" not in read(path).lower()

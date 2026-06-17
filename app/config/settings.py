@@ -181,6 +181,39 @@ CANVAS_CACHE_CHANNEL_ID = _int_env(
     legacy=("CANVAS_CACHE_CHANNEL_ID",),
 )
 
+LYRICS_ARCHIVE_ENABLED = _bool_env(
+    "TR3_LYRICS_ARCHIVE_ENABLED",
+    CANVAS_CACHE_ENABLED,
+    legacy=("LYRICS_ARCHIVE_ENABLED",),
+)
+LYRICS_CACHE_CHANNEL_ID = _int_env(
+    "TR3_LYRICS_CACHE_CHANNEL_ID",
+    CANVAS_CACHE_CHANNEL_ID,
+    legacy=("LYRICS_CACHE_CHANNEL_ID",),
+)
+
+COVER_CACHE_ENABLED = _bool_env(
+    "TR3_COVER_CACHE_ENABLED",
+    CANVAS_CACHE_ENABLED,
+    legacy=("COVER_CACHE_ENABLED",),
+)
+COVER_CACHE_CHANNEL_ID = _int_env(
+    "TR3_COVER_CACHE_CHANNEL_ID",
+    CANVAS_CACHE_CHANNEL_ID,
+    legacy=("COVER_CACHE_CHANNEL_ID",),
+)
+
+CANVAS_AUDIO_PREVIEW_ENABLED = _bool_env(
+    "TR3_CANVAS_AUDIO_PREVIEW_ENABLED",
+    True,
+    legacy=("CANVAS_AUDIO_PREVIEW_ENABLED",),
+)
+CANVAS_AUDIO_PROCESS_VERSION = _env(
+    "TR3_CANVAS_AUDIO_PROCESS_VERSION",
+    "preview-v1",
+    legacy=("CANVAS_AUDIO_PROCESS_VERSION",),
+).strip() or "preview-v1"
+
 LASTFM_API_KEY = _env(
     "TR3_LASTFM_API_KEY",
     legacy=("LASTFM_API_KEY",),
@@ -197,21 +230,53 @@ HTTP_TIMEOUT_SECONDS = _float_env(
 )
 
 def _resolve_data_dir() -> Path:
-    raw = _env("TR3_DATA_DIR", "/data", legacy=("DATA_DIR",)).strip() or "/data"
-    candidates = [Path(raw), Path("/app/data"), Path("/tmp/tr4-data")]
+    """Resolve um diretório gravável para dados persistentes.
+
+    Ordem:
+    1. DATA_DIR explícito, se informado;
+    2. diretórios típicos de produção;
+    3. diretório temporário do runtime;
+    4. home do usuário;
+    5. diretório local do projeto.
+
+    A importação de settings nunca deve quebrar apenas porque /data, /app/data
+    ou /tmp não são graváveis no ambiente local, como ocorre no Termux.
+    """
+    import tempfile
+
+    candidates: list[Path] = []
+
+    env_data_dir = os.getenv("DATA_DIR")
+    if env_data_dir:
+        candidates.append(Path(env_data_dir))
+
+    candidates.extend(
+        [
+            Path("/data"),
+            Path("/app/data"),
+            Path(tempfile.gettempdir()) / "tr4-data",
+            Path.home() / ".tr4-data",
+            Path.cwd() / ".tr4-data",
+        ]
+    )
+
+    seen: set[str] = set()
     for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+
         try:
             candidate.mkdir(parents=True, exist_ok=True)
-            probe = candidate / ".write-test"
+            probe = candidate / ".write_test"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink(missing_ok=True)
             return candidate
-        except OSError:
-            logger.warning("DATA_DIR_UNAVAILABLE path=%s", candidate)
-    fallback = Path("/tmp/tr4-data")
-    fallback.mkdir(parents=True, exist_ok=True)
-    return fallback
+        except Exception as exc:
+            logger.warning("DATA_DIR_UNAVAILABLE path=%s error=%s", candidate, exc)
 
+    raise RuntimeError("Nenhum DATA_DIR gravável foi encontrado.")
 
 DATA_DIR = _resolve_data_dir()
 
@@ -238,6 +303,11 @@ CODE_OWNER_IDS = _int_set_env(
     "TR4_CODE_OWNER_IDS",
     legacy=("CODE_OWNER_IDS", "TR3_OWNER_IDS", "OWNER_IDS", "TR3_OWNER_ID", "OWNER_ID"),
 )
+TIGRAO_FSM_ENABLED = _bool_env("TIGRAO_FSM_ENABLED", False)
+TIGRAO_FSM_MODERATOR_IDS = _int_set_env("TIGRAO_FSM_MODERATOR_IDS")
+TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED = _bool_env("TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED", False)
+TIGRAO_FSM_DDX_HARD_ENABLED = _bool_env("TIGRAO_FSM_DDX_HARD_ENABLED", False)
+TIGRAO_FSM_REACTIONS_ENABLED = _bool_env("TIGRAO_FSM_REACTIONS_ENABLED", False)
 
 
 def is_code_owner(user_id: int | str | None) -> bool:
