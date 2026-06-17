@@ -271,6 +271,8 @@ CODE_OWNER_IDS = _int_set_env(
     "TR4_CODE_OWNER_IDS",
     legacy=("CODE_OWNER_IDS", "TR3_OWNER_IDS", "OWNER_IDS", "TR3_OWNER_ID", "OWNER_ID"),
 )
+TIGRAO_FSM_ENABLED = _bool_env("TIGRAO_FSM_ENABLED", False)
+TIGRAO_FSM_MODERATOR_IDS = _int_set_env("TIGRAO_FSM_MODERATOR_IDS")
 
 
 def is_code_owner(user_id: int | str | None) -> bool:

@@ -1,0 +1,13 @@
+BRANCH:
+work
+
+STATUS:
+ M artifacts/codex_reports/ETAPA_03_TIGRAO_FSM.diff
+ M artifacts/codex_reports/ETAPA_03_TIGRAO_FSM_RELATORIO.md
+ M artifacts/codex_reports/ETAPA_03_TIGRAO_FSM_STATUS.txt
+
+
+STATUS SEM ARTIFACTS:
+
+LAST COMMIT:
+cab2780 feat: mount tigrao fsm plugin behind feature flag

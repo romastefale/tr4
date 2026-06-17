@@ -83,8 +83,11 @@ def test_private_panel_surface_only_private() -> None:
     assert is_private_panel_surface("channel") is False
 
 
-def test_main_py_does_not_import_tigrao_plugin() -> None:
-    assert "app.plugins.tigrao_fsm" not in read("app/main.py")
+def test_main_py_imports_only_public_tigrao_plugin() -> None:
+    main_py = read("app/main.py")
+    assert "from app.plugins.tigrao_fsm import build_tigrao_fsm_plugin" in main_py
+    assert "app.plugins.tigrao_fsm.runtime" not in main_py
+    assert "app.plugins.tigrao_fsm.routers" not in main_py
 
 
 def test_telegram_py_not_altered_for_tigrao() -> None:

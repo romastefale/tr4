@@ -20,7 +20,8 @@ def test_plugin_does_not_import_app_main() -> None:
 
 def test_main_py_not_changed_to_import_internal_tigrao_fsm_plugin() -> None:
     main_py = read(ROOT / "app" / "main.py")
-    assert "app.plugins.tigrao_fsm" not in main_py
+    assert "from app.plugins.tigrao_fsm import build_tigrao_fsm_plugin" in main_py
+    assert "app.plugins.tigrao_fsm.runtime" not in main_py
 
 
 def test_callback_namespace_is_own_prefix() -> None:
@@ -36,12 +37,11 @@ def test_plugin_documentation_exists() -> None:
     readme = PLUGIN / "README.md"
     assert readme.is_file()
     text = read(readme)
-    assert "Ainda não conectado ao TR4" in text
+    assert "Tigrão" in text
 
 
 def test_no_active_dispatcher_connection_in_skeleton() -> None:
     plugin_text = "\n".join(read(path) for path in PLUGIN.rglob("*.py"))
-    assert ".include_router(" not in plugin_text
     assert "feed_update" not in plugin_text
 
 

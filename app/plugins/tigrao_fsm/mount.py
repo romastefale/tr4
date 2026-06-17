@@ -1,7 +1,4 @@
-"""Ponto de montagem futuro do Tigrão FSM.
-
-Não conecta o plugin ao dispatcher real nesta etapa.
-"""
+"""Ponto público de construção do plugin Tigrão FSM."""
 from __future__ import annotations
 
 from typing import Any
