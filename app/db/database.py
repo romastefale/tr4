@@ -482,6 +482,12 @@ def init_db() -> None:
         from app.models.telegram_user_profile import TelegramUserProfile  # noqa: F401  # identidade visual Telegram
 
         Base.metadata.create_all(bind=engine)
+        try:
+            from app.plugins.tigrao_fsm.storage import ensure_storage
+
+            ensure_storage()
+        except Exception:
+            logger.warning("DB tigrao_fsm storage creation failed", exc_info=True)
         logger.info("Database initialized.")
     except Exception as exc:
         logger.exception("Database initialization failed: %s", exc)

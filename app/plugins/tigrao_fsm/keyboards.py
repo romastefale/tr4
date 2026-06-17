@@ -175,3 +175,21 @@ def home_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
         [button("Selecionar grupo", make_callback(session_id, "grp"), style="primary")],
         [button("Fechar", make_callback(session_id, "close"), style="danger")],
     ]
+
+def join_requests_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+    return [
+        [button("Pendentes 2h", make_callback(session_id, "join_pending"))],
+        [button("Aceitar ID pendente", make_callback(session_id, "join_pending"))],
+        [button("Criar link com solicitação", make_callback(session_id, "join_link"))],
+        [button("Autorizações automáticas", make_callback(session_id, "join_auto"))],
+        [button("Voltar", make_callback(session_id, "back")), button("Fechar", make_callback(session_id, "close"), style="danger")],
+    ]
+
+
+def logs_keyboard(session_id: str) -> list[list[TigraoButtonSpec]]:
+    return [
+        [button("Moderação", make_callback(session_id, "log_mod")), button("Música", make_callback(session_id, "log_music"))],
+        [button("Uso", make_callback(session_id, "log_use")), button("Entradas", make_callback(session_id, "log_join"))],
+        [button("Erros", make_callback(session_id, "log_err"))],
+        [button("Voltar", make_callback(session_id, "back")), button("Fechar", make_callback(session_id, "close"), style="danger")],
+    ]
