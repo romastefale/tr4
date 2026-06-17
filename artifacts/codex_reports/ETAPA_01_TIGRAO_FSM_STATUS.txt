@@ -1,0 +1,9 @@
+BRANCH:
+fsm
+
+STATUS:
+ M artifacts/codex_reports/ETAPA_01_TIGRAO_FSM.diff
+ M artifacts/codex_reports/ETAPA_01_TIGRAO_FSM_STATUS.txt
+
+LAST COMMIT:
+8f99bc3 chore: isolate tigrao fsm plugin skeleton
