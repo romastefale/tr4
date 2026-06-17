@@ -230,37 +230,33 @@ HTTP_TIMEOUT_SECONDS = _float_env(
 )
 
 def _resolve_data_dir() -> Path:
-    """Resolve um diretório gravável para dados persistentes.
+    """Resolve diretório gravável sem quebrar import/startup.
 
-    Ordem:
-    1. DATA_DIR explícito, se informado;
-    2. diretórios típicos de produção;
-    3. diretório temporário do runtime;
-    4. home do usuário;
-    5. diretório local do projeto.
-
-    A importação de settings nunca deve quebrar apenas porque /data, /app/data
-    ou /tmp não são graváveis no ambiente local, como ocorre no Termux.
+    Regra correta para Railway/Termux:
+    - respeita TR3_DATA_DIR/DATA_DIR explícito quando existir;
+    - tenta diretórios de produção conhecidos;
+    - usa diretório local gravável do projeto como fallback final;
+    - nunca assume que /tmp é gravável;
+    - nunca deixa settings.py quebrar apenas por falta de permissão em /data.
     """
-    import tempfile
-
+    raw = _env("TR3_DATA_DIR", "", legacy=("DATA_DIR",)).strip()
     candidates: list[Path] = []
 
-    env_data_dir = os.getenv("DATA_DIR")
-    if env_data_dir:
-        candidates.append(Path(env_data_dir))
+    if raw:
+        candidates.append(Path(raw))
 
     candidates.extend(
         [
             Path("/data"),
             Path("/app/data"),
-            Path(tempfile.gettempdir()) / "tr4-data",
-            Path.home() / ".tr4-data",
             Path.cwd() / ".tr4-data",
+            Path.home() / ".tr4-data",
         ]
     )
 
     seen: set[str] = set()
+    last_error: str | None = None
+
     for candidate in candidates:
         key = str(candidate)
         if key in seen:
@@ -269,14 +265,16 @@ def _resolve_data_dir() -> Path:
 
         try:
             candidate.mkdir(parents=True, exist_ok=True)
-            probe = candidate / ".write_test"
+            probe = candidate / ".write-test"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink(missing_ok=True)
             return candidate
         except Exception as exc:
-            logger.warning("DATA_DIR_UNAVAILABLE path=%s error=%s", candidate, exc)
+            last_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("DATA_DIR_UNAVAILABLE path=%s error=%s", candidate, last_error)
 
-    raise RuntimeError("Nenhum DATA_DIR gravável foi encontrado.")
+    raise RuntimeError(f"Nenhum DATA_DIR gravável foi encontrado. last_error={last_error}")
+
 
 DATA_DIR = _resolve_data_dir()
 

@@ -290,14 +290,14 @@ def inline_icon(name: str) -> Response:
     )
 
 @app.get("/healthz", status_code=200)
-def healthz() -> dict[str, object]:
-    return {
-        "status": "ok",
-        "mode": "music_only",
-        "rate_limit": rate_limit_status(),
-        "telegram_startup": _telegram_startup_status,
-        "database_startup": _db_startup_status,
-    }
+def healthz() -> dict[str, str]:
+    """Railway liveness check.
+
+    Não toca DB, Telegram, storage, filesystem ou rede.
+    Falhas desses subsistemas aparecem em /readyz e nos logs.
+    """
+    return {"status": "ok"}
+
 
 
 @app.get("/readyz")
