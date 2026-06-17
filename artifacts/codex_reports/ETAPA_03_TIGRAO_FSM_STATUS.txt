@@ -2,32 +2,12 @@ BRANCH:
 work
 
 STATUS:
- M app/config/settings.py
- M app/main.py
- M app/plugins/tigrao_fsm/__init__.py
- M app/plugins/tigrao_fsm/keyboards.py
- M app/plugins/tigrao_fsm/mount.py
- M app/plugins/tigrao_fsm/plugin.py
- M app/plugins/tigrao_fsm/routers/panel.py
- M tests/test_tigrao_fsm_skeleton.py
- M tests/test_tigrao_fsm_stage2_static.py
-?? artifacts/codex_reports/ETAPA_03_TIGRAO_FSM.diff
-?? artifacts/codex_reports/ETAPA_03_TIGRAO_FSM_RELATORIO.md
-?? artifacts/codex_reports/ETAPA_03_TIGRAO_FSM_STATUS.txt
-?? tests/test_tigrao_fsm_stage3_static.py
+ M artifacts/codex_reports/ETAPA_03_TIGRAO_FSM.diff
+ M artifacts/codex_reports/ETAPA_03_TIGRAO_FSM_RELATORIO.md
+ M artifacts/codex_reports/ETAPA_03_TIGRAO_FSM_STATUS.txt
 
 
 STATUS SEM ARTIFACTS:
- M app/config/settings.py
- M app/main.py
- M app/plugins/tigrao_fsm/__init__.py
- M app/plugins/tigrao_fsm/keyboards.py
- M app/plugins/tigrao_fsm/mount.py
- M app/plugins/tigrao_fsm/plugin.py
- M app/plugins/tigrao_fsm/routers/panel.py
- M tests/test_tigrao_fsm_skeleton.py
- M tests/test_tigrao_fsm_stage2_static.py
-?? tests/test_tigrao_fsm_stage3_static.py
 
 LAST COMMIT:
-9526767 feat: apply corrected tigrao fsm stages 1 and 2
+cab2780 feat: mount tigrao fsm plugin behind feature flag
