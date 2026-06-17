@@ -11,7 +11,25 @@ CALLBACK_PREFIX = "tgf:"
 MAX_CALLBACK_DATA_BYTES = 64
 ALLOWED_BUTTON_STYLES: tuple[ButtonStyle, ...] = ("primary", "success", "danger")
 _ALLOWED_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_ALLOWED_ACTIONS = {"home", "grp", "logs", "close", "confirm"}
+CALLBACK_ACTIONS = frozenset({
+    "home",
+    "grp",
+    "grp_sel",
+    "logs",
+    "log_mod",
+    "log_music",
+    "log_use",
+    "log_join",
+    "log_err",
+    "join",
+    "join_link",
+    "join_auto",
+    "join_pending",
+    "ddx",
+    "confirm",
+    "back",
+    "close",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,13 +55,13 @@ def _callback_is_valid(data: str) -> bool:
     if len(pieces) != 2:
         return False
     sid, action = pieces
-    return _valid_token(sid) and _valid_token(action) and action in _ALLOWED_ACTIONS
+    return _valid_token(sid) and _valid_token(action) and action in CALLBACK_ACTIONS
 
 
 def make_callback(session_id: str, *parts: str) -> str:
     if not _valid_token(session_id):
         raise ValueError("invalid Tigrão session_id")
-    if len(parts) != 1 or not _valid_token(parts[0]) or parts[0] not in _ALLOWED_ACTIONS:
+    if len(parts) != 1 or not _valid_token(parts[0]) or parts[0] not in CALLBACK_ACTIONS:
         raise ValueError("invalid Tigrão callback action")
     callback = f"{CALLBACK_PREFIX}{session_id}:{parts[0]}"
     if not _callback_is_valid(callback):
@@ -64,6 +82,8 @@ def _validate_single_action(callback_data: str | None, url: str | None, copy_tex
         raise ValueError("exactly one button action is required")
     if callback_data is not None and not _callback_is_valid(callback_data):
         raise ValueError("invalid internal Tigrão callback_data")
+    if copy_text is not None and not (1 <= len(copy_text) <= 256):
+        raise ValueError("copy_text must contain 1 to 256 characters")
 
 
 def button(
@@ -87,12 +107,20 @@ def _button_kwargs(spec: TigraoButtonSpec) -> dict[str, Any]:
     elif spec.url is not None:
         kwargs["url"] = spec.url
     elif spec.copy_text is not None:
-        kwargs["copy_text"] = spec.copy_text
+        try:
+            from aiogram.types import CopyTextButton
+        except Exception:
+            kwargs["copy_text"] = spec.copy_text
+        else:
+            kwargs["copy_text"] = CopyTextButton(text=spec.copy_text)
     return kwargs
 
 
 def to_inline_keyboard_button(spec: TigraoButtonSpec) -> Any:
-    from aiogram.types import InlineKeyboardButton
+    try:
+        from aiogram.types import InlineKeyboardButton
+    except Exception:
+        return spec
 
     kwargs = _button_kwargs(spec)
     try:
@@ -109,9 +137,11 @@ def to_inline_keyboard_button(spec: TigraoButtonSpec) -> Any:
 
 
 def to_inline_keyboard_markup(rows: list[list[TigraoButtonSpec]]) -> Any:
-    from aiogram.types import InlineKeyboardMarkup
-
     keyboard = [[to_inline_keyboard_button(spec) for spec in row] for row in rows]
+    try:
+        from aiogram.types import InlineKeyboardMarkup
+    except Exception:
+        return keyboard
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 

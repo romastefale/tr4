@@ -31,10 +31,11 @@ def parse_user_ids(text: str) -> ParsedUserIds:
 
 
 def parse_x9_query(query: str) -> str | None:
-    clean = (query or "").strip()
-    if not clean.lower().startswith("x9"):
+    raw = query or ""
+    clean = raw.strip()
+    lowered = clean.casefold()
+    if lowered == "x9":
+        return ""
+    if not lowered.startswith("x9 "):
         return None
-    if len(clean) > 2 and not clean[2].isspace() and clean[2] not in {":", "-"}:
-        return None
-    body = clean[2:].lstrip(" :-\t")
-    return body or ""
+    return clean[3:].strip()

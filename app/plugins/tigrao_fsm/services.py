@@ -32,6 +32,26 @@ def find_pending_join_request(requests: list[TigraoJoinRequest], *, chat_id: int
     return None
 
 
+def format_join_approval_detail(request: TigraoJoinRequest, *, approved_at: datetime, autoaccept: bool, origin: str) -> str:
+    username = f"@{request.username}" if request.username else "não informado"
+    return (
+        "Entrada aprovada\n"
+        f"Usuário: {request.full_name}\n"
+        f"Username: {username}\n"
+        f"ID: {request.user_id}\n"
+        f"Grupo: {request.chat_title}\n"
+        f"ID do grupo: {request.chat_id}\n"
+        "Resultado: solicitação aprovada\n"
+        "Método: approveChatJoinRequest\n"
+        "Detecção: direta\n"
+        "Onde: chat_join_request\n"
+        f"Data/hora do pedido: {request.request_date.isoformat()}\n"
+        f"Data/hora da aprovação: {approved_at.isoformat()}\n"
+        f"Autoaceite: {'sim' if autoaccept else 'não'}\n"
+        f"Origem: {origin}"
+    )
+
+
 async def approve_pending_join_request(bot: Any, request: TigraoJoinRequest, *, processed_by: int | None, autoaccept: bool, origin: str) -> str:
     approved_at = datetime.now(timezone.utc)
     try:
@@ -45,24 +65,6 @@ async def approve_pending_join_request(bot: Any, request: TigraoJoinRequest, *, 
     request.status = "aprovado"
     request.processed_at = approved_at
     request.processed_by = processed_by
-    request.result_detail = (
-        "Entrada aprovada\n"
-        f"Usuário: {request.full_name}\n"
-        f"Username: @{request.username}" if request.username else "Username: não informado"
-    )
-    return (
-        "Entrada aprovada\n"
-        f"Usuário: {request.full_name}\n"
-        f"Username: {'@' + request.username if request.username else 'não informado'}\n"
-        f"ID: {request.user_id}\n"
-        f"Grupo: {request.chat_title}\n"
-        f"ID do grupo: {request.chat_id}\n"
-        "Resultado: solicitação aprovada\n"
-        "Método: approveChatJoinRequest\n"
-        "Detecção: direta\n"
-        "Onde: chat_join_request\n"
-        f"Data/hora do pedido: {request.request_date.isoformat()}\n"
-        f"Data/hora da aprovação: {approved_at.isoformat()}\n"
-        f"Autoaceite: {'sim' if autoaccept else 'não'}\n"
-        f"Origem: {origin}"
-    )
+    detail = format_join_approval_detail(request, approved_at=approved_at, autoaccept=autoaccept, origin=origin)
+    request.result_detail = detail
+    return detail
