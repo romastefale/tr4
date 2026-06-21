@@ -7,9 +7,11 @@ from aiogram import BaseMiddleware, Dispatcher, Router
 from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, Message, TelegramObject
 
-from app.config.settings import is_code_owner
+from app.config.settings import CODE_OWNER_IDS, is_code_owner
 from app.services.ops_control import (
     build_listening_export_parts,
+    listening_known_chat_ids,
+    listening_known_user_ids,
     legacy_counts,
     legacy_mode_enabled,
     refresh_legacy_restrictions,
@@ -56,6 +58,90 @@ def _owner_only(message: Message) -> bool:
 def _arg(message: Message) -> str:
     parts = (message.text or "").split(maxsplit=1)
     return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _telegram_object_dump(value: Any) -> Any:
+    try:
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json", exclude_none=False)
+    except Exception:
+        pass
+    return str(value)
+
+
+async def _build_listening_api_debug(bot: Any, *, api_all: bool = False) -> dict[str, Any]:
+    """Best-effort live Telegram API diagnostics for /listening.
+
+    The database export is the source of truth. This section asks Telegram for
+    current bot/chat/user state when possible, so owner can see what the bot can
+    still resolve via API at command time. Failures are recorded instead of
+    aborting the export.
+    """
+    from app.utils.datetime import utcnow_naive
+
+    debug: dict[str, Any] = {
+        "generated_at": utcnow_naive().isoformat(sep=" "),
+        "errors": [],
+        "user_chats": [],
+        "chat_debug": [],
+    }
+    try:
+        me = await bot.get_me()
+        debug["bot"] = _telegram_object_dump(me)
+        bot_id = getattr(me, "id", None)
+    except Exception as exc:
+        debug["errors"].append({"scope": "get_me", "error": f"{type(exc).__name__}: {exc}"})
+        bot_id = None
+
+    user_ids = listening_known_user_ids()
+    chat_ids = listening_known_chat_ids()
+    debug["known_user_ids_total"] = len(user_ids)
+    debug["known_chat_ids_total"] = len(chat_ids)
+
+    # Telegram Bot API has no bulk endpoint; keep this bounded by default so /listening
+    # remains usable in production. Owner can request /listening api-all for all known ids.
+    max_user_lookups = len(user_ids) if api_all else 100
+    max_chat_lookups = len(chat_ids) if api_all else 100
+    debug["api_all"] = bool(api_all)
+    debug["users_queried"] = min(len(user_ids), max_user_lookups)
+    debug["chats_queried"] = min(len(chat_ids), max_chat_lookups)
+    debug["users_not_queried_due_to_limit"] = max(0, len(user_ids) - max_user_lookups)
+    debug["chats_not_queried_due_to_limit"] = max(0, len(chat_ids) - max_chat_lookups)
+
+    for user_id in user_ids[:max_user_lookups]:
+        item: dict[str, Any] = {"user_id": user_id}
+        try:
+            chat = await bot.get_chat(user_id)
+            item["get_chat"] = _telegram_object_dump(chat)
+        except Exception as exc:
+            item["get_chat_error"] = f"{type(exc).__name__}: {exc}"
+        debug["user_chats"].append(item)
+
+    owner_ids = sorted(int(value) for value in CODE_OWNER_IDS)
+    for chat_id in chat_ids[:max_chat_lookups]:
+        item = {"chat_id": chat_id}
+        try:
+            chat = await bot.get_chat(chat_id)
+            item["get_chat"] = _telegram_object_dump(chat)
+        except Exception as exc:
+            item["get_chat_error"] = f"{type(exc).__name__}: {exc}"
+        if bot_id is not None:
+            try:
+                item["bot_member"] = _telegram_object_dump(await bot.get_chat_member(chat_id, int(bot_id)))
+            except Exception as exc:
+                item["bot_member_error"] = f"{type(exc).__name__}: {exc}"
+        owner_members: list[dict[str, Any]] = []
+        for owner_id in owner_ids:
+            owner_item: dict[str, Any] = {"owner_id": owner_id}
+            try:
+                owner_item["member"] = _telegram_object_dump(await bot.get_chat_member(chat_id, owner_id))
+            except Exception as exc:
+                owner_item["member_error"] = f"{type(exc).__name__}: {exc}"
+            owner_members.append(owner_item)
+        if owner_members:
+            item["owner_members"] = owner_members
+        debug["chat_debug"].append(item)
+    return debug
 
 
 def _status_text() -> str:
@@ -152,7 +238,10 @@ async def listening_command(message: Message) -> None:
     if not message.from_user:
         return
     try:
-        exports = build_listening_export_parts()
+        raw_arg = _arg(message).lower()
+        api_all = raw_arg in {"api-all", "all", "completo", "full"}
+        api_debug = await _build_listening_api_debug(message.bot, api_all=api_all)
+        exports = build_listening_export_parts(api_debug=api_debug)
     except Exception:
         logger.exception("LISTENING_EXPORT_FAILED")
         await message.answer("Falha ao gerar exportação /listening. Veja o log do deploy.")
@@ -167,7 +256,7 @@ async def listening_command(message: Message) -> None:
                 f"Usuários identificados: <code>{export.user_count}</code>.\n"
                 f"Linhas exportadas: <code>{export.row_count}</code> "
                 f"(logins: <code>{export.login_row_count}</code>; interações: <code>{export.interaction_row_count}</code>).\n"
-                "O TXT e o PDF trazem resumo por user_id e dump integral das tabelas de inscrição/interação disponíveis."
+                "O TXT e o PDF trazem resumo enriquecido por user_id, tokens completos, dump integral das tabelas, updates brutos salvos e depuração possível via API."
             )
             await message.bot.send_document(
                 chat_id=message.from_user.id,

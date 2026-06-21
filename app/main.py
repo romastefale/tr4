@@ -42,7 +42,7 @@ from app.db.database import engine, init_db, run_migrations
 from app.security.rate_limit import rate_limit_status
 from app.web_music.router import router as web_music_router
 from app.web_music.state import set_web_music_bot
-from app.services.ops_control import should_drop_update_for_operational_controls, user_id_from_update
+from app.services.ops_control import record_seen_update_payload, should_drop_update_for_operational_controls, user_id_from_update
 
 app = FastAPI(title="TR4 Music Only")
 app.include_router(web_music_router)
@@ -257,7 +257,9 @@ async def telegram_webhook(request: Request) -> object:
         payload = await request.json()
         update = Update.model_validate(payload, context={"bot": bot})
         update_user_id = user_id_from_update(update)
-        if should_drop_update_for_operational_controls(update, is_owner=is_code_owner(update_user_id)):
+        dropped_by_ops = should_drop_update_for_operational_controls(update, is_owner=is_code_owner(update_user_id))
+        record_seen_update_payload(payload, source="webhook", dropped_by_ops=dropped_by_ops)
+        if dropped_by_ops:
             logger.info("WEBHOOK_UPDATE_DROPPED_BY_OPERATIONAL_CONTROL user_id=%s", update_user_id)
             return {"ok": True}
         _remember_music_group_from_update(update)

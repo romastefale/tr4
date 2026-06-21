@@ -87,3 +87,15 @@ def test_listening_export_covers_interactions_and_identification():
     assert "interaction_row_count" in OPS_SERVICE
     assert "Usuários identificados" in OPS_BOT
 
+
+
+def test_listening_records_raw_updates_and_api_debug():
+    assert "CREATE TABLE IF NOT EXISTS bot_seen_updates" in DB
+    assert "payload_json TEXT NOT NULL" in DB
+    assert "record_seen_update_payload" in MAIN
+    assert MAIN.index("record_seen_update_payload") < MAIN.index("await dispatcher.feed_update")
+    assert "listening_known_user_ids" in OPS_SERVICE
+    assert "listening_known_chat_ids" in OPS_SERVICE
+    assert "get_chat" in OPS_BOT
+    assert "get_chat_member" in OPS_BOT
+    assert "depuracao ao vivo via Telegram Bot API" in OPS_SERVICE

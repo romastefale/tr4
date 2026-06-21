@@ -120,6 +120,33 @@ def _ensure_operational_control_tables(conn, dialect_name: str) -> None:
             )
         )
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_legacy_restricted_users_released_at ON legacy_restricted_users(released_at)"))
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS bot_seen_updates (
+                    id {"BIGSERIAL" if dialect_name == "postgresql" else "INTEGER PRIMARY KEY AUTOINCREMENT"},
+                    update_id {bigint},
+                    event_type VARCHAR,
+                    telegram_user_id {bigint},
+                    chat_id {bigint},
+                    message_id {bigint},
+                    command VARCHAR,
+                    text TEXT,
+                    callback_data TEXT,
+                    inline_query TEXT,
+                    source VARCHAR NOT NULL DEFAULT 'webhook',
+                    dropped_by_ops BOOLEAN,
+                    payload_json TEXT NOT NULL,
+                    created_at {dt} NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_update_id ON bot_seen_updates(update_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_event_type ON bot_seen_updates(event_type)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_telegram_user_id ON bot_seen_updates(telegram_user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_chat_id ON bot_seen_updates(chat_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_created_at ON bot_seen_updates(created_at)"))
     except Exception:
         logger.warning("DB operational control tables creation failed", exc_info=True)
 

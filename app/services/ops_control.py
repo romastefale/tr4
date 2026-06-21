@@ -22,6 +22,7 @@ _ALLOWED_DURING_SILENT = {"start", "help"}
 _ALLOWED_FOR_LEGACY_RELOGIN = {"start", "help", "login", "lastfm"}
 _LOGIN_TABLES = ("lastfm_profiles", "spotify_tokens")
 _INTERACTION_TABLES = (
+    "bot_seen_updates",
     "tnow_recent_tracks",
     "track_plays",
     "track_reactions",
@@ -60,11 +61,13 @@ _DATE_HINT_COLUMNS = (
     "expiration",
     "legacy_since",
     "released_at",
+    "archived_at",
 )
 _TABLE_LABELS = {
     "lastfm_profiles": "inscricao Last fm",
     "spotify_tokens": "inscricao Spotify",
     "legacy_restricted_users": "estado legacy",
+    "bot_seen_updates": "updates brutos recebidos pelo webhook",
     "tnow_recent_tracks": "cache recente /tnow",
     "track_plays": "plays/previews registrados",
     "track_reactions": "reacoes em cards",
@@ -422,6 +425,179 @@ def _quote_identifier(name: str) -> str:
     return f'"{name}"'
 
 
+def _payload_event_type(payload: dict[str, Any]) -> str:
+    for key in (
+        "message",
+        "edited_message",
+        "callback_query",
+        "inline_query",
+        "chosen_inline_result",
+        "message_reaction",
+        "message_reaction_count",
+        "channel_post",
+        "edited_channel_post",
+        "my_chat_member",
+        "chat_member",
+        "chat_join_request",
+        "poll",
+        "poll_answer",
+    ):
+        if isinstance(payload.get(key), dict) or payload.get(key) is not None:
+            return key
+    for key in payload:
+        if key != "update_id":
+            return str(key)
+    return "unknown"
+
+
+def _payload_user(payload: dict[str, Any], event_type: str) -> dict[str, Any] | None:
+    event = payload.get(event_type)
+    if not isinstance(event, dict):
+        return None
+    if event_type in {"message", "edited_message", "channel_post", "edited_channel_post"}:
+        user = event.get("from")
+        return user if isinstance(user, dict) else None
+    if event_type in {"callback_query", "inline_query", "chosen_inline_result", "poll_answer"}:
+        user = event.get("from")
+        return user if isinstance(user, dict) else None
+    if event_type == "message_reaction":
+        user = event.get("user") or event.get("actor_chat")
+        return user if isinstance(user, dict) else None
+    if event_type in {"my_chat_member", "chat_member", "chat_join_request"}:
+        user = event.get("from") or event.get("user")
+        return user if isinstance(user, dict) else None
+    return None
+
+
+def _payload_chat(payload: dict[str, Any], event_type: str) -> dict[str, Any] | None:
+    event = payload.get(event_type)
+    if not isinstance(event, dict):
+        return None
+    if event_type == "callback_query":
+        message = event.get("message")
+        if isinstance(message, dict) and isinstance(message.get("chat"), dict):
+            return message.get("chat")
+    chat = event.get("chat")
+    return chat if isinstance(chat, dict) else None
+
+
+def _payload_message(payload: dict[str, Any], event_type: str) -> dict[str, Any] | None:
+    event = payload.get(event_type)
+    if not isinstance(event, dict):
+        return None
+    if event_type == "callback_query":
+        message = event.get("message")
+        return message if isinstance(message, dict) else None
+    if event_type in {"message", "edited_message", "channel_post", "edited_channel_post"}:
+        return event
+    return None
+
+
+def _payload_command(text_value: str | None) -> str | None:
+    return _command_name_from_text(text_value)
+
+
+def _safe_json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
+def record_seen_update_payload(payload: dict[str, Any], *, source: str = "webhook", dropped_by_ops: bool | None = None) -> None:
+    """Persist the raw Telegram update exactly as the bot received it.
+
+    /listening can only export what exists in storage. This table closes the
+    audit gap for new interactions by keeping the original webhook payload plus
+    searchable identifiers. Failure here must never break the bot flow.
+    """
+    try:
+        if not isinstance(payload, dict):
+            return
+        event_type = _payload_event_type(payload)
+        event = payload.get(event_type) if isinstance(payload.get(event_type), dict) else {}
+        user = _payload_user(payload, event_type) or {}
+        chat = _payload_chat(payload, event_type) or {}
+        message = _payload_message(payload, event_type) or {}
+        text_value = message.get("text") if isinstance(message, dict) else None
+        callback_data = None
+        inline_query = None
+        if event_type == "callback_query" and isinstance(event, dict):
+            callback_data = event.get("data")
+        if event_type == "inline_query" and isinstance(event, dict):
+            inline_query = event.get("query")
+        now = utcnow_naive()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO bot_seen_updates (
+                        update_id, event_type, telegram_user_id, chat_id, message_id,
+                        command, text, callback_data, inline_query, source,
+                        dropped_by_ops, payload_json, created_at
+                    ) VALUES (
+                        :update_id, :event_type, :telegram_user_id, :chat_id, :message_id,
+                        :command, :text, :callback_data, :inline_query, :source,
+                        :dropped_by_ops, :payload_json, :created_at
+                    )
+                    """
+                ),
+                {
+                    "update_id": _try_int(payload.get("update_id")),
+                    "event_type": event_type,
+                    "telegram_user_id": _try_int(user.get("id")),
+                    "chat_id": _try_int(chat.get("id")),
+                    "message_id": _try_int(message.get("message_id") or (event.get("message_id") if isinstance(event, dict) else None)),
+                    "command": _payload_command(str(text_value) if text_value is not None else None),
+                    "text": str(text_value) if text_value is not None else None,
+                    "callback_data": str(callback_data) if callback_data is not None else None,
+                    "inline_query": str(inline_query) if inline_query is not None else None,
+                    "source": source,
+                    "dropped_by_ops": dropped_by_ops,
+                    "payload_json": _safe_json_dumps(payload),
+                    "created_at": now,
+                },
+            )
+    except Exception:
+        logger.debug("BOT_SEEN_UPDATE_RECORD_FAILED", exc_info=True)
+
+
+def _collect_distinct_integer_values(column_candidates: tuple[str, ...]) -> list[int]:
+    values: set[int] = set()
+    inspector = inspect(engine)
+    for table_name in _export_table_names(inspector):
+        try:
+            schema = _table_schema(table_name, inspector)
+            columns = [str(column.get("name") or "") for column in schema.get("columns") or []]
+            matching = [column for column in columns if column in column_candidates]
+            for column in columns:
+                lowered = column.lower()
+                if lowered.endswith("_user_id") and "user_id" in column_candidates:
+                    matching.append(column)
+                if lowered.endswith("chat_id") and "chat_id" in column_candidates:
+                    matching.append(column)
+            for column in sorted(set(matching)):
+                with SessionLocal() as db:
+                    rows = db.execute(
+                        text(
+                            f"SELECT DISTINCT {_quote_identifier(column)} AS value FROM {_quote_identifier(table_name)} "
+                            f"WHERE {_quote_identifier(column)} IS NOT NULL"
+                        )
+                    ).mappings().all()
+                for row in rows:
+                    parsed = _try_int(row.get("value"))
+                    if parsed is not None:
+                        values.add(parsed)
+        except Exception:
+            logger.debug("LISTENING_DISTINCT_VALUE_COLLECT_SKIPPED table=%s", table_name, exc_info=True)
+    return sorted(values)
+
+
+def listening_known_user_ids() -> list[int]:
+    return _collect_distinct_integer_values(("user_id", "telegram_user_id", "owner_user_id", "created_by_owner_id", "released_by_user_id"))
+
+
+def listening_known_chat_ids() -> list[int]:
+    return _collect_distinct_integer_values(("chat_id", "channel_chat_id"))
+
+
 def _safe_inspector_call(default: Any, func: Any, *args: Any, **kwargs: Any) -> Any:
     try:
         return func(*args, **kwargs)
@@ -568,6 +744,155 @@ def _compact_track(row: dict[str, Any]) -> str:
     return _stringify(title or artist or row.get("track_id") or "")
 
 
+def _increment_counter(counter: dict[str, int], key: Any) -> None:
+    label = _stringify(key).strip() or "-"
+    counter[label] = int(counter.get(label, 0)) + 1
+
+
+def _counter_text(counter: dict[str, int], *, limit: int = 20) -> str:
+    if not counter:
+        return "-"
+    items = sorted(counter.items(), key=lambda item: (-int(item[1]), str(item[0])))[:limit]
+    return ", ".join(f"{key}={value}" for key, value in items)
+
+
+def _display_name_from_user_dict(user: dict[str, Any]) -> str:
+    title = _stringify(user.get("title")).strip()
+    if title:
+        return title
+    parts = [
+        _stringify(user.get("first_name")).strip(),
+        _stringify(user.get("last_name")).strip(),
+    ]
+    name = " ".join(part for part in parts if part).strip()
+    return name or _stringify(user.get("full_name")).strip() or _stringify(user.get("id")).strip()
+
+
+def _username_from_user_dict(user: dict[str, Any]) -> str:
+    value = _stringify(user.get("username")).strip()
+    return f"@{value}" if value and not value.startswith("@") else value
+
+
+def _telegram_identity_summary(user: dict[str, Any]) -> str:
+    if not user:
+        return "-"
+    parts = []
+    display = _display_name_from_user_dict(user)
+    if display:
+        parts.append(f"nome={display}")
+    username = _username_from_user_dict(user)
+    if username:
+        parts.append(f"username={username}")
+    for key in ("id", "type", "is_bot", "language_code"):
+        if user.get(key) not in (None, ""):
+            parts.append(f"{key}={_stringify(user.get(key))}")
+    return "; ".join(parts) if parts else _stringify(user)
+
+
+def _identity_key(user: dict[str, Any]) -> str:
+    relevant = {
+        key: user.get(key)
+        for key in ("id", "first_name", "last_name", "username", "title", "type", "is_bot", "language_code")
+        if user.get(key) not in (None, "")
+    }
+    return json.dumps(relevant, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _row_payload(row: dict[str, Any]) -> dict[str, Any] | None:
+    raw = row.get("payload_json")
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        parsed = json.loads(str(raw))
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def _chat_type_from_payload(payload: dict[str, Any], event_type: str) -> str | None:
+    chat = _payload_chat(payload, event_type)
+    if isinstance(chat, dict):
+        return _stringify(chat.get("type")).strip() or None
+    return None
+
+
+def _event_label_from_update_row(row: dict[str, Any], payload: dict[str, Any] | None = None) -> str:
+    event_type = _stringify(row.get("event_type")).strip() or ( _payload_event_type(payload) if payload else "unknown" )
+    chat_id = _stringify(row.get("chat_id")).strip()
+    message_id = _stringify(row.get("message_id")).strip()
+    command = _stringify(row.get("command")).strip()
+    source = _stringify(row.get("source")).strip()
+    chat_type = _chat_type_from_payload(payload, event_type) if payload else None
+    parts = [f"evento={event_type}"]
+    if chat_type:
+        parts.append(f"modo_chat={chat_type}")
+    if command:
+        parts.append(f"comando=/{command}")
+    if source:
+        parts.append(f"origem={source}")
+    if chat_id:
+        parts.append(f"chat_id={chat_id}")
+    if message_id:
+        parts.append(f"message_id={message_id}")
+    return "; ".join(parts)
+
+
+def _event_sort_key(event: dict[str, Any]) -> datetime:
+    parsed = _try_datetime(event.get("at"))
+    return parsed or datetime.min
+
+
+def _api_user_identity_map(api_debug: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
+    result: dict[int, dict[str, Any]] = {}
+    if not isinstance(api_debug, dict):
+        return result
+    for item in api_debug.get("user_chats") or []:
+        if not isinstance(item, dict):
+            continue
+        user_id = _try_int(item.get("user_id"))
+        if user_id is None:
+            continue
+        chat = item.get("get_chat")
+        if isinstance(chat, dict):
+            result[user_id] = chat
+        elif item.get("get_chat_error"):
+            result[user_id] = {"id": user_id, "api_error": item.get("get_chat_error")}
+    return result
+
+
+def _api_debug_overview(api_debug: dict[str, Any] | None) -> list[str]:
+    lines: list[str] = []
+    lines.append("[estatistica final enriquecida por API]")
+    if not isinstance(api_debug, dict):
+        lines.append("  API nao consultada nesta exportacao.")
+        lines.append("")
+        return lines
+    user_items = [item for item in (api_debug.get("user_chats") or []) if isinstance(item, dict)]
+    chat_items = [item for item in (api_debug.get("chat_debug") or []) if isinstance(item, dict)]
+    users_ok = sum(1 for item in user_items if isinstance(item.get("get_chat"), dict))
+    users_err = sum(1 for item in user_items if item.get("get_chat_error"))
+    chats_ok = sum(1 for item in chat_items if isinstance(item.get("get_chat"), dict))
+    chats_err = sum(1 for item in chat_items if item.get("get_chat_error"))
+    resolved_usernames = []
+    for item in user_items:
+        chat = item.get("get_chat")
+        if isinstance(chat, dict) and chat.get("username"):
+            resolved_usernames.append(f"{item.get('user_id')}=@{chat.get('username')}")
+    lines.append(f"  usuarios conhecidos no banco: {_stringify(api_debug.get('known_user_ids_total'))}")
+    lines.append(f"  chats conhecidos no banco: {_stringify(api_debug.get('known_chat_ids_total'))}")
+    lines.append(f"  usuarios consultados via getChat: {_stringify(api_debug.get('users_queried'))}; ok={users_ok}; erro={users_err}; nao consultados={_stringify(api_debug.get('users_not_queried_due_to_limit'))}")
+    lines.append(f"  chats consultados via getChat/getChatMember: {_stringify(api_debug.get('chats_queried'))}; ok={chats_ok}; erro={chats_err}; nao consultados={_stringify(api_debug.get('chats_not_queried_due_to_limit'))}")
+    if resolved_usernames:
+        lines.append(f"  usernames publicos resolvidos: {', '.join(resolved_usernames[:50])}" + (" ..." if len(resolved_usernames) > 50 else ""))
+    errors = api_debug.get("errors") or []
+    if errors:
+        lines.append(f"  erros gerais de API: {_stringify(errors)}")
+    lines.append("")
+    return lines
+
+
 def _row_user_roles(row: dict[str, Any], columns: list[str]) -> list[tuple[str, int]]:
     roles: list[tuple[str, int]] = []
     for column in _USER_ID_COLUMNS:
@@ -594,6 +919,17 @@ def _add_user_fact(users: dict[int, dict[str, Any]], user_id: int, *, table_name
             "tpv_rules": [],
             "activity": {},
             "latest_tracks": [],
+            "telegram_saved_identities": {},
+            "event_types": {},
+            "chat_types": {},
+            "commands": {},
+            "sources": {},
+            "dropped_by_ops": {},
+            "first_event": None,
+            "last_event": None,
+            "recent_events": [],
+            "lastfm_rows": [],
+            "spotify_token_rows": [],
         },
     )
     user["tables"].add(table_name)
@@ -613,16 +949,53 @@ def _add_user_fact(users: dict[int, dict[str, Any]], user_id: int, *, table_name
         username = row.get("username")
         if username:
             user["lastfm_usernames"].add(str(username))
+        user["lastfm_rows"].append({key: _stringify(value) for key, value in row.items()})
     elif table_name == "spotify_tokens":
         user["spotify_connected"] = True
         if row.get("expiration"):
             user["spotify_expirations"].append(_stringify(row.get("expiration")))
+        # Owner-only export: keep every token field exactly as stored.
+        user["spotify_token_rows"].append({key: _stringify(value) for key, value in row.items()})
     elif table_name == "legacy_restricted_users":
         user["legacy_status"] = "liberado" if row.get("released_at") else "ativo"
     elif table_name == "tnow_private_visibility":
         user["tpv_rules"].append(
             f"mode={_stringify(row.get('mode')) or '-'}; label={_stringify(row.get('display_label')) or '-'}; enabled={_stringify(row.get('enabled')) or '-'}"
         )
+    elif table_name == "bot_seen_updates":
+        payload = _row_payload(row)
+        event_type = _stringify(row.get("event_type")).strip() or (_payload_event_type(payload) if payload else "unknown")
+        _increment_counter(user["event_types"], event_type)
+        _increment_counter(user["sources"], row.get("source"))
+        _increment_counter(user["dropped_by_ops"], row.get("dropped_by_ops"))
+        command = _stringify(row.get("command")).strip()
+        if command:
+            _increment_counter(user["commands"], f"/{command}")
+        if payload:
+            chat_type = _chat_type_from_payload(payload, event_type)
+            if chat_type:
+                _increment_counter(user["chat_types"], chat_type)
+            identity = _payload_user(payload, event_type)
+            if isinstance(identity, dict) and identity.get("id") is not None:
+                user["telegram_saved_identities"][_identity_key(identity)] = identity
+            # In private chats, Telegram chat fields can also contain username/name.
+            chat = _payload_chat(payload, event_type)
+            if isinstance(chat, dict) and _try_int(chat.get("id")) == user_id:
+                user["telegram_saved_identities"][_identity_key(chat)] = chat
+        event = {
+            "at": _stringify(row.get("created_at")),
+            "label": _event_label_from_update_row(row, payload),
+            "text": _stringify(row.get("text")),
+            "callback_data": _stringify(row.get("callback_data")),
+            "inline_query": _stringify(row.get("inline_query")),
+        }
+        first_event = user.get("first_event")
+        last_event = user.get("last_event")
+        if first_event is None or _event_sort_key(event) < _event_sort_key(first_event):
+            user["first_event"] = event
+        if last_event is None or _event_sort_key(event) > _event_sort_key(last_event):
+            user["last_event"] = event
+        user["recent_events"].append(event)
     elif table_name in {"tnow_recent_tracks", "track_plays", "track_likes", "track_reactions"}:
         track = _compact_track(row)
         if track:
@@ -667,27 +1040,69 @@ def _collect_listening_tables() -> tuple[dict[str, dict[str, Any]], ListeningExp
     return data, stats, users
 
 
-def _format_user_summary_lines(users: dict[int, dict[str, Any]]) -> list[str]:
+def _format_user_summary_lines(users: dict[int, dict[str, Any]], *, api_debug: dict[str, Any] | None = None) -> list[str]:
     lines: list[str] = []
-    lines.append("[resumo por usuario identificado]")
+    lines.append("[resumo por usuario identificado - final enriquecido]")
+    lines.append("  Este resumo cruza tudo que foi salvo no banco com o que a Telegram Bot API conseguiu resolver no momento do /listening.")
+    lines.append("  Tokens e identificadores tambem aparecem no dump integral por tabela abaixo; aqui entram organizados por user_id.")
     if not users:
         lines.append("  nenhum usuario identificado nas tabelas exportadas")
         lines.append("")
         return lines
 
+    api_map = _api_user_identity_map(api_debug)
     for user_id in sorted(users):
         user = users[user_id]
+        api_identity = api_map.get(user_id) or {}
+        saved_identities = list((user.get("telegram_saved_identities") or {}).values())
+        preferred_saved = saved_identities[-1] if saved_identities else {}
         lines.append(f"  usuario_id: {user_id}")
+        lines.append(f"    Telegram salvo nos updates: {_telegram_identity_summary(preferred_saved)}")
+        if len(saved_identities) > 1:
+            lines.append(f"    Telegram salvo - historico de nomes/usernames: {' | '.join(_telegram_identity_summary(item) for item in saved_identities[-5:])}")
+        lines.append(f"    Telegram API atual/getChat: {_telegram_identity_summary(api_identity)}")
+        if api_identity.get("api_error"):
+            lines.append(f"    Telegram API erro: {_stringify(api_identity.get('api_error'))}")
+
         usernames = sorted(user["lastfm_usernames"])
-        lines.append(f"    Last fm usernames: {', '.join(usernames) if usernames else '-'}")
+        lines.append(f"    Last fm usernames salvos: {', '.join(usernames) if usernames else '-'}")
+        if user.get("lastfm_rows"):
+            lines.append("    inscricoes Last fm completas:")
+            for row in user["lastfm_rows"]:
+                lines.append(f"      - {_stringify(row)}")
+
         spotify_exp = sorted(set(user["spotify_expirations"]))
         spotify_text = "sim" if user["spotify_connected"] else "nao"
         if spotify_exp:
             spotify_text += f"; expiracoes={', '.join(spotify_exp[-3:])}"
         lines.append(f"    Spotify conectado: {spotify_text}")
+        if user.get("spotify_token_rows"):
+            lines.append("    tokens Spotify salvos completos:")
+            for index, row in enumerate(user["spotify_token_rows"], start=1):
+                lines.append(f"      token_row_{index}: {_stringify(row)}")
+
+        first_event = user.get("first_event") or {}
+        last_event = user.get("last_event") or {}
+        first_seen = _stringify(user.get("first_seen")) or "-"
+        last_seen = _stringify(user.get("last_seen")) or "-"
+        lines.append(f"    primeira data vista no banco: {first_seen}")
+        lines.append(f"    ultima data vista no banco: {last_seen}")
+        if first_event:
+            lines.append(f"    primeira entrada/interacao bruta salva: {_stringify(first_event.get('at')) or '-'} | {_stringify(first_event.get('label'))}")
+            if first_event.get("text"):
+                lines.append(f"      texto inicial: {_stringify(first_event.get('text'))}")
+        else:
+            lines.append("    primeira entrada/interacao bruta salva: -")
+        if last_event:
+            lines.append(f"    ultima interacao bruta salva: {_stringify(last_event.get('at')) or '-'} | {_stringify(last_event.get('label'))}")
+
+        lines.append(f"    modo/eventos salvos: {_counter_text(user.get('event_types') or {})}")
+        lines.append(f"    modo por tipo de chat: {_counter_text(user.get('chat_types') or {})}")
+        lines.append(f"    comandos usados: {_counter_text(user.get('commands') or {})}")
+        lines.append(f"    origem dos registros: {_counter_text(user.get('sources') or {})}")
+        lines.append(f"    dropped_by_ops: {_counter_text(user.get('dropped_by_ops') or {})}")
         lines.append(f"    legacy: {user['legacy_status']}")
-        lines.append(f"    primeira data vista no banco: {_stringify(user.get('first_seen')) or '-'}")
-        lines.append(f"    ultima data vista no banco: {_stringify(user.get('last_seen')) or '-'}")
+
         roles = sorted(user["roles"])
         lines.append(f"    papeis/colunas onde aparece: {', '.join(roles) if roles else '-'}")
         tables = sorted(user["tables"])
@@ -703,6 +1118,18 @@ def _format_user_summary_lines(users: dict[int, dict[str, Any]]) -> list[str]:
             lines.append("    musicas/interacoes recentes inferidas:")
             for when, table_name, track in latest:
                 lines.append(f"      - {when or '-'} | {table_name} | {track}")
+        recent_events = sorted(user.get("recent_events") or [], key=_event_sort_key, reverse=True)[:8]
+        if recent_events:
+            lines.append("    ultimos updates brutos salvos:")
+            for event in recent_events:
+                extra = ""
+                if event.get("callback_data"):
+                    extra = f" | callback={_stringify(event.get('callback_data'))}"
+                elif event.get("inline_query"):
+                    extra = f" | inline_query={_stringify(event.get('inline_query'))}"
+                elif event.get("text"):
+                    extra = f" | text={_stringify(event.get('text'))}"
+                lines.append(f"      - {_stringify(event.get('at')) or '-'} | {_stringify(event.get('label'))}{extra}")
         lines.append("")
     return lines
 
@@ -766,6 +1193,31 @@ def _format_schema_lines(table_name: str, schema: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _format_api_debug_lines(api_debug: dict[str, Any] | None) -> list[str]:
+    lines: list[str] = []
+    lines.append("[depuracao ao vivo via Telegram Bot API]")
+    if not api_debug:
+        lines.append("  nenhuma depuracao ao vivo foi anexada nesta exportacao")
+        lines.append("")
+        return lines
+    lines.append("  Estes dados nao vêm do banco; foram consultados no momento do /listening pelo bot, quando a API permitiu.")
+    for key in ("generated_at", "bot", "known_user_ids_total", "known_chat_ids_total", "users_queried", "chats_queried", "errors"):
+        if key in api_debug:
+            lines.append(f"  {key}: {_stringify(api_debug.get(key))}")
+    user_chats = api_debug.get("user_chats") or []
+    if user_chats:
+        lines.append("  user_chats/getChat:")
+        for item in user_chats:
+            lines.append(f"    - {_stringify(item)}")
+    chat_debug = api_debug.get("chat_debug") or []
+    if chat_debug:
+        lines.append("  chats/getChat/getChatMember:")
+        for item in chat_debug:
+            lines.append(f"    - {_stringify(item)}")
+    lines.append("")
+    return lines
+
+
 def _format_table_dump_lines(data: dict[str, dict[str, Any]]) -> list[str]:
     lines: list[str] = []
     lines.append("[schema e dados integrais por tabela]")
@@ -795,7 +1247,7 @@ def _format_table_dump_lines(data: dict[str, dict[str, Any]]) -> list[str]:
     return lines
 
 
-def _build_login_export_text(generated_at: datetime) -> tuple[str, ListeningExportStats]:
+def _build_login_export_text(generated_at: datetime, *, api_debug: dict[str, Any] | None = None) -> tuple[str, ListeningExportStats]:
     data, stats, users = _collect_listening_tables()
     lines: list[str] = []
     lines.append("TR4 /listening - exportacao administrativa integral do banco")
@@ -807,6 +1259,9 @@ def _build_login_export_text(generated_at: datetime) -> tuple[str, ListeningExpo
     lines.append("  - inclui schema, primary keys, indices, unique constraints, foreign keys quando o driver expuser")
     lines.append("  - inclui todos os valores gravados, inclusive tokens, file_id, hash, chaves, ids e demais identificadores")
     lines.append("  - resume por user_id/telegram_user_id/owner_user_id quando essas colunas existirem")
+    lines.append("  - cruza nomes/usernames salvos nos updates brutos com getChat da Telegram Bot API quando possivel")
+    lines.append("  - calcula primeira entrada/interacao bruta, modo de uso, comandos, chat type, drops operacionais e tabelas onde o usuario aparece")
+    lines.append("  - lista tokens completos por usuario alem do dump integral da tabela")
     lines.append("  - quando o banco nao salva nome Telegram, o relatorio identifica pelo user_id e pelos dados musicais/operacionais disponiveis")
     lines.append("")
     lines.append("Totais:")
@@ -818,7 +1273,9 @@ def _build_login_export_text(generated_at: datetime) -> tuple[str, ListeningExpo
     lines.append(f"  tabelas presentes: {', '.join(stats.present_tables) if stats.present_tables else '-'}")
     lines.append(f"  tabelas conhecidas ausentes: {', '.join(stats.known_missing_tables) if stats.known_missing_tables else '-'}")
     lines.append("")
-    lines.extend(_format_user_summary_lines(users))
+    lines.extend(_api_debug_overview(api_debug))
+    lines.extend(_format_user_summary_lines(users, api_debug=api_debug))
+    lines.extend(_format_api_debug_lines(api_debug))
     lines.extend(_format_table_dump_lines(data))
     return "\n".join(lines).rstrip() + "\n", stats
 
@@ -924,9 +1381,9 @@ def _split_lines_by_utf8_size(lines: list[str], max_bytes: int) -> list[list[str
     return chunks or [["sem dados"]]
 
 
-def build_listening_export_parts(max_document_bytes: int = MAX_TELEGRAM_DOCUMENT_BYTES) -> list[ExportBundle]:
+def build_listening_export_parts(max_document_bytes: int = MAX_TELEGRAM_DOCUMENT_BYTES, *, api_debug: dict[str, Any] | None = None) -> list[ExportBundle]:
     now = utcnow_naive()
-    text_body, stats = _build_login_export_text(now)
+    text_body, stats = _build_login_export_text(now, api_debug=api_debug)
     lines = text_body.splitlines()
     stamp = now.strftime("%Y%m%d-%H%M%S")
     single = _bundle_from_lines(lines=lines, stamp=stamp, stats=stats)
