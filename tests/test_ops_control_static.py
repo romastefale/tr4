@@ -67,3 +67,23 @@ def test_operational_middleware_and_large_export_guard_are_present():
     assert "dispatcher.update.outer_middleware(OperationalControlMiddleware())" in OPS_BOT
     assert "build_listening_export_parts" in OPS_SERVICE
     assert "MAX_TELEGRAM_DOCUMENT_BYTES" in OPS_SERVICE
+
+def test_listening_export_covers_interactions_and_identification():
+    assert "_INTERACTION_TABLES" in OPS_SERVICE
+    for table in (
+        "tnow_recent_tracks",
+        "track_plays",
+        "track_reactions",
+        "track_likes",
+        "card_messages",
+        "tnow_private_visibility",
+    ):
+        assert table in OPS_SERVICE
+    assert "resumo por usuario identificado" in OPS_SERVICE
+    assert "dados integrais por tabela" in OPS_SERVICE
+    assert "_USER_ID_COLUMNS" in OPS_SERVICE
+    assert "telegram_user_id" in OPS_SERVICE
+    assert "owner_user_id" in OPS_SERVICE
+    assert "interaction_row_count" in OPS_SERVICE
+    assert "Usuários identificados" in OPS_BOT
+

@@ -164,8 +164,10 @@ async def listening_command(message: Message) -> None:
             part_suffix = f" parte {part_number}/{total_parts}" if total_parts > 1 else ""
             caption = (
                 f"Exportação /listening gerada{part_suffix}.\n"
-                f"Registros de login: <code>{export.row_count}</code>.\n"
-                "O TXT contém os valores completos das tabelas de login; o PDF organiza os mesmos dados em páginas de tabela textual."
+                f"Usuários identificados: <code>{export.user_count}</code>.\n"
+                f"Linhas exportadas: <code>{export.row_count}</code> "
+                f"(logins: <code>{export.login_row_count}</code>; interações: <code>{export.interaction_row_count}</code>).\n"
+                "O TXT e o PDF trazem resumo por user_id e dump integral das tabelas de inscrição/interação disponíveis."
             )
             await message.bot.send_document(
                 chat_id=message.from_user.id,
