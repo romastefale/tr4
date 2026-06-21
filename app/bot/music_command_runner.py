@@ -10,7 +10,9 @@ from aiogram import Bot
 from aiogram.types import BufferedInputFile
 
 from app.bot.music_groups import list_groups
+from app.config.settings import is_code_owner
 from app.services.connection_check import is_user_connected
+from app.services.cover_cache import cover_cache_service
 from app.services.lastfm import lastfm_service
 from app.services.likes import likes_service
 from app.services.music import music_service
@@ -49,6 +51,53 @@ def _normalize_optional_text(value: object) -> str | None:
     except Exception:
         return None
     return cleaned or None
+
+
+async def _send_cached_cover_or_text(
+    bot: Bot,
+    chat_id: int,
+    *,
+    track_id: str | None,
+    cover: str | None,
+    caption: str,
+    filename: str,
+    reply_markup=None,
+):
+    if cover:
+        photo = await cover_cache_service.resolve_photo(
+            bot,
+            track_id=track_id,
+            cover_url=cover,
+            filename=filename,
+        )
+        try:
+            return await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo or cover,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        except Exception:
+            logger.warning("WEB_MUSIC_COVER_SEND_FAILED fallback=original_or_text chat=%s track=%s", chat_id, track_id, exc_info=True)
+            if photo and photo != cover:
+                await cover_cache_service.forget(track_id=track_id, cover_url=cover, photo=cover)
+                try:
+                    return await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=cover,
+                        caption=caption,
+                        parse_mode="HTML",
+                        reply_markup=reply_markup,
+                    )
+                except Exception:
+                    logger.warning("WEB_MUSIC_ORIGINAL_COVER_SEND_FAILED fallback=text chat=%s track=%s", chat_id, track_id, exc_info=True)
+    return await bot.send_message(
+        chat_id=chat_id,
+        text=caption,
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+    )
 
 
 def _group_ref_to_chat_id(group_ref: str | int | None) -> int:
@@ -151,21 +200,15 @@ async def execute_nowp_publish(
     track_id, caption, cover, keyboard, card_emoji = payload
 
     try:
-        if cover:
-            sent_group = await bot.send_photo(
-                chat_id=target_chat_id,
-                photo=str(cover),
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
-        else:
-            sent_group = await bot.send_message(
-                chat_id=target_chat_id,
-                text=caption,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
+        sent_group = await _send_cached_cover_or_text(
+            bot,
+            target_chat_id,
+            track_id=track_id,
+            cover=cover,
+            caption=caption,
+            filename="web-nowp-cover.jpg",
+            reply_markup=keyboard,
+        )
     except Exception as exc:
         logger.exception("WEB_NOWP_SEND_GROUP_FAILED chat_id=%s user=%s", target_chat_id, requester_id)
         raise MusicCommandError(
@@ -189,21 +232,15 @@ async def execute_nowp_publish(
     await _react_to_own_card(bot, sent_group.chat.id, sent_group.message_id, card_emoji)
 
     try:
-        if cover:
-            sent_dm = await bot.send_photo(
-                chat_id=requester_id,
-                photo=str(cover),
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
-        else:
-            sent_dm = await bot.send_message(
-                chat_id=requester_id,
-                text=caption,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
+        sent_dm = await _send_cached_cover_or_text(
+            bot,
+            requester_id,
+            track_id=track_id,
+            cover=cover,
+            caption=caption,
+            filename="web-nowp-cover.jpg",
+            reply_markup=keyboard,
+        )
         try:
             await reactions_service.register_card(
                 chat_id=sent_dm.chat.id,
@@ -317,6 +354,29 @@ class _WebSentMessage:
             self.message_id = edited.message_id
         return self
 
+
+    @property
+    def photo(self):
+        return getattr(self._primary, "photo", None)
+
+    @property
+    def video(self):
+        return getattr(self._primary, "video", None)
+
+    @property
+    def caption(self):
+        return getattr(self._primary, "caption", None)
+
+    async def edit_caption(self, caption: str | None = None, **kwargs):
+        edited = await self._primary.edit_caption(caption=caption, **kwargs)
+        if edited is not None:
+            self._primary = edited
+            self.chat = edited.chat
+            self.message_id = edited.message_id
+        if caption and not _looks_transient_text(caption):
+            await self._copy_primary_to_dm()
+        return self
+
     async def edit_reply_markup(self, **kwargs):
         try:
             edited = await self._primary.edit_reply_markup(**kwargs)
@@ -425,7 +485,7 @@ async def _resolve_group(bot: Bot, requester_id: int, group_ref: str | int | Non
 
 
 _GROUP_COMMANDS = {"weekfm", "monthfm", "tcanvas", "tly", "tnow", "songcharts"}
-_DM_COMMANDS = {"albnow", "radiofm", "playing"}
+_DM_COMMANDS = {"albnow", "radiofm", "playing", "tly"}
 
 
 async def _run_group_command_task(
@@ -572,6 +632,10 @@ async def _run_universal_tnow_task(
     spotify_tokens or lastfm_profiles. No group is used and nothing is posted
     publicly.
     """
+    if not is_code_owner(requester_id):
+        logger.info("WEB_UNIVERSAL_TNOW_BLOCKED_NON_OWNER | user_id=%s", requester_id)
+        return
+
     from app.bot.tnow import _gather_entries
     from app.services.tnow_card import render_tnow_card
     from app.bot.telegram import _react_to_own_card, _CARD_EMOJI_TNOW
@@ -654,9 +718,16 @@ async def execute_universal_tnow(
 ) -> MusicCommandResult:
     """Accept a code-owner-only global mosaic request.
 
-    Code-owner authorization is enforced at the entrypoints. This function only
-    schedules the DM-only musical delivery.
+    A segunda validação aqui impede vazamento caso alguma rota futura chame
+    diretamente este executor sem passar pelo filtro do Web App/DM.
     """
+    if not is_code_owner(requester_id):
+        logger.info("WEB_UNIVERSAL_TNOW_REJECTED_NON_OWNER | user_id=%s", requester_id)
+        raise MusicCommandError(
+            "code_owner_required",
+            "Mosaico universal é exclusivo do dono do código.",
+            status_code=403,
+        )
     _spawn_web_task(_run_universal_tnow_task(bot, requester_id=requester_id))
     return MusicCommandResult(
         ok=True,
@@ -846,6 +917,9 @@ async def _run_dm_command_task(
         elif command == "playing":
             from app.bot.telegram import _send_playing
             await _send_playing(message)
+        elif command == "tly":
+            from app.bot.tly import tly
+            await tly(message)
         else:
             raise MusicCommandError("command_not_supported", "Comando de DM não suportado.", status_code=400)
     except Exception:
@@ -872,7 +946,14 @@ async def _execute_albnow_dm(message) -> None:
     caption = _format_albnow(message.from_user.full_name, message.from_user.id, data)
     cover = data.get("album_image_url") or data.get("cover_url")
     if cover:
-        sent = await message.answer_photo(photo=str(cover), caption=caption, parse_mode="HTML")
+        sent = await _send_cached_cover_or_text(
+            message.bot,
+            message.chat.id,
+            track_id=str(data.get("track_id") or "").strip() or None,
+            cover=str(cover),
+            caption=caption,
+            filename="albnow-cover.jpg",
+        )
     else:
         sent = await message.answer(caption, parse_mode="HTML")
     await _react_to_own_card(sent.bot, sent.chat.id, sent.message_id, _CARD_EMOJI_DEFAULT)

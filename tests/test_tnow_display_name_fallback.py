@@ -23,4 +23,4 @@ async def test_display_name_never_exposes_numeric_id(monkeypatch):
 
     monkeypatch.setattr(tnow, "_lastfm_display_name", lambda user_id: None)
 
-    assert await tnow._display_name(FailingBot(), 8505890439) == "Usuário cadastrado"
+    assert await tnow._display_name(FailingBot(), 8505890439) == "User"

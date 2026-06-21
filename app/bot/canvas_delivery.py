@@ -1,4 +1,4 @@
-"""Entrega de Spotify Canvas com cache de file_id (compartilhado /tcanvas e /tly).
+"""Entrega de Spotify Canvas com cache de file_id (compartilhado com /tstory).
 
 Fluxo (todas as camadas caem pro fallback silencioso do /playing em falha):
 
@@ -24,7 +24,10 @@ from aiogram.types import BufferedInputFile, Message
 
 from app.bot.telegram import _react_to_own_card
 from app.config.settings import CANVAS_CACHE_CHANNEL_ID, CANVAS_CACHE_ENABLED
+from app.services.canvas_audio import get_canvas_with_preview_asset
 from app.services.canvas_cache import canvas_cache_service, is_cacheable_track_id
+from app.services.canvas_processed_cache import canvas_processed_cache_service
+from app.services.cover_cache import cover_cache_service
 from app.services.reactions import reactions_service
 from app.services.spotify import spotify_service
 from app.services.spotify_canvas import spotify_canvas_service
@@ -115,22 +118,53 @@ async def deliver_canvas(
 
     async def _fallback() -> Message:
         if cover:
-            sent = await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+            photo = await cover_cache_service.resolve_photo(
+                bot,
+                track_id=track_id,
+                cover_url=cover,
+                filename="canvas-fallback-cover.jpg",
+            )
+            try:
+                sent = await message.answer_photo(photo=photo or cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+            except Exception:
+                logger.warning("%s_FALLBACK_COVER_SEND_FAILED track_id=%s", log_prefix, track_id, exc_info=True)
+                if photo and photo != cover:
+                    await cover_cache_service.forget(track_id=track_id, cover_url=cover, photo=cover)
+                    try:
+                        sent = await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    except Exception:
+                        sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
+                else:
+                    sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
         else:
             sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
         return await _finalize(sent)
 
-    async def _send_by_file_id(file_id: str) -> Message | None:
+    async def _send_by_file_id(file_id: str, *, audio_cache_key: str | None = None) -> Message | None:
         try:
             return await message.answer_video(
                 video=file_id, caption=caption, parse_mode="HTML", reply_markup=keyboard
             )
         except Exception:
             logger.warning("%s_FILEID_SEND_FAILED track_id=%s", log_prefix, track_id, exc_info=True)
+            if audio_cache_key:
+                await canvas_processed_cache_service.forget(audio_cache_key)
             return None
 
     canvas_track_id = await _resolve_canvas_track_id(track, track_id, log_prefix)
     cache_on = CANVAS_CACHE_ENABLED and is_cacheable_track_id(canvas_track_id)
+
+    # Camada opcional: Canvas com preview oficial. Atômica: se falhar em qualquer
+    # etapa, retorna None e o fluxo bruto validado abaixo continua intacto.
+    if cache_on:
+        audio_asset = await get_canvas_with_preview_asset(
+            bot, track=track, track_id=canvas_track_id, log_prefix=f"{log_prefix}_AUDIO", want_bytes=False
+        )
+        if audio_asset and audio_asset.file_id:
+            sent = await _send_by_file_id(audio_asset.file_id, audio_cache_key=audio_asset.cache_key)
+            if sent is not None:
+                logger.info("%s_AUDIO_CACHE_HIT track_id=%s cache_key=%s", log_prefix, canvas_track_id, audio_asset.cache_key)
+                return await _finalize(sent)
 
     # CACHE HIT (fast path, sem lock): reenvia por file_id.
     if cache_on:

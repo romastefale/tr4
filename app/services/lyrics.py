@@ -21,12 +21,14 @@ from urllib.parse import quote
 
 import httpx
 
+from app.services.lyrics_cache import lyrics_snippet_cache_service
+
 logger = logging.getLogger(__name__)
 
 LYRICS_API_URL = "https://api.lyrics.ovh/v1"
 LRCLIB_API_URL = "https://lrclib.net/api"
 LRCLIB_USER_AGENT = "tr4-music-bot/1.0 (+https://github.com/romastefale/tr4)"
-LYRICS_TIMEOUT_SECONDS = 5.0
+LYRICS_TIMEOUT_SECONDS = 8.0
 LYRICS_CACHE_TTL_SECONDS = 24 * 3600
 LYRICS_NEGATIVE_TTL_SECONDS = 60
 LYRICS_CACHE_BOUND = 2000
@@ -201,15 +203,38 @@ class LyricsService:
         return self._http
 
     async def get_snippet(self, artist: str, title: str) -> str | None:
-        """Trecho pronto pro quote (já extraído). None em qualquer falha."""
+        """Trecho pronto pro quote (já extraído). None em qualquer falha.
+
+        Fluxos comando normal, inline e WebApp passam por este mesmo método.
+        Por isso o cache persistente aqui é compartilhado entre os três.
+        """
+        artist = (artist or "").strip()
+        title = (title or "").strip()
+        if not artist or not title:
+            return None
+
+        cached = await lyrics_snippet_cache_service.get(artist, title)
+        if cached is not None:
+            return cached.snippet
+
         lyrics = await self.get_lyrics(artist, title)
-        if not lyrics:
-            return None
-        try:
-            return extract_snippet(lyrics)
-        except Exception:
-            logger.exception("LYRICS_SNIPPET_FAILED artist=%s title=%s", artist, title)
-            return None
+        snippet: str | None = None
+        if lyrics:
+            try:
+                snippet = extract_snippet(lyrics)
+            except Exception:
+                logger.exception("LYRICS_SNIPPET_FAILED artist=%s title=%s", artist, title)
+                snippet = None
+
+        ttl = LYRICS_CACHE_TTL_SECONDS if snippet else LYRICS_NEGATIVE_TTL_SECONDS
+        await lyrics_snippet_cache_service.put(
+            artist=artist,
+            title=title,
+            snippet=snippet,
+            source="snippet",
+            ttl_seconds=ttl,
+        )
+        return snippet
 
     async def get_lyrics(self, artist: str, title: str) -> str | None:
         artist = (artist or "").strip()

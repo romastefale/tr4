@@ -25,6 +25,8 @@ from aiogram.types import (
     Message,
 )
 
+from app.services.cover_cache import cover_cache_service
+from app.services.spotify import spotify_service
 from app.services.track_search import TrackHit, search_tracks
 
 logger = logging.getLogger(__name__)
@@ -117,8 +119,6 @@ async def _resolve_spotify_output(hit: TrackHit) -> tuple[str | None, str | None
     interações musicais.
     """
     try:
-        from app.services.spotify import spotify_service
-
         match = await spotify_service.search_track(hit.artist, hit.title)
     except Exception:
         logger.warning("RADIOFM_SPOTIFY_RESOLVE_FAILED track=%s", hit.track_id, exc_info=True)
@@ -271,12 +271,30 @@ async def radiofm_pick(query: CallbackQuery) -> None:
 
     sent = None
     if cover_url:
+        photo = await cover_cache_service.resolve_photo(
+            bot,
+            track_id=str(hit.track_id or "").strip() or None,
+            cover_url=cover_url,
+            filename="radiofm-cover.jpg",
+        )
         try:
             sent = await bot.send_photo(
-                chat_id, photo=cover_url, caption=caption, parse_mode="HTML"
+                chat_id, photo=photo or cover_url, caption=caption, parse_mode="HTML"
             )
         except Exception:
             logger.warning("RADIOFM_SEND_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
+            if photo and photo != cover_url:
+                await cover_cache_service.forget(
+                    track_id=str(hit.track_id or "").strip() or None,
+                    cover_url=cover_url,
+                    photo=cover_url,
+                )
+                try:
+                    sent = await bot.send_photo(
+                        chat_id, photo=cover_url, caption=caption, parse_mode="HTML"
+                    )
+                except Exception:
+                    logger.warning("RADIOFM_SEND_ORIGINAL_PHOTO_FAILED track=%s", hit.track_id, exc_info=True)
     if sent is None:
         await bot.send_message(
             chat_id, caption, parse_mode="HTML", disable_web_page_preview=True

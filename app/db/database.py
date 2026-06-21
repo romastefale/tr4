@@ -86,9 +86,116 @@ def _reactivate_legacy_music_login_rows(conn, dialect_name: str) -> None:
     logger.info("DB music login activation backfill complete | changed=%s", total_changed)
 
 
+
+def _ensure_operational_control_tables(conn, dialect_name: str) -> None:
+    dt = "TIMESTAMP" if dialect_name == "postgresql" else "DATETIME"
+    bigint = "BIGINT" if dialect_name == "postgresql" else "INTEGER"
+    try:
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS operational_state (
+                    key VARCHAR PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_by_user_id {bigint},
+                    updated_at {dt} NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS legacy_restricted_users (
+                    user_id {bigint} PRIMARY KEY,
+                    reason TEXT NOT NULL,
+                    sources TEXT,
+                    legacy_since {dt},
+                    released_at {dt},
+                    released_by_user_id {bigint},
+                    created_at {dt} NOT NULL,
+                    updated_at {dt} NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_legacy_restricted_users_released_at ON legacy_restricted_users(released_at)"))
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS bot_seen_updates (
+                    id {"BIGSERIAL" if dialect_name == "postgresql" else "INTEGER PRIMARY KEY AUTOINCREMENT"},
+                    update_id {bigint},
+                    event_type VARCHAR,
+                    telegram_user_id {bigint},
+                    chat_id {bigint},
+                    message_id {bigint},
+                    command VARCHAR,
+                    text TEXT,
+                    callback_data TEXT,
+                    inline_query TEXT,
+                    source VARCHAR NOT NULL DEFAULT 'webhook',
+                    dropped_by_ops BOOLEAN,
+                    payload_json TEXT NOT NULL,
+                    created_at {dt} NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_update_id ON bot_seen_updates(update_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_event_type ON bot_seen_updates(event_type)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_telegram_user_id ON bot_seen_updates(telegram_user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_chat_id ON bot_seen_updates(chat_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bot_seen_updates_created_at ON bot_seen_updates(created_at)"))
+    except Exception:
+        logger.warning("DB operational control tables creation failed", exc_info=True)
+
+
+def _ensure_spotify_token_timestamps(conn, dialect_name: str) -> None:
+    columns = _table_columns(conn, dialect_name, "spotify_tokens")
+    if not columns:
+        return
+    dt = "TIMESTAMP" if dialect_name == "postgresql" else "DATETIME"
+    # Para bases antigas sem created_at/updated_at, a melhor aproximação local
+    # é expiration - 1 hora (tempo padrão de access_token). Isso não reconstrói
+    # histórico perfeito se o token foi renovado depois, mas dá um corte útil
+    # sem depender de dado que nunca foi salvo.
+    try:
+        if "created_at" not in columns:
+            conn.execute(text(f"ALTER TABLE spotify_tokens ADD COLUMN created_at {dt}"))
+            columns.add("created_at")
+        if "updated_at" not in columns:
+            conn.execute(text(f"ALTER TABLE spotify_tokens ADD COLUMN updated_at {dt}"))
+            columns.add("updated_at")
+        if dialect_name == "postgresql":
+            conn.execute(
+                text(
+                    """
+                    UPDATE spotify_tokens
+                    SET created_at = COALESCE(created_at, expiration - INTERVAL '1 hour'),
+                        updated_at = COALESCE(updated_at, expiration - INTERVAL '1 hour')
+                    WHERE created_at IS NULL OR updated_at IS NULL
+                    """
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    UPDATE spotify_tokens
+                    SET created_at = COALESCE(created_at, datetime(expiration, '-1 hour')),
+                        updated_at = COALESCE(updated_at, datetime(expiration, '-1 hour'))
+                    WHERE created_at IS NULL OR updated_at IS NULL
+                    """
+                )
+            )
+    except Exception:
+        logger.warning("DB spotify token timestamp migration failed", exc_info=True)
+
 def run_migrations(engine) -> None:
     dialect_name = engine.dialect.name
     with engine.begin() as conn:
+        _ensure_operational_control_tables(conn, dialect_name)
         statements = [
             "ALTER TABLE track_plays ADD COLUMN track_name TEXT",
             "ALTER TABLE track_plays ADD COLUMN artist_name TEXT",
@@ -138,6 +245,11 @@ def run_migrations(engine) -> None:
             _reactivate_legacy_music_login_rows(conn, dialect_name)
         except Exception:
             logger.warning("DB music login activation backfill failed", exc_info=True)
+
+        try:
+            _ensure_spotify_token_timestamps(conn, dialect_name)
+        except Exception:
+            logger.warning("DB spotify token timestamp migration wrapper failed", exc_info=True)
 
         try:
             index_rows = conn.execute(text("PRAGMA index_list(track_likes)")).all()
@@ -255,9 +367,146 @@ def run_migrations(engine) -> None:
             logger.warning("Sprint 12 likes→reactions migration failed", exc_info=True)
 
 
-        # Cache de Canvas por file_id (/tcanvas e /tly). Colunas são todas
-        # texto (sem BigInteger), então CREATE TABLE IF NOT EXISTS serve igual
+        # Cache persistente de trechos de letra usados pelo /tly. Colunas são
+        # texto/datetime simples, então CREATE TABLE IF NOT EXISTS serve igual
         # pros dois dialetos.
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS lyrics_snippet_cache (
+                        cache_key VARCHAR PRIMARY KEY,
+                        artist_norm VARCHAR NOT NULL,
+                        title_norm VARCHAR NOT NULL,
+                        artist VARCHAR NOT NULL,
+                        title VARCHAR NOT NULL,
+                        snippet TEXT,
+                        source VARCHAR,
+                        channel_chat_id BIGINT,
+                        channel_message_id INTEGER,
+                        archived_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """,
+                        expires_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            existing_columns = _table_columns(conn, dialect_name, "lyrics_snippet_cache")
+            lyric_archive_columns = {
+                "channel_chat_id": "BIGINT",
+                "channel_message_id": "INTEGER",
+                "archived_at": "TIMESTAMP" if dialect_name == "postgresql" else "DATETIME",
+            }
+            for column_name, column_type in lyric_archive_columns.items():
+                if column_name in existing_columns:
+                    continue
+                try:
+                    conn.execute(text(f"ALTER TABLE lyrics_snippet_cache ADD COLUMN {column_name} {column_type}"))
+                    existing_columns.add(column_name)
+                except Exception:
+                    logger.debug(
+                        "DB lyrics archive column add skipped | column=%s",
+                        column_name,
+                        exc_info=True,
+                    )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_artist_norm ON lyrics_snippet_cache(artist_norm)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_title_norm ON lyrics_snippet_cache(title_norm)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_expires_at ON lyrics_snippet_cache(expires_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lyrics_snippet_cache_channel_chat_id ON lyrics_snippet_cache(channel_chat_id)"))
+        except Exception:
+            logger.warning("DB lyrics_snippet_cache table creation failed", exc_info=True)
+
+
+        # Cache persistente do mosaico /tnow. Fonte de verdade por usuário:
+        # Last.fm username + faixa ouvida + quando foi ouvida/observada.
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS tnow_recent_tracks (
+                        user_id """ + ("BIGINT" if dialect_name == "postgresql" else "INTEGER") + """ PRIMARY KEY,
+                        lastfm_username VARCHAR,
+                        source VARCHAR NOT NULL,
+                        status VARCHAR NOT NULL,
+                        track_id VARCHAR,
+                        track_name VARCHAR NOT NULL,
+                        artist VARCHAR NOT NULL,
+                        album_name VARCHAR,
+                        track_url TEXT,
+                        cover_url TEXT,
+                        cover_file_id VARCHAR,
+                        is_live BOOLEAN NOT NULL DEFAULT """ + ("false" if dialect_name == "postgresql" else "0") + """,
+                        played_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """,
+                        observed_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        fetched_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        expires_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        raw_age_seconds FLOAT,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_lastfm_username ON tnow_recent_tracks(lastfm_username)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_status ON tnow_recent_tracks(status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_track_id ON tnow_recent_tracks(track_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_played_at ON tnow_recent_tracks(played_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_observed_at ON tnow_recent_tracks(observed_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_fetched_at ON tnow_recent_tracks(fetched_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_recent_tracks_expires_at ON tnow_recent_tracks(expires_at)"))
+        except Exception:
+            logger.warning("DB tnow_recent_tracks table creation failed", exc_info=True)
+
+        # Máscara visual owner-only para nomes no /tnow/mosaico. Não altera
+        # Last.fm/Spotify nem a música; apenas o rótulo renderizado.
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS tnow_private_visibility (
+                        telegram_user_id """ + ("BIGINT" if dialect_name == "postgresql" else "INTEGER") + """ PRIMARY KEY,
+                        mode VARCHAR NOT NULL DEFAULT 'all',
+                        display_label VARCHAR NOT NULL DEFAULT 'User',
+                        enabled BOOLEAN NOT NULL DEFAULT """ + ("true" if dialect_name == "postgresql" else "1") + """,
+                        created_by_owner_id """ + ("BIGINT" if dialect_name == "postgresql" else "INTEGER") + """,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_private_visibility_mode ON tnow_private_visibility(mode)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tnow_private_visibility_enabled ON tnow_private_visibility(enabled)"))
+        except Exception:
+            logger.warning("DB tnow_private_visibility table creation failed", exc_info=True)
+
+        # Cache persistente de capas musicais por file_id. Fase 3: o canal
+        # técnico arquiva a mídia; o banco indexa por faixa/URL/hash.
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS cover_files (
+                        cache_key VARCHAR PRIMARY KEY,
+                        spotify_track_id VARCHAR,
+                        cover_url TEXT,
+                        cover_hash VARCHAR,
+                        file_id VARCHAR NOT NULL,
+                        file_unique_id VARCHAR,
+                        width INTEGER,
+                        height INTEGER,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cover_files_spotify_track_id ON cover_files(spotify_track_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cover_files_cover_hash ON cover_files(cover_hash)"))
+        except Exception:
+            logger.warning("DB cover_files table creation failed", exc_info=True)
+
         try:
             conn.execute(
                 text(
@@ -275,16 +524,46 @@ def run_migrations(engine) -> None:
         except Exception:
             logger.warning("DB canvas_files table creation failed", exc_info=True)
 
+        try:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS canvas_processed_files (
+                        cache_key VARCHAR PRIMARY KEY,
+                        spotify_track_id VARCHAR NOT NULL,
+                        canvas_fingerprint VARCHAR NOT NULL,
+                        duration_ms INTEGER NOT NULL,
+                        process_kind VARCHAR NOT NULL,
+                        process_version VARCHAR NOT NULL,
+                        file_id VARCHAR NOT NULL,
+                        file_unique_id VARCHAR,
+                        created_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL,
+                        updated_at """ + ("TIMESTAMP" if dialect_name == "postgresql" else "DATETIME") + """ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_canvas_processed_files_spotify_track_id ON canvas_processed_files(spotify_track_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_canvas_processed_files_fingerprint ON canvas_processed_files(canvas_fingerprint)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_canvas_processed_files_kind ON canvas_processed_files(process_kind)"))
+        except Exception:
+            logger.warning("DB canvas_processed_files table creation failed", exc_info=True)
+
 
 def init_db() -> None:
     try:
         from app.models.card_message import CardMessage  # noqa: F401  # Sprint 8
         from app.models.canvas_file import CanvasFile  # noqa: F401  # cache file_id
+        from app.models.canvas_processed_file import CanvasProcessedFile  # noqa: F401  # Canvas derivado com áudio
+        from app.models.cover_file import CoverFile  # noqa: F401  # cache de capas
+        from app.models.lyrics_snippet_cache import LyricsSnippetCache  # noqa: F401  # cache de trechos /tly
         from app.models.lastfm_profile import LastfmProfile  # noqa: F401
         from app.models.spotify_token import SpotifyToken  # noqa: F401
         from app.models.track_like import TrackLike  # noqa: F401
         from app.models.track_play import TrackPlay  # noqa: F401
         from app.models.track_reaction import TrackReaction  # noqa: F401  # Sprint 8
+        from app.models.tnow_recent_track import TnowRecentTrack  # noqa: F401  # cache /tnow
+        from app.models.tnow_private_visibility import TnowPrivateVisibility  # noqa: F401  # máscara /tpv
 
         Base.metadata.create_all(bind=engine)
         logger.info("Database initialized.")

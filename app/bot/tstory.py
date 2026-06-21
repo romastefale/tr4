@@ -1,6 +1,6 @@
 """/tstory — gera um "story" vertical (9:16) da música tocando agora.
 
-Fundo = vídeo do Spotify Canvas (mesmo mecanismo do /tcanvas) com o card de
+Fundo = vídeo do Spotify Canvas via cache compartilhado do /tcanvas com o card de
 info na frente. Sem Canvas / falha de download / falha de composição, cai no
 card estático vertical (fallback). O card estampa o nome do bot atualizado e
 usa a foto de perfil atual do bot como ícone (via app/services/bot_identity).
@@ -21,9 +21,10 @@ from aiogram.types import BufferedInputFile, Message
 
 from app.services.bot_identity import get_bot_identity
 from app.services.connection_check import connect_hint_for, is_user_connected
+from app.services.cover_cache import cover_cache_service
 from app.services.music import music_service
-from app.services.spotify import spotify_service
-from app.services.spotify_canvas import spotify_canvas_service
+from app.services.canvas_asset import get_canvas_bytes_cached
+from app.services.canvas_audio import get_canvas_with_preview_asset
 from app.services.tstory_card import render_tstory_full, render_tstory_overlay
 from app.services.tstory_video import compose_story_video
 
@@ -133,36 +134,39 @@ async def tstory(message: Message) -> None:
     bot_name = identity.name
     bot_logo = identity.photo_bytes
 
-    # Resolve track_id Spotify base62 quando o music_service devolve Last.fm
-    # ("lfm:<hash>") — Canvas só aceita id Spotify. Mesma técnica do /tcanvas.
-    canvas_track_id = track_id
-    if track_id.startswith("lfm:") and artist and title:
-        try:
-            match = await spotify_service.search_track(artist, title)
-            if match and match.get("id"):
-                canvas_track_id = match["id"]
-        except Exception:
-            logger.exception("TSTORY_RESOLVE_ERROR track=%s", track_id)
-
-    # Tentativa principal: vídeo do Canvas (fundo) + card overlay.
+    # Tentativa principal: asset-fonte enriquecido com preview oficial. Se a
+    # camada nova falhar, usa exatamente o Canvas bruto já validado.
     video_bytes: bytes | None = None
-    try:
-        canvas_url = await spotify_canvas_service.get_canvas_url(canvas_track_id)
-        if canvas_url:
-            canvas_bytes = await spotify_canvas_service.download_canvas_bytes(canvas_url)
-            if canvas_bytes:
-                overlay_png = await render_tstory_overlay(
-                    cover_bytes=cover_bytes,
-                    listening=listening,
-                    title=title,
-                    artist=artist,
-                    bot_name=bot_name,
-                    bot_logo_bytes=bot_logo,
-                )
-                if overlay_png:
-                    video_bytes = await compose_story_video(canvas_bytes, overlay_png)
-    except Exception:
-        logger.exception("TSTORY_VIDEO_FAILED track=%s", track_id)
+    audio_asset = await get_canvas_with_preview_asset(
+        message.bot,
+        track=track,
+        track_id=track_id,
+        log_prefix="TSTORY_AUDIO",
+        want_bytes=True,
+    )
+    if audio_asset and audio_asset.bytes_data:
+        canvas_track_id, canvas_bytes = audio_asset.canvas_track_id, audio_asset.bytes_data
+    else:
+        canvas_track_id, canvas_bytes = await get_canvas_bytes_cached(
+            message.bot,
+            track=track,
+            track_id=track_id,
+            log_prefix="TSTORY",
+        )
+    if canvas_bytes:
+        try:
+            overlay_png = await render_tstory_overlay(
+                cover_bytes=cover_bytes,
+                listening=listening,
+                title=title,
+                artist=artist,
+                bot_name=bot_name,
+                bot_logo_bytes=bot_logo,
+            )
+            if overlay_png:
+                video_bytes = await compose_story_video(canvas_bytes, overlay_png)
+        except Exception:
+            logger.exception("TSTORY_VIDEO_FAILED track=%s canvas_track_id=%s", track_id, canvas_track_id)
 
     if video_bytes:
         try:
@@ -194,10 +198,32 @@ async def tstory(message: Message) -> None:
 
     # Último recurso (Playwright indisponível): manda só a capa ou o texto.
     if cover_bytes:
-        await message.answer_photo(
-            photo=BufferedInputFile(cover_bytes, filename="cover.jpg"),
-            caption=caption,
-            parse_mode="HTML",
+        original_cover_url = str(cover_url or "").strip() or None
+        photo = await cover_cache_service.resolve_photo(
+            message.bot,
+            track_id=track_id,
+            cover_url=original_cover_url,
+            photo=cover_bytes,
+            filename="cover.jpg",
         )
+        send_photo = BufferedInputFile(photo, filename="cover.jpg") if isinstance(photo, bytes) else photo
+        try:
+            await message.answer_photo(
+                photo=send_photo,
+                caption=caption,
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.warning("TSTORY_FALLBACK_COVER_SEND_FAILED track=%s", track_id, exc_info=True)
+            if photo and not isinstance(photo, bytes):
+                await cover_cache_service.forget(track_id=track_id, cover_url=original_cover_url, photo=cover_bytes)
+            try:
+                await message.answer_photo(
+                    photo=BufferedInputFile(cover_bytes, filename="cover.jpg"),
+                    caption=caption,
+                    parse_mode="HTML",
+                )
+            except Exception:
+                await message.answer(caption, parse_mode="HTML")
     else:
         await message.answer(caption, parse_mode="HTML")

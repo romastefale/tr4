@@ -10,6 +10,7 @@ from aiogram.filters import Command, StateFilter
 from aiogram.types import (
     CallbackQuery,
     InlineQuery,
+    InlineQueryResultCachedPhoto,
     InlineQueryResultPhoto,
     Message,
     MessageReactionUpdated,
@@ -19,11 +20,13 @@ from aiogram.types import (
 from app.bot.intent import detect_intent
 from app.config.settings import LASTFM_API_KEY, is_code_owner
 from app.services.connection_check import connect_hint_for, is_user_connected
+from app.services.cover_cache import cover_cache_service
 from app.services.lastfm import lastfm_service
 from app.services.likes import likes_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service
 from app.services.spotify import spotify_service
+from app.services.tnow_activity_cache import schedule_tnow_activity_record
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +95,70 @@ async def _answer_with_effect(message: Message, text: str, effect_id: str, **kwa
         except Exception:
             logger.debug("EFFECT_SEND_FAILED effect_id=%s", effect_id, exc_info=True)
     return await message.answer(text, **kwargs)
+
+
+_SANS_BOLD_ITALIC_UPPER_OFFSET = 0x1D63C - ord("A")
+_SANS_BOLD_ITALIC_LOWER_OFFSET = 0x1D656 - ord("a")
+
+
+def _inline_public_name_style(value: str | None) -> str:
+    raw = (value or "Usuário").strip() or "Usuário"
+    out: list[str] = []
+    for ch in raw:
+        if "A" <= ch <= "Z":
+            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_UPPER_OFFSET))
+        elif "a" <= ch <= "z":
+            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_LOWER_OFFSET))
+        else:
+            out.append(ch)
+    return html.escape("".join(out))
+
+
+
+async def _inline_photo_result_for_cover(
+    bot,
+    *,
+    result_id: str,
+    track_id: str | None,
+    cover_url: str,
+    thumbnail_url: str | None,
+    title: str | None = None,
+    description: str | None = None,
+    caption: str,
+):
+    """Monta resultado inline usando file_id quando a capa já foi cacheada.
+
+    InlineQueryResultPhoto exige URL HTTP. Para capa já salva no Telegram,
+    o tipo correto é InlineQueryResultCachedPhoto com photo_file_id. Se o
+    cache falhar, preserva o comportamento antigo por URL.
+    """
+    try:
+        resolved = await cover_cache_service.resolve_photo(
+            bot,
+            track_id=track_id,
+            cover_url=cover_url,
+            filename="inline-legacy-cover.jpg",
+        )
+        if isinstance(resolved, str) and resolved and resolved != cover_url:
+            return InlineQueryResultCachedPhoto(
+                id=result_id,
+                photo_file_id=resolved,
+                title=title,
+                description=description,
+                caption=caption,
+                parse_mode="HTML",
+            )
+    except Exception:
+        logger.debug("INLINE_PUBLIC_COVER_CACHE_SKIPPED track_id=%s", track_id, exc_info=True)
+    return InlineQueryResultPhoto(
+        id=result_id,
+        photo_url=cover_url,
+        thumbnail_url=thumbnail_url or cover_url,
+        title=title,
+        description=description,
+        caption=caption,
+        parse_mode="HTML",
+    )
 
 
 def _track_label(track: dict) -> tuple[str, str, str, str | None]:
@@ -271,7 +338,10 @@ async def _resolve_play_button_count(user_id: int, track_id: str, artist: str | 
         lastfm_count = await lastfm_service.get_user_track_playcount(user_id, artist, track_name)
         if lastfm_count is not None:
             return lastfm_count, "lastfm"
-    return await likes_service.get_track_play_count(track_id), "local"
+    # Fase 3B: o contador exibido como "vezes que ouviu" precisa ser real
+    # para o usuário do card. O fallback local passa a ler track_plays filtrado
+    # por user_id + track_id; não usa mais o total global da faixa.
+    return await likes_service.get_user_play_count(user_id, track_id), "local_user"
 
 
 async def build_playing_payload_for_user(
@@ -291,6 +361,8 @@ async def build_playing_payload_for_user(
     if not track_id:
         return None
 
+    schedule_tnow_activity_record(user_id, track, context="playing_payload")
+
     track_name_raw = str(track.get("track_name") or "").strip()
     artist_raw = str(track.get("artist") or "").strip()
     try:
@@ -307,17 +379,16 @@ async def build_playing_payload_for_user(
     user_link = f"tg://user?id={user_id}"
     track_name, artist, track_url, cover = _track_label(track)
     track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
-    # Sprint 8: caption agora mostra "♫ N · track — artist" onde N é o
-    # playcount per-user (Last.fm ou local). Botões ♫ plays e ♥ likes
-    # removidos — substituídos por reactions nativas do Telegram (count
-    # via @dp.message_reaction + tabela track_reactions). Layout +clean.
-    # NOTA: total_likes/liked/plays_source ainda calculados acima pra
-    # preservar compatibilidade com `register_play` (side effect) e o
-    # ♥ user_total_likes da linha 1 (legacy, dados históricos).
-    _ = (total_likes, liked)  # mantém vars pra clareza/grep
+    # Fase 3B: layout principal segue o contrato visual musical:
+    # Nome
+    # ♫ {contador real} · Música — Artista
+    # O contador vem de Last.fm ou do histórico local do próprio usuário.
+    # Não exibe agregados globais como se fossem "vezes que ouviu".
+    _ = (total_likes, user_total_likes, liked)  # side-effects/dados legados preservados, sem exibir no layout
+    play_prefix = f"♫ <code>{total_plays}</code> · " if isinstance(total_plays, int) and total_plays >= 0 else "♫ "
     caption = (
-        f"<b><a href=\"{html.escape(user_link)}\">{display_name}</a></b> · ♥ <code>{user_total_likes}</code>\n\n"
-        f"♫ <code>{total_plays}</code> · <b>{track_part}</b> — <i>{artist}</i>"
+        f"<b><a href=\"{html.escape(user_link)}\">{display_name}</a></b>\n"
+        f"{play_prefix}<b>{track_part}</b> — <i>{artist}</i>"
     )
     # Sprint 10: emoji vai pro 5º slot do tuple — callers usam pra
     # set_message_reaction depois de enviar o card.
@@ -349,9 +420,9 @@ async def build_tly_payload(
     """Monta o payload do /tly: cabeçalho enxuto + quote expansível da letra.
 
     Mesma infra do /playing (registra a play e resolve o contador ♫), mas a
-    legenda é diferente: nome de exibição em negrito unicode · ♫ N · faixa —
-    artista, seguido de um `<blockquote expandable>` com `lyric_snippet`. Sem
-    a linha de ♥ likes. Quando `lyric_snippet` é None/vazio, sai só o
+    legenda é diferente: nome de exibição em negrito unicode na primeira linha
+    e "♫ N · faixa — artista" na segunda, seguido de um `<blockquote expandable>`
+    com `lyric_snippet`. Sem a linha de ♥ likes. Quando `lyric_snippet` é None/vazio, sai só o
     cabeçalho. Retorna (track_id, caption HTML, cover_url, card_emoji) ou None
     se faltar `from_user`/`track_id`.
 
@@ -366,6 +437,8 @@ async def build_tly_payload(
     if not track_id:
         return None
 
+    schedule_tnow_activity_record(user_id, track, context="tly_payload")
+
     track_name_raw = str(track.get("track_name") or "").strip()
     artist_raw = str(track.get("artist") or "").strip()
     try:
@@ -373,20 +446,26 @@ async def build_tly_payload(
     except Exception:
         logger.exception("REGISTER_PLAY_FAILED user=%s track=%s", user_id, track_id)
 
-    total_plays, plays_source = await _resolve_play_button_count(user_id, track_id, artist_raw, track_name_raw)
+    total_plays: int | None = None
+    plays_source = "none"
+    try:
+        total_plays, plays_source = await _resolve_play_button_count(user_id, track_id, artist_raw, track_name_raw)
+    except Exception:
+        logger.debug("TLY_PLAY_COUNT_SKIPPED user=%s track=%s", user_id, track_id, exc_info=True)
 
     track_name, artist, track_url, cover = _track_label(track)
     track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
     safe_name = html.escape(display_name_raw or "Usuário")
     user_link = f"tg://user?id={user_id}"
     name_part = f'<b><a href="{html.escape(user_link, quote=True)}">{safe_name}</a></b>'
-    header = f"{name_part} · ♫ {total_plays} · {track_part} — <i>{artist}</i>"
+    play_prefix = f"♫ <code>{total_plays}</code> · " if isinstance(total_plays, int) and total_plays >= 0 else "♫ "
+    header = f"{name_part}\n{play_prefix}{track_part} — <i>{artist}</i>"
     if lyric_snippet:
         caption = f"{header}\n<blockquote expandable>{html.escape(lyric_snippet)}</blockquote>"
     else:
         caption = header
 
-    card_emoji = _pick_card_emoji(total_plays, plays_source)
+    card_emoji = _pick_card_emoji(total_plays if isinstance(total_plays, int) else 0, plays_source)
     return track_id, caption, cover, card_emoji
 
 
@@ -419,7 +498,24 @@ async def _send_playing(message: Message) -> None:
     track_id, caption, cover, keyboard, card_emoji = payload
 
     if cover:
-        sent = await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+        photo = await cover_cache_service.resolve_photo(
+            message.bot,
+            track_id=track_id,
+            cover_url=cover,
+            filename="playing-cover.jpg",
+        )
+        try:
+            sent = await message.answer_photo(photo=photo or cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+        except Exception:
+            logger.warning("PLAYING_COVER_SEND_FAILED fallback=original_or_text track_id=%s", track_id, exc_info=True)
+            if photo and photo != cover:
+                await cover_cache_service.forget(track_id=track_id, cover_url=cover, photo=cover)
+                try:
+                    sent = await message.answer_photo(photo=cover, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                except Exception:
+                    sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
+            else:
+                sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
     else:
         sent = await message.answer(caption, parse_mode="HTML", reply_markup=keyboard)
 
@@ -725,21 +821,34 @@ def _register_handlers(dp: Dispatcher) -> None:
         if not track:
             await query.answer([], cache_time=1, is_personal=True)
             return
+        track_id = str(track.get("track_id") or "").strip()
+        schedule_tnow_activity_record(query.from_user.id, track, context="inline_public_playing")
+        track_name_raw = str(track.get("track_name") or "").strip()
+        artist_raw = str(track.get("artist") or "").strip()
         track_name, artist, track_url, cover = _track_label(track)
         if not cover:
             await query.answer([], cache_time=1, is_personal=True)
             return
+        total_plays: int | None = None
+        try:
+            total_plays, _plays_source = await _resolve_play_button_count(query.from_user.id, track_id, artist_raw, track_name_raw)
+        except Exception:
+            logger.debug("INLINE_PUBLIC_PLAYING_COUNT_SKIPPED user=%s track=%s", query.from_user.id, track_id, exc_info=True)
         who = html.escape(query.from_user.full_name or "Usuário")
         user_link = f"tg://user?id={query.from_user.id}"
         who_part = f'<b><a href="{html.escape(user_link, quote=True)}">{who}</a></b>'
         track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
-        caption = f"{who_part}\n\n♫ <b>{track_part}</b> — <i>{artist}</i>"
-        result = InlineQueryResultPhoto(
-            id=str(uuid.uuid4()),
-            photo_url=cover,
+        if isinstance(total_plays, int) and total_plays >= 0:
+            caption = f"{who_part}\n\n♫ <code>{total_plays}</code> · <b>{track_part}</b> — <i>{artist}</i>"
+        else:
+            caption = f"{who_part}\n\n♫ <b>{track_part}</b> — <i>{artist}</i>"
+        result = await _inline_photo_result_for_cover(
+            query.bot,
+            result_id=str(uuid.uuid4()),
+            track_id=track_id,
+            cover_url=cover,
             thumbnail_url=cover,
             caption=caption,
-            parse_mode="HTML",
         )
         await query.answer([result], cache_time=2, is_personal=True)
 
@@ -759,20 +868,22 @@ def _register_handlers(dp: Dispatcher) -> None:
         from app.services.track_search import search_tracks
 
         hits = await search_tracks(raw, limit=10)
-        results: list[InlineQueryResultPhoto] = []
+        results: list[InlineQueryResultPhoto | InlineQueryResultCachedPhoto] = []
         for hit in hits:
             if not hit.cover_big:
                 continue
-            caption = f"<b>{html.escape(hit.title)}</b> - <i>{html.escape(hit.artist)}</i>"
+            name_part = _inline_public_name_style(query.from_user.full_name or "Usuário")
+            caption = f"{name_part}\n♫ {html.escape(hit.title)} — {html.escape(hit.artist)}"
             results.append(
-                InlineQueryResultPhoto(
-                    id=str(uuid.uuid4()),
-                    photo_url=hit.cover_big,
+                await _inline_photo_result_for_cover(
+                    query.bot,
+                    result_id=str(uuid.uuid4()),
+                    track_id=hit.track_id,
+                    cover_url=hit.cover_big,
                     thumbnail_url=hit.cover_thumb or hit.cover_big,
                     title=hit.title,
                     description=hit.artist,
                     caption=caption,
-                    parse_mode="HTML",
                 )
             )
         await query.answer(results, cache_time=5, is_personal=True)

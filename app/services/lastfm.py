@@ -13,6 +13,7 @@ import httpx
 from app.config.settings import HTTP_TIMEOUT_SECONDS, LASTFM_API_BASE_URL, LASTFM_API_KEY
 from app.db.database import SessionLocal
 from app.models.lastfm_profile import LastfmProfile
+from app.services.ops_control import release_legacy_after_login
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,7 @@ class LastfmService:
         # Sprint 4 (S4.5): atualiza cache com o valor novo (write-through
         # evita um SELECT extra na próxima leitura).
         self._username_cache_set(user_id, clean)
+        release_legacy_after_login(user_id, source="lastfm")
         return clean, previous
 
     async def clear_username(self, user_id: int) -> bool:

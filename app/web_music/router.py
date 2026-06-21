@@ -20,6 +20,7 @@ from app.bot.music_command_runner import (
     list_common_music_groups,
 )
 from app.config.settings import is_code_owner
+from app.services.ops_control import is_legacy_restricted, silent_mode_enabled
 from app.web_music.auth import authenticate_web_music_request
 from app.web_music.state import get_web_music_bot
 
@@ -62,6 +63,15 @@ def _error_response(exc: MusicCommandError) -> JSONResponse:
     )
 
 
+def _require_operational_access(user_id: int) -> None:
+    if is_code_owner(user_id):
+        return
+    if silent_mode_enabled():
+        raise HTTPException(status_code=403, detail={"code": "bot_silent_mode", "message": "Bot indisponível no momento."})
+    if is_legacy_restricted(user_id):
+        raise HTTPException(status_code=403, detail={"code": "legacy_relogin_required", "message": "Reconecte com /lastfm ou /login para continuar."})
+
+
 def _require_code_owner(user_id: int) -> None:
     if not is_code_owner(user_id):
         raise HTTPException(
@@ -96,6 +106,7 @@ async def client_error(payload: ClientErrorPayload) -> dict[str, bool]:
 @router.get("/api/public/me")
 async def public_me(request: Request) -> dict[str, Any]:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     return {
         "ok": True,
         "user": user.public_dict(),
@@ -107,6 +118,7 @@ async def public_me(request: Request) -> dict[str, Any]:
 @router.get("/api/public/home")
 async def public_home(request: Request) -> dict[str, Any]:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     bot = _bot_or_503()
     groups = await list_common_music_groups(bot, user.id)
     track = await current_track_preview(user.id)
@@ -116,12 +128,14 @@ async def public_home(request: Request) -> dict[str, Any]:
 @router.get("/api/public/playing-preview")
 async def playing_preview(request: Request) -> dict[str, Any]:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     return await current_track_preview(user.id)
 
 
 @router.post("/api/public/nowp")
 async def public_nowp(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     bot = _bot_or_503()
     try:
         result = await execute_nowp_publish(
@@ -138,6 +152,7 @@ async def public_nowp(request: Request, payload: GroupCommandPayload) -> Any:
 @router.post("/api/public/group-command")
 async def group_command(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     bot = _bot_or_503()
     command = (payload.command or "").strip().lower().lstrip("/")
     if command not in _ALLOWED_GROUP_COMMANDS:
@@ -165,10 +180,10 @@ async def group_command(request: Request, payload: GroupCommandPayload) -> Any:
 
 @router.get("/api/public/command/{command_name}")
 async def command_preview(request: Request, command_name: str, group_ref: str | None = None) -> Any:
-    authenticate_web_music_request(request)
+    user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     command = command_name.strip().lower().lstrip("/")
     if command == "playing":
-        user = authenticate_web_music_request(request)
         return await current_track_preview(user.id)
     return JSONResponse(
         {
@@ -183,6 +198,7 @@ async def command_preview(request: Request, command_name: str, group_ref: str | 
 @router.post("/api/public/story-command")
 async def story_command(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     bot = _bot_or_503()
     target = getattr(payload, "target", None) or None
     try:
@@ -201,6 +217,7 @@ async def story_command(request: Request, payload: GroupCommandPayload) -> Any:
 @router.post("/api/public/dm-command")
 async def dm_command(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     bot = _bot_or_503()
     command = (payload.command or "").strip().lower().lstrip("/")
     try:
@@ -219,6 +236,7 @@ async def dm_command(request: Request, payload: GroupCommandPayload) -> Any:
 @router.post("/api/public/send-command-copy")
 async def execute_command_copy(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     bot = _bot_or_503()
     command = (payload.command or "").strip().lower().lstrip("/")
     if payload.group_ref:
@@ -249,6 +267,7 @@ async def execute_command_copy(request: Request, payload: GroupCommandPayload) -
 @router.post("/api/public/tnow-universal")
 async def tnow_universal(request: Request) -> Any:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     _require_code_owner(user.id)
     bot = _bot_or_503()
     try:
@@ -265,6 +284,7 @@ async def tnow_universal(request: Request) -> Any:
 @router.post("/api/public/songcharts-universal")
 async def songcharts_universal(request: Request, payload: GroupCommandPayload) -> Any:
     user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     _require_code_owner(user.id)
     bot = _bot_or_503()
     try:
@@ -281,7 +301,8 @@ async def songcharts_universal(request: Request, payload: GroupCommandPayload) -
 
 @router.post("/api/public/download-result")
 async def reserved_download_result(request: Request) -> JSONResponse:
-    authenticate_web_music_request(request)
+    user = authenticate_web_music_request(request)
+    _require_operational_access(user.id)
     return JSONResponse(
         {
             "ok": False,

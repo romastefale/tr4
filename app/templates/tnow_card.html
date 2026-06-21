@@ -14,6 +14,10 @@
       --subtle: #A8A3C6;
       --blue: #5B9CFF;
       --green: #3FE0A6;
+      --yellow: #FFD84A;
+      --orange: #FF9F1C;
+      --red: #FF4D67;
+      --gray: #9AA0A6;
       --purple: #B58CFE;
       --line: rgba(181,140,254,.28);
     }
@@ -34,69 +38,73 @@
 
     .card {
       width: 1080px;
-      padding: 64px 56px 80px;
+      min-height: 1080px;
+      max-height: 1920px;
+      padding: 42px 44px 50px;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
 
-    /* HEADER */
     .header {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
     .brand {
       font-family: Inter;
-      font-size: 40px;
+      font-size: 34px;
       font-weight: 800;
       letter-spacing: -.02em;
       color: var(--blue);
     }
-    .brand .glyph { color: var(--green); margin-right: 12px; }
+    .brand .glyph { color: var(--green); margin-right: 10px; }
     .count {
       font-family: 'Bebas Neue', Inter, sans-serif;
-      font-size: 56px;
+      font-size: 46px;
       letter-spacing: .03em;
       color: var(--purple);
     }
-    .count .num { color: var(--green); margin-right: 12px; }
+    .count .num { color: var(--green); margin-right: 10px; }
 
     .period {
-      margin-bottom: 48px;
+      margin-bottom: 30px;
     }
     .period .label {
       display: block;
       font-family: Inter;
-      font-size: 30px;
-      font-weight: 700;
-      letter-spacing: .22em;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: .20em;
       text-transform: uppercase;
       color: var(--purple);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .period .value {
       font-family: 'Bebas Neue', Inter, sans-serif;
-      font-size: 132px;
+      font-size: 88px;
       line-height: .92;
       letter-spacing: .005em;
       color: var(--text);
       text-transform: uppercase;
     }
 
-    /* GRID */
     .grid {
       display: grid;
       grid-template-columns: repeat({{ columns }}, 1fr);
-      gap: 28px;
+      gap: 18px;
+      flex: 1 1 auto;
+      align-content: start;
     }
     .tile {
       display: flex;
       flex-direction: column;
       background: var(--surface);
-      border-radius: 22px;
+      border-radius: 18px;
       overflow: hidden;
-      box-shadow: 0 18px 48px rgba(0,0,0,.35);
+      box-shadow: 0 16px 42px rgba(0,0,0,.34);
+      min-height: 0;
     }
     .tile .cover-wrap {
       position: relative;
@@ -113,27 +121,81 @@
     }
     .tile .badge {
       position: absolute;
-      top: 12px;
-      left: 12px;
-      padding: 6px 12px;
+      top: 10px;
+      left: 10px;
+      padding: 5px 10px;
       border-radius: 999px;
-      font-size: 20px;
-      font-weight: 800;
+      font-size: 15px;
+      font-weight: 900;
       letter-spacing: .08em;
       text-transform: uppercase;
       backdrop-filter: blur(6px);
-      background: rgba(11,10,26,.55);
+      background: rgba(11,10,26,.58);
       color: var(--green);
     }
+    .tile .status-dot {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,.88);
+      background: var(--gray);
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 16px rgba(154,160,166,.55);
+    }
+    .tile .status-live {
+      background: var(--green);
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 18px rgba(63,224,166,.9);
+    }
+    .tile .status-recent-15 {
+      background: var(--yellow);
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 18px rgba(255,216,74,.82);
+    }
+    .tile .status-recent-30 {
+      background: var(--orange);
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 18px rgba(255,159,28,.82);
+    }
+    .tile .status-recent-45 {
+      background: var(--red);
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 18px rgba(255,77,103,.82);
+    }
+    .tile .status-recent-120 {
+      background: var(--gray);
+      box-shadow: 0 0 0 3px rgba(11,10,26,.45), 0 0 14px rgba(154,160,166,.62);
+    }
+    .tile .age-pill {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      max-width: calc(100% - 20px);
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #0B0A1A;
+      background: var(--gray);
+      box-shadow: 0 8px 20px rgba(0,0,0,.30);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tile .age-live { background: var(--green); }
+    .tile .age-recent-15 { background: var(--yellow); }
+    .tile .age-recent-30 { background: var(--orange); }
+    .tile .age-recent-45 { background: var(--red); color: #fff; }
+    .tile .age-recent-120 { background: var(--gray); }
     .tile .info {
-      padding: 18px 20px 22px;
+      padding: 10px 13px 13px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      min-height: 0;
+      gap: 4px;
+      min-height: 64px;
     }
     .tile .who {
-      font-size: 26px;
+      font-size: 20px;
       font-weight: 800;
       letter-spacing: -.01em;
       color: var(--blue);
@@ -142,9 +204,9 @@
       text-overflow: ellipsis;
     }
     .tile .track {
-      font-size: 24px;
-      font-weight: 700;
-      line-height: 1.18;
+      font-size: 18px;
+      font-weight: 750;
+      line-height: 1.12;
       color: var(--text);
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -152,8 +214,8 @@
       overflow: hidden;
     }
     .tile .artist {
-      font-size: 20px;
-      font-weight: 500;
+      font-size: 15px;
+      font-weight: 550;
       font-style: italic;
       color: var(--subtle);
       white-space: nowrap;
@@ -162,17 +224,17 @@
     }
 
     .footer {
-      margin-top: 48px;
-      padding-top: 24px;
+      margin-top: 30px;
+      padding-top: 18px;
       border-top: 1px solid var(--line);
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      font-size: 22px;
+      font-size: 18px;
       color: var(--subtle);
-      letter-spacing: .14em;
+      letter-spacing: .12em;
       text-transform: uppercase;
-      font-weight: 700;
+      font-weight: 800;
     }
     .footer .stamp { color: var(--purple); }
   </style>
@@ -185,7 +247,7 @@
     </header>
 
     <div class="period">
-      <span class="label">Tocando agora</span>
+      <span class="label">Ao vivo / até 2 horas</span>
       <span class="value">{{ stamp_value }}</span>
     </div>
 
@@ -194,7 +256,7 @@
     </section>
 
     <footer class="footer">
-      <div>♫ tigraoRADIO • /tnow</div>
+      <div>verde • amarelo • laranja • vermelho • cinza</div>
       <div class="stamp">{{ stamp_iso }}</div>
     </footer>
   </main>

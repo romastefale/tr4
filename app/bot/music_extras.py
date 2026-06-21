@@ -10,6 +10,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton
 from app.bot.music_groups import list_groups
 from app.bot.music_command_runner import MusicCommandError, execute_nowp_publish
 from app.services.likes import likes_service
+from app.services.cover_cache import cover_cache_service
 from app.services.music import music_service
 from app.services.reactions import reactions_service  # Sprint 8
 
@@ -139,7 +140,28 @@ def register_music_extra_handlers(dp: Dispatcher) -> None:
         caption = _format_albnow(message.from_user.full_name, message.from_user.id, data)
         cover = data.get("album_image_url") or data.get("cover_url")
         if cover:
-            sent = await message.answer_photo(photo=str(cover), caption=caption, parse_mode="HTML")
+            photo = await cover_cache_service.resolve_photo(
+                message.bot,
+                track_id=str(data.get("track_id") or "").strip() or None,
+                cover_url=str(cover),
+                filename="albnow-cover.jpg",
+            )
+            try:
+                sent = await message.answer_photo(photo=photo or str(cover), caption=caption, parse_mode="HTML")
+            except Exception:
+                logger.warning("ALBNOW_COVER_SEND_FAILED fallback=original_or_text", exc_info=True)
+                if photo and photo != str(cover):
+                    await cover_cache_service.forget(
+                        track_id=str(data.get("track_id") or "").strip() or None,
+                        cover_url=str(cover),
+                        photo=str(cover),
+                    )
+                    try:
+                        sent = await message.answer_photo(photo=str(cover), caption=caption, parse_mode="HTML")
+                    except Exception:
+                        sent = await message.answer(caption, parse_mode="HTML")
+                else:
+                    sent = await message.answer(caption, parse_mode="HTML")
         else:
             sent = await message.answer(caption, parse_mode="HTML")
         # Sprint 10: bot reage 🔥 no card de álbum. /albnow não calcula
