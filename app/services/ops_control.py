@@ -4,7 +4,7 @@ import json
 import logging
 import textwrap
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import inspect, text
@@ -521,17 +521,30 @@ def _try_int(value: Any) -> int | None:
         return None
 
 
+def _normalize_datetime(value: datetime) -> datetime:
+    """Return UTC naive datetime for safe comparisons across exported DB values.
+
+    Existing project timestamps are stored mostly as naive UTC values, but
+    some values can be timezone-aware ISO strings, for example values ending
+    with ``Z`` or ``+00:00``. Python cannot compare naive and aware datetimes,
+    so the listening export normalizes every parsed date before min/max checks.
+    """
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.replace(tzinfo=None)
+
+
 def _try_datetime(value: Any) -> datetime | None:
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return value
+        return _normalize_datetime(value)
     raw = str(value).strip()
     if not raw:
         return None
     raw = raw.replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(raw)
+        return _normalize_datetime(datetime.fromisoformat(raw))
     except Exception:
         return None
 
