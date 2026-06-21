@@ -218,6 +218,14 @@ LASTFM_API_KEY = _env(
     "TR3_LASTFM_API_KEY",
     legacy=("LASTFM_API_KEY",),
 )
+LASTFM_API_SECRET = _env(
+    "TR3_LASTFM_API_SECRET",
+    legacy=("LASTFM_API_SECRET",),
+)
+LASTFM_SESSION_KEY = _env(
+    "TR3_LASTFM_SESSION_KEY",
+    legacy=("LASTFM_SESSION_KEY", "TR3_LASTFM_SK", "LASTFM_SK"),
+)
 LASTFM_API_BASE_URL = _env(
     "TR3_LASTFM_API_BASE_URL",
     "https://ws.audioscrobbler.com/2.0/",
@@ -228,49 +236,88 @@ HTTP_TIMEOUT_SECONDS = _float_env(
     SPOTIFY_HTTP_TIMEOUT_SECONDS,
     legacy=("HTTP_TIMEOUT_SECONDS",),
 )
+LASTFM_SCROBBLE_IMPORT_MAX_FILE_BYTES = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_MAX_FILE_BYTES",
+    1_000_000,
+    legacy=("LASTFM_SCROBBLE_IMPORT_MAX_FILE_BYTES",),
+)
+LASTFM_SCROBBLE_IMPORT_MAX_PER_RUN = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_MAX_PER_RUN",
+    500,
+    legacy=("LASTFM_SCROBBLE_IMPORT_MAX_PER_RUN",),
+)
+LASTFM_SCROBBLE_IMPORT_BATCH_SIZE = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_BATCH_SIZE",
+    50,
+    legacy=("LASTFM_SCROBBLE_IMPORT_BATCH_SIZE",),
+)
+LASTFM_SCROBBLE_IMPORT_SLEEP_SECONDS = _float_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_SLEEP_SECONDS",
+    1.2,
+    legacy=("LASTFM_SCROBBLE_IMPORT_SLEEP_SECONDS",),
+)
+LASTFM_SCROBBLE_IMPORT_SPACING_SECONDS = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_SPACING_SECONDS",
+    61,
+    legacy=("LASTFM_SCROBBLE_IMPORT_SPACING_SECONDS",),
+)
+LASTFM_SCROBBLE_IMPORT_REQUIRE_CONFIRM = _bool_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_REQUIRE_CONFIRM",
+    True,
+    legacy=("LASTFM_SCROBBLE_IMPORT_REQUIRE_CONFIRM",),
+)
+LASTFM_SCROBBLE_IMPORT_STAGE_SIZE = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_STAGE_SIZE",
+    250,
+    legacy=("LASTFM_SCROBBLE_IMPORT_STAGE_SIZE",),
+)
+LASTFM_SCROBBLE_IMPORT_STAGE_SLEEP_SECONDS = _float_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_STAGE_SLEEP_SECONDS",
+    10.0,
+    legacy=("LASTFM_SCROBBLE_IMPORT_STAGE_SLEEP_SECONDS",),
+)
+LASTFM_SCROBBLE_IMPORT_MAX_PER_JOB = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_MAX_PER_JOB",
+    2000,
+    legacy=("LASTFM_SCROBBLE_IMPORT_MAX_PER_JOB",),
+)
+LASTFM_SCROBBLE_IMPORT_STOP_ON_DAILY_LIMIT = _bool_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_STOP_ON_DAILY_LIMIT",
+    True,
+    legacy=("LASTFM_SCROBBLE_IMPORT_STOP_ON_DAILY_LIMIT",),
+)
+LASTFM_SCROBBLE_IMPORT_SEND_RETRY_CSV = _bool_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_SEND_RETRY_CSV",
+    True,
+    legacy=("LASTFM_SCROBBLE_IMPORT_SEND_RETRY_CSV",),
+)
+LASTFM_SCROBBLE_IMPORT_SEND_REMAINING_CSV = _bool_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_SEND_REMAINING_CSV",
+    True,
+    legacy=("LASTFM_SCROBBLE_IMPORT_SEND_REMAINING_CSV",),
+)
+LASTFM_SCROBBLE_IMPORT_MAX_EXPANDED_ITEMS = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_MAX_EXPANDED_ITEMS",
+    50000,
+    legacy=("LASTFM_SCROBBLE_IMPORT_MAX_EXPANDED_ITEMS",),
+)
 
 def _resolve_data_dir() -> Path:
-    """Resolve diretório gravável sem quebrar startup.
-
-    Railway injeta variáveis e pode ter volume em /data. Em ambiente local
-    ou Termux, /data e /app/data podem não ser graváveis. Não usamos /tmp
-    como dependência.
-    """
-    raw = _env("TR3_DATA_DIR", "", legacy=("DATA_DIR",)).strip()
-    candidates: list[Path] = []
-
-    if raw:
-        candidates.append(Path(raw))
-
-    candidates.extend(
-        [
-            Path("/data"),
-            Path("/app/data"),
-            Path.cwd() / ".tr4-data",
-            Path.home() / ".tr4-data",
-        ]
-    )
-
-    seen: set[str] = set()
-    last_error: str | None = None
-
+    raw = _env("TR3_DATA_DIR", "/data", legacy=("DATA_DIR",)).strip() or "/data"
+    candidates = [Path(raw), Path("/app/data"), Path("/tmp/tr4-data")]
     for candidate in candidates:
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-
         try:
             candidate.mkdir(parents=True, exist_ok=True)
             probe = candidate / ".write-test"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink(missing_ok=True)
             return candidate
-        except Exception as exc:
-            last_error = f"{type(exc).__name__}: {exc}"
-            logger.warning("DATA_DIR_UNAVAILABLE path=%s error=%s", candidate, last_error)
+        except OSError:
+            logger.warning("DATA_DIR_UNAVAILABLE path=%s", candidate)
+    fallback = Path("/tmp/tr4-data")
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
 
-    raise RuntimeError(f"Nenhum DATA_DIR gravável foi encontrado. last_error={last_error}")
 
 DATA_DIR = _resolve_data_dir()
 
@@ -297,11 +344,6 @@ CODE_OWNER_IDS = _int_set_env(
     "TR4_CODE_OWNER_IDS",
     legacy=("CODE_OWNER_IDS", "TR3_OWNER_IDS", "OWNER_IDS", "TR3_OWNER_ID", "OWNER_ID"),
 )
-TIGRAO_FSM_ENABLED = _bool_env("TIGRAO_FSM_ENABLED", False)
-TIGRAO_FSM_MODERATOR_IDS = _int_set_env("TIGRAO_FSM_MODERATOR_IDS")
-TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED = _bool_env("TIGRAO_FSM_DESTRUCTIVE_ACTIONS_ENABLED", False)
-TIGRAO_FSM_DDX_HARD_ENABLED = _bool_env("TIGRAO_FSM_DDX_HARD_ENABLED", False)
-TIGRAO_FSM_REACTIONS_ENABLED = _bool_env("TIGRAO_FSM_REACTIONS_ENABLED", False)
 
 
 def is_code_owner(user_id: int | str | None) -> bool:

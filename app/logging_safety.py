@@ -9,7 +9,7 @@ _AUTHORIZATION_RE = re.compile(
     r"(?i)\b(authorization)\s*[:=]\s*(?:Bearer\s+)?([^&\s\"']+)"
 )
 _SECRET_QUERY_RE = re.compile(
-    r"(?i)\b(api_key|access_token|refresh_token|client_secret|bot_token|token|hash|initData)=([^&\s\"']+)"
+    r"(?i)\b(api_key|api_sig|sk|access_token|refresh_token|client_secret|bot_token|token|hash|initData)=([^&\s\"']+)"
 )
 _BEARER_RE = re.compile(r"(?i)\b(Bearer)\s+([A-Za-z0-9._~+/=-]{12,})")
 _TELEGRAM_BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
@@ -25,6 +25,12 @@ def _known_secret_values() -> Iterable[str]:
         "BOT_TOKEN",
         "LASTFM_API_KEY",
         "TR3_LASTFM_API_KEY",
+        "LASTFM_API_SECRET",
+        "TR3_LASTFM_API_SECRET",
+        "LASTFM_SESSION_KEY",
+        "TR3_LASTFM_SESSION_KEY",
+        "LASTFM_SK",
+        "TR3_LASTFM_SK",
         "SPOTIFY_CLIENT_SECRET",
         "TR3_SPOTIFY_CLIENT_SECRET",
         "SPOTIFY_CLIENT_ID",
