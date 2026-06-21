@@ -86,9 +86,89 @@ def _reactivate_legacy_music_login_rows(conn, dialect_name: str) -> None:
     logger.info("DB music login activation backfill complete | changed=%s", total_changed)
 
 
+
+def _ensure_operational_control_tables(conn, dialect_name: str) -> None:
+    dt = "TIMESTAMP" if dialect_name == "postgresql" else "DATETIME"
+    bigint = "BIGINT" if dialect_name == "postgresql" else "INTEGER"
+    try:
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS operational_state (
+                    key VARCHAR PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_by_user_id {bigint},
+                    updated_at {dt} NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS legacy_restricted_users (
+                    user_id {bigint} PRIMARY KEY,
+                    reason TEXT NOT NULL,
+                    sources TEXT,
+                    legacy_since {dt},
+                    released_at {dt},
+                    released_by_user_id {bigint},
+                    created_at {dt} NOT NULL,
+                    updated_at {dt} NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_legacy_restricted_users_released_at ON legacy_restricted_users(released_at)"))
+    except Exception:
+        logger.warning("DB operational control tables creation failed", exc_info=True)
+
+
+def _ensure_spotify_token_timestamps(conn, dialect_name: str) -> None:
+    columns = _table_columns(conn, dialect_name, "spotify_tokens")
+    if not columns:
+        return
+    dt = "TIMESTAMP" if dialect_name == "postgresql" else "DATETIME"
+    # Para bases antigas sem created_at/updated_at, a melhor aproximação local
+    # é expiration - 1 hora (tempo padrão de access_token). Isso não reconstrói
+    # histórico perfeito se o token foi renovado depois, mas dá um corte útil
+    # sem depender de dado que nunca foi salvo.
+    try:
+        if "created_at" not in columns:
+            conn.execute(text(f"ALTER TABLE spotify_tokens ADD COLUMN created_at {dt}"))
+            columns.add("created_at")
+        if "updated_at" not in columns:
+            conn.execute(text(f"ALTER TABLE spotify_tokens ADD COLUMN updated_at {dt}"))
+            columns.add("updated_at")
+        if dialect_name == "postgresql":
+            conn.execute(
+                text(
+                    """
+                    UPDATE spotify_tokens
+                    SET created_at = COALESCE(created_at, expiration - INTERVAL '1 hour'),
+                        updated_at = COALESCE(updated_at, expiration - INTERVAL '1 hour')
+                    WHERE created_at IS NULL OR updated_at IS NULL
+                    """
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    UPDATE spotify_tokens
+                    SET created_at = COALESCE(created_at, datetime(expiration, '-1 hour')),
+                        updated_at = COALESCE(updated_at, datetime(expiration, '-1 hour'))
+                    WHERE created_at IS NULL OR updated_at IS NULL
+                    """
+                )
+            )
+    except Exception:
+        logger.warning("DB spotify token timestamp migration failed", exc_info=True)
+
 def run_migrations(engine) -> None:
     dialect_name = engine.dialect.name
     with engine.begin() as conn:
+        _ensure_operational_control_tables(conn, dialect_name)
         statements = [
             "ALTER TABLE track_plays ADD COLUMN track_name TEXT",
             "ALTER TABLE track_plays ADD COLUMN artist_name TEXT",
@@ -138,6 +218,11 @@ def run_migrations(engine) -> None:
             _reactivate_legacy_music_login_rows(conn, dialect_name)
         except Exception:
             logger.warning("DB music login activation backfill failed", exc_info=True)
+
+        try:
+            _ensure_spotify_token_timestamps(conn, dialect_name)
+        except Exception:
+            logger.warning("DB spotify token timestamp migration wrapper failed", exc_info=True)
 
         try:
             index_rows = conn.execute(text("PRAGMA index_list(track_likes)")).all()

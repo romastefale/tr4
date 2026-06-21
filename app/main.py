@@ -23,6 +23,7 @@ configure_safe_logging()
 from app.bot.monthfm import router as monthfm_router
 from app.bot.owner_universal import router as owner_universal_router
 from app.bot.owner_manual_register import router as owner_manual_register_router
+from app.bot.ops_control import install_operational_control_middleware, router as ops_control_router
 from app.bot.myself import router as myself_router
 from app.bot.radiofm import router as radiofm_router
 from app.bot.setup_commands import setup_bot_commands
@@ -36,11 +37,12 @@ from app.bot.weekfm import router as weekfm_router
 from app.bot.music_inline import router as music_inline_router
 from app.bot.music_extras import register_music_extra_handlers
 from app.bot.music_groups import ensure_tables as ensure_music_group_tables, remember_group
-from app.config.settings import BASE_URL, TELEGRAM_BOT_TOKEN, telegram_webhook_secret, validate_required_env
+from app.config.settings import BASE_URL, TELEGRAM_BOT_TOKEN, is_code_owner, telegram_webhook_secret, validate_required_env
 from app.db.database import engine, init_db, run_migrations
 from app.security.rate_limit import rate_limit_status
 from app.web_music.router import router as web_music_router
 from app.web_music.state import set_web_music_bot
+from app.services.ops_control import should_drop_update_for_operational_controls, user_id_from_update
 
 app = FastAPI(title="TR4 Music Only")
 app.include_router(web_music_router)
@@ -89,6 +91,8 @@ async def _configure_telegram_bot_background() -> None:
     try:
         local_bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         if not _telegram_dispatcher_configured:
+            install_operational_control_middleware(dispatcher)
+            dispatcher.include_router(ops_control_router)
             dispatcher.include_router(monthfm_router)
             dispatcher.include_router(owner_universal_router)
             dispatcher.include_router(owner_manual_register_router)
@@ -252,6 +256,10 @@ async def telegram_webhook(request: Request) -> object:
     try:
         payload = await request.json()
         update = Update.model_validate(payload, context={"bot": bot})
+        update_user_id = user_id_from_update(update)
+        if should_drop_update_for_operational_controls(update, is_owner=is_code_owner(update_user_id)):
+            logger.info("WEBHOOK_UPDATE_DROPPED_BY_OPERATIONAL_CONTROL user_id=%s", update_user_id)
+            return {"ok": True}
         _remember_music_group_from_update(update)
         await dispatcher.feed_update(bot, update)
     except Exception:

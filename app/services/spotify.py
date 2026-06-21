@@ -23,6 +23,7 @@ from app.config.settings import (
 )
 from app.db.database import SessionLocal
 from app.models.spotify_token import SpotifyToken
+from app.services.ops_control import release_legacy_after_login
 from app.utils.datetime import utcnow_naive as _utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,7 @@ class SpotifyService:
                 replaced = True
                 existing.access_token = access_token
                 existing.expiration = expiration
+                existing.updated_at = _utcnow_naive()
                 if refresh_token:
                     existing.refresh_token = refresh_token
             else:
@@ -198,9 +200,12 @@ class SpotifyService:
                         access_token=access_token,
                         refresh_token=refresh_token or "",
                         expiration=expiration,
+                        created_at=_utcnow_naive(),
+                        updated_at=_utcnow_naive(),
                     )
                 )
             db.commit()
+        release_legacy_after_login(user_id, source="spotify")
         return replaced
 
     async def _refresh_token(self, user_id: int) -> SpotifyToken | None:
@@ -234,6 +239,7 @@ class SpotifyService:
 
             token.access_token = access_token
             token.expiration = _utcnow_naive() + timedelta(seconds=int(expires_in))
+            token.updated_at = _utcnow_naive()
             db.commit()
             db.refresh(token)
             return token
@@ -349,7 +355,7 @@ class SpotifyService:
         self._client_token_expiration = _utcnow_naive() + timedelta(seconds=int(expires_in))
         return self._client_access_token
 
-    async def get_track_by_id(self, track_id: str, *, market: str | None = "BR") -> dict[str, Any] | None:
+    async def get_track_by_id(self, track_id: str, market: str | None = "BR") -> dict[str, Any] | None:
         clean_track_id = (track_id or "").strip()
         if not clean_track_id:
             return None

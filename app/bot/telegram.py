@@ -838,8 +838,10 @@ def _register_handlers(dp: Dispatcher) -> None:
         user_link = f"tg://user?id={query.from_user.id}"
         who_part = f'<b><a href="{html.escape(user_link, quote=True)}">{who}</a></b>'
         track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
-        play_prefix = f"♫ <code>{total_plays}</code> · " if isinstance(total_plays, int) and total_plays >= 0 else "♫ "
-        caption = f"{who_part}\n{play_prefix}<b>{track_part}</b> — <i>{artist}</i>"
+        if isinstance(total_plays, int) and total_plays >= 0:
+            caption = f"{who_part}\n\n♫ <code>{total_plays}</code> · <b>{track_part}</b> — <i>{artist}</i>"
+        else:
+            caption = f"{who_part}\n\n♫ <b>{track_part}</b> — <i>{artist}</i>"
         result = await _inline_photo_result_for_cover(
             query.bot,
             result_id=str(uuid.uuid4()),
