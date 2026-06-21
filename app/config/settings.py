@@ -46,6 +46,18 @@ def _float_env(name: str, default: float, *, legacy: Iterable[str] = ()) -> floa
         return default
 
 
+
+
+def _secret_env(name: str, default: str = "", *, legacy: Iterable[str] = ()) -> str:
+    # Secrets copied through dashboards often arrive with accidental spaces or
+    # wrapping quotes. Last.fm signatures are byte-exact, so normalize only the
+    # deployment wrapper characters, never the internal value. Last.fm API key,
+    # shared secret and session key are not quoted values.
+    value = _env(name, default, legacy=legacy).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1].strip()
+    return value
+
 def _bool_env(name: str, default: bool, *, legacy: Iterable[str] = ()) -> bool:
     value = _env(name, "", legacy=legacy).strip().lower()
     if not value:
@@ -214,15 +226,15 @@ CANVAS_AUDIO_PROCESS_VERSION = _env(
     legacy=("CANVAS_AUDIO_PROCESS_VERSION",),
 ).strip() or "preview-v1"
 
-LASTFM_API_KEY = _env(
+LASTFM_API_KEY = _secret_env(
     "TR3_LASTFM_API_KEY",
     legacy=("LASTFM_API_KEY",),
 )
-LASTFM_API_SECRET = _env(
+LASTFM_API_SECRET = _secret_env(
     "TR3_LASTFM_API_SECRET",
     legacy=("LASTFM_API_SECRET",),
 )
-LASTFM_SESSION_KEY = _env(
+LASTFM_SESSION_KEY = _secret_env(
     "TR3_LASTFM_SESSION_KEY",
     legacy=("LASTFM_SESSION_KEY", "TR3_LASTFM_SK", "LASTFM_SK"),
 )

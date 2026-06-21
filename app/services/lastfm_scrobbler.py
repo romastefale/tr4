@@ -69,6 +69,19 @@ class ScrobbleImportResult:
     stopped_early: bool
 
 
+@dataclass(frozen=True)
+class LastfmAuthCheckResult:
+    ok: bool
+    username: str | None
+    subscriber: str | None
+    playcount: str | None
+    error_code: str | None
+    message: str | None
+    api_key_fingerprint: str
+    secret_length: int
+    session_key_length: int
+
+
 def _clean_cell(value: Any) -> str:
     return str(value or "").strip().strip("\ufeff")
 
@@ -267,6 +280,78 @@ def _config_error() -> str | None:
         return "Variáveis ausentes: " + ", ".join(missing)
     return None
 
+
+
+def _fingerprint(value: str) -> str:
+    if not value:
+        return "missing"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:10]
+
+
+def _lastfm_credential_facts() -> tuple[str, int, int]:
+    return (
+        _fingerprint(str(LASTFM_API_KEY or "")),
+        len(str(LASTFM_API_SECRET or "")),
+        len(str(LASTFM_SESSION_KEY or "")),
+    )
+
+
+async def check_lastfm_auth() -> LastfmAuthCheckResult:
+    api_key_fp, secret_len, sk_len = _lastfm_credential_facts()
+    config_error = _config_error()
+    if config_error:
+        return LastfmAuthCheckResult(
+            ok=False,
+            username=None,
+            subscriber=None,
+            playcount=None,
+            error_code="config",
+            message=config_error,
+            api_key_fingerprint=api_key_fp,
+            secret_length=secret_len,
+            session_key_length=sk_len,
+        )
+
+    params: dict[str, str] = {
+        "method": "user.getInfo",
+        "api_key": str(LASTFM_API_KEY),
+        "sk": str(LASTFM_SESSION_KEY),
+        "format": "json",
+    }
+    params["api_sig"] = build_api_sig(params, str(LASTFM_API_SECRET))
+
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+        response = await client.post(LASTFM_API_BASE_URL, data=params)
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {"message": response.text[:500], "error": f"http_{response.status_code}"}
+
+    if response.status_code != 200 or (isinstance(payload, dict) and payload.get("error")):
+        return LastfmAuthCheckResult(
+            ok=False,
+            username=None,
+            subscriber=None,
+            playcount=None,
+            error_code=str(payload.get("error") if isinstance(payload, dict) else f"http_{response.status_code}"),
+            message=str(payload.get("message") if isinstance(payload, dict) else payload),
+            api_key_fingerprint=api_key_fp,
+            secret_length=secret_len,
+            session_key_length=sk_len,
+        )
+
+    user = payload.get("user", {}) if isinstance(payload, dict) else {}
+    return LastfmAuthCheckResult(
+        ok=True,
+        username=str(user.get("name") or ""),
+        subscriber=str(user.get("subscriber") or ""),
+        playcount=str(user.get("playcount") or ""),
+        error_code=None,
+        message=None,
+        api_key_fingerprint=api_key_fp,
+        secret_length=secret_len,
+        session_key_length=sk_len,
+    )
 
 def _safe_batch_size(value: int) -> int:
     if value < 1:

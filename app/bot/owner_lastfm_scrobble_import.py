@@ -30,6 +30,7 @@ from app.services.lastfm_scrobbler import (
     ParsedScrobbleCsv,
     ScrobbleItem,
     build_count_csv,
+    check_lastfm_auth,
     count_items,
     parse_scrobble_csv,
     scrobble_items,
@@ -190,6 +191,37 @@ def _stage_text(
     return "\n".join(lines)
 
 
+
+def _auth_check_text(result) -> str:
+    lines = [
+        "<b>Diagnóstico Last.fm API</b>",
+        f"API key fingerprint: <code>{html.escape(result.api_key_fingerprint)}</code>",
+        f"Shared secret length: <code>{result.secret_length}</code>",
+        f"Session key length: <code>{result.session_key_length}</code>",
+    ]
+    if result.ok:
+        lines.extend(
+            [
+                "Status: <b>OK</b>",
+                f"Conta autenticada: <code>{html.escape(result.username or '')}</code>",
+                f"Subscriber/Pro flag: <code>{html.escape(result.subscriber or '')}</code>",
+                f"Playcount: <code>{html.escape(result.playcount or '')}</code>",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "Status: <b>FALHA</b>",
+                f"Código Last.fm: <code>{html.escape(result.error_code or '')}</code>",
+                f"Mensagem: <code>{html.escape(result.message or '')}</code>",
+            ]
+        )
+        if result.error_code == "13":
+            lines.append("Fato: erro 13 = assinatura inválida. Verifique se TR3_LASTFM_API_KEY e TR3_LASTFM_API_SECRET são do mesmo API account e se o secret não foi colado com aspas/espaços.")
+        elif result.error_code == "9":
+            lines.append("Fato: erro 9 = session key inválida. Gere novamente a TR3_LASTFM_SESSION_KEY usando a mesma API key/secret configurada no Railway.")
+    return "\n".join(lines)
+
 def _filename(prefix: str, source_name: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", source_name or "csv").strip("_") or "csv"
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -217,7 +249,8 @@ async def _run_job(
     requested_total = 0
     failed: list[FailedScrobble] = []
     final_remaining = list(remaining_after_limit)
-    stopped_for_limit = False
+    stopped_early = False
+    stopped_reason = ""
 
     await message.answer(
         "<b>Importação Last.fm iniciada</b>\n"
@@ -251,7 +284,15 @@ async def _run_job(
             )
 
             if result.stopped_early:
-                stopped_for_limit = True
+                stopped_early = True
+                if result.daily_limit_hit:
+                    stopped_reason = "A execução parou porque o Last.fm sinalizou limite diário."
+                elif result.rate_limit_hit:
+                    stopped_reason = "A execução parou porque o Last.fm sinalizou rate limit."
+                elif result.api_errors:
+                    stopped_reason = "A execução parou por erro de API/credencial. O lote atual foi isolado para retry."
+                else:
+                    stopped_reason = "A execução parou antes do fim. O restante foi isolado para continuação."
                 final_remaining = result.unprocessed_items + items[offset + len(stage_items) :] + final_remaining
                 break
 
@@ -268,8 +309,8 @@ async def _run_job(
             f"Falhas isoladas para retry: <code>{len(failed)}</code>",
             f"Restante não processado: <code>{len(final_remaining)}</code>",
         ]
-        if stopped_for_limit:
-            lines.append("A execução parou ao detectar limite diário/rate limit/antiabuso do Last.fm.")
+        if stopped_early and stopped_reason:
+            lines.append(stopped_reason)
         await message.answer("\n".join(lines))
 
         failed_items = [failure.item for failure in failed]
@@ -330,6 +371,21 @@ async def _handle_import_message(message: Message) -> None:
     remaining = parsed.items[options.limit :]
     await message.answer(_preview_text(parsed, limit=options.limit, confirmed=True) + "\n\nProcessando em segundo plano.")
     asyncio.create_task(_run_job(message, selected, remaining_after_limit=remaining, source_name=document.file_name or "csv"))
+
+
+@router.message(Command("lfmcheckauth", "lastfmcheckauth"))
+async def lastfm_check_auth_command(message: Message) -> None:
+    if not _is_private_owner(message):
+        if message.chat.type == "private":
+            await message.answer("Comando exclusivo do owner e somente na DM do bot.")
+        return
+    try:
+        result = await check_lastfm_auth()
+    except Exception as exc:
+        logger.exception("LASTFM_AUTH_CHECK_FAILED")
+        await message.answer(f"Diagnóstico Last.fm falhou: <code>{html.escape(type(exc).__name__)}: {html.escape(str(exc))}</code>")
+        return
+    await message.answer(_auth_check_text(result))
 
 
 @router.message(Command(*_COMMANDS))
