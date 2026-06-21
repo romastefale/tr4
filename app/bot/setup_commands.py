@@ -68,7 +68,7 @@ _OWNER_ONLY_COMMANDS: tuple[CommandDef, ...] = (
     CommandDef("tpv", "Privacidade visual no mosaico"),
     CommandDef("onoff", "Silenciar usuários comuns"),
     CommandDef("legacy", "Restringir logins antigos"),
-    CommandDef("listening", "Exportar logins salvos"),
+    CommandDef("listening", "Exportar banco completo"),
 )
 
 _OWNER_PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PRIVATE_COMMANDS + _OWNER_ONLY_COMMANDS

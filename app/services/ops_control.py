@@ -29,8 +29,27 @@ _INTERACTION_TABLES = (
     "card_messages",
     "tnow_private_visibility",
 )
-_LISTENING_EXPORT_TABLES = (*_LOGIN_TABLES, "legacy_restricted_users", *_INTERACTION_TABLES)
-_USER_ID_COLUMNS = ("user_id", "telegram_user_id", "owner_user_id", "created_by_owner_id")
+_KNOWN_EXPORT_TABLES = (*_LOGIN_TABLES, "legacy_restricted_users", *_INTERACTION_TABLES)
+_USER_ID_COLUMNS = ("user_id", "telegram_user_id", "owner_user_id", "created_by_owner_id", "released_by_user_id")
+_IDENTIFIER_HINT_COLUMNS = (
+    "id",
+    "key",
+    "cache_key",
+    "track_id",
+    "spotify_track_id",
+    "canvas_fingerprint",
+    "file_id",
+    "file_unique_id",
+    "chat_id",
+    "message_id",
+    "channel_chat_id",
+    "channel_message_id",
+    "user_id",
+    "telegram_user_id",
+    "owner_user_id",
+    "created_by_owner_id",
+    "released_by_user_id",
+)
 _DATE_HINT_COLUMNS = (
     "created_at",
     "updated_at",
@@ -74,7 +93,8 @@ class ListeningExportStats:
     interaction_row_count: int = 0
     user_count: int = 0
     present_tables: tuple[str, ...] = field(default_factory=tuple)
-    missing_tables: tuple[str, ...] = field(default_factory=tuple)
+    known_missing_tables: tuple[str, ...] = field(default_factory=tuple)
+    schema_count: int = 0
 
 
 def ensure_operational_tables(conn, dialect_name: str) -> None:
@@ -402,20 +422,94 @@ def _quote_identifier(name: str) -> str:
     return f'"{name}"'
 
 
-def _table_rows(table_name: str) -> tuple[list[str], list[dict[str, Any]]]:
-    inspector = inspect(engine)
-    tables = set(inspector.get_table_names())
+def _safe_inspector_call(default: Any, func: Any, *args: Any, **kwargs: Any) -> Any:
+    try:
+        return func(*args, **kwargs)
+    except Exception:
+        logger.debug("LISTENING_SCHEMA_INTROSPECTION_SKIPPED func=%s args=%s", getattr(func, "__name__", repr(func)), args, exc_info=True)
+        return default
+
+
+def _export_table_names(inspector: Any) -> list[str]:
+    """Return every table visible in the configured database schema.
+
+    /listening is an owner administrative export. It must not depend on a
+    selective allowlist, because old deployments may contain legacy tables or
+    emergency/debug tables that are not mapped by the current SQLAlchemy models.
+    Known music-login/interaction tables are ordered first for readability;
+    every remaining table is exported after them.
+    """
+    tables = list(_safe_inspector_call([], inspector.get_table_names))
+    known = [table for table in _KNOWN_EXPORT_TABLES if table in tables]
+    rest = sorted(table for table in tables if table not in set(known))
+    return [*known, *rest]
+
+
+def _table_schema(table_name: str, inspector: Any | None = None) -> dict[str, Any]:
+    inspector = inspector or inspect(engine)
+    columns = _safe_inspector_call([], inspector.get_columns, table_name)
+    pk = _safe_inspector_call({}, inspector.get_pk_constraint, table_name) or {}
+    indexes = _safe_inspector_call([], inspector.get_indexes, table_name)
+    uniques = _safe_inspector_call([], inspector.get_unique_constraints, table_name)
+    fks = _safe_inspector_call([], inspector.get_foreign_keys, table_name)
+    return {
+        "columns": [
+            {
+                "name": str(column.get("name") or ""),
+                "type": str(column.get("type") or ""),
+                "nullable": bool(column.get("nullable", True)),
+                "primary_key": bool(column.get("primary_key", False)),
+                "default": _stringify(column.get("default")),
+            }
+            for column in columns
+            if column.get("name")
+        ],
+        "primary_key": list(pk.get("constrained_columns") or []),
+        "indexes": indexes,
+        "unique_constraints": uniques,
+        "foreign_keys": fks,
+    }
+
+
+def _order_columns_for_table(schema: dict[str, Any]) -> list[str]:
+    column_names = [str(column.get("name") or "") for column in schema.get("columns") or [] if column.get("name")]
+    pk_columns = [str(column) for column in schema.get("primary_key") or [] if column in column_names]
+    if pk_columns:
+        return pk_columns
+    for preferred in ("user_id", "telegram_user_id", "owner_user_id", "created_at", "updated_at", "id", "key", "cache_key"):
+        if preferred in column_names:
+            return [preferred]
+    return column_names[:1]
+
+
+def _table_rows(table_name: str, inspector: Any | None = None) -> tuple[list[str], dict[str, Any], list[dict[str, Any]]]:
+    inspector = inspector or inspect(engine)
+    tables = set(_safe_inspector_call([], inspector.get_table_names))
     if table_name not in tables:
-        return [], []
-    columns = [column["name"] for column in inspector.get_columns(table_name)]
+        return [], {"columns": [], "primary_key": [], "indexes": [], "unique_constraints": [], "foreign_keys": []}, []
+    schema = _table_schema(table_name, inspector)
+    columns = [column["name"] for column in schema.get("columns") or []]
     if not columns:
-        return [], []
-    order_column = "user_id" if "user_id" in columns else "telegram_user_id" if "telegram_user_id" in columns else columns[0]
+        return [], schema, []
     table_sql = _quote_identifier(table_name)
-    order_sql = _quote_identifier(order_column)
+    order_columns = _order_columns_for_table(schema)
+    order_clause = ""
+    if order_columns:
+        order_clause = " ORDER BY " + ", ".join(_quote_identifier(column) for column in order_columns)
     with SessionLocal() as db:
-        rows = db.execute(text(f"SELECT * FROM {table_sql} ORDER BY {order_sql}")).mappings().all()
-        return columns, [dict(row) for row in rows]
+        rows = db.execute(text(f"SELECT * FROM {table_sql}{order_clause}")).mappings().all()
+        return columns, schema, [dict(row) for row in rows]
+
+
+def _identifier_values(row: dict[str, Any], columns: list[str]) -> list[str]:
+    values: list[str] = []
+    for column in columns:
+        lowered = column.lower()
+        if column in _IDENTIFIER_HINT_COLUMNS or lowered.endswith("_id") or lowered.endswith("_key") or lowered.endswith("_hash"):
+            raw = row.get(column)
+            if raw is not None and raw != "":
+                values.append(f"{column}={_stringify(raw)}")
+    return values
 
 
 def _try_int(value: Any) -> int | None:
@@ -526,27 +620,26 @@ def _add_user_fact(users: dict[int, dict[str, Any]], user_id: int, *, table_name
 def _collect_listening_tables() -> tuple[dict[str, dict[str, Any]], ListeningExportStats, dict[int, dict[str, Any]]]:
     data: dict[str, dict[str, Any]] = {}
     users: dict[int, dict[str, Any]] = {}
-    present: list[str] = []
-    missing: list[str] = []
     total_rows = 0
     login_rows = 0
     interaction_rows = 0
 
-    for table_name in _LISTENING_EXPORT_TABLES:
-        columns, rows = _table_rows(table_name)
-        exists = bool(columns)
-        if exists:
-            present.append(table_name)
-        else:
-            missing.append(table_name)
-        data[table_name] = {"columns": columns, "rows": rows}
+    inspector = inspect(engine)
+    export_tables = _export_table_names(inspector)
+    present = list(export_tables)
+    known_missing = [table for table in _KNOWN_EXPORT_TABLES if table not in set(export_tables)]
+
+    for table_name in export_tables:
+        columns, schema, rows = _table_rows(table_name, inspector)
+        data[table_name] = {"columns": columns, "schema": schema, "rows": rows}
         total_rows += len(rows)
         if table_name in _LOGIN_TABLES:
             login_rows += len(rows)
         elif table_name in _INTERACTION_TABLES:
             interaction_rows += len(rows)
         for row in rows:
-            for role, user_id in _row_user_roles(row, columns):
+            roles = _row_user_roles(row, columns)
+            for role, user_id in roles:
                 _add_user_fact(users, user_id, table_name=table_name, role=role, row=row)
 
     stats = ListeningExportStats(
@@ -555,7 +648,8 @@ def _collect_listening_tables() -> tuple[dict[str, dict[str, Any]], ListeningExp
         interaction_row_count=interaction_rows,
         user_count=len(users),
         present_tables=tuple(present),
-        missing_tables=tuple(missing),
+        known_missing_tables=tuple(known_missing),
+        schema_count=len(export_tables),
     )
     return data, stats, users
 
@@ -600,25 +694,90 @@ def _format_user_summary_lines(users: dict[int, dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _format_schema_lines(table_name: str, schema: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    columns = list(schema.get("columns") or [])
+    pk = list(schema.get("primary_key") or [])
+    indexes = list(schema.get("indexes") or [])
+    uniques = list(schema.get("unique_constraints") or [])
+    fks = list(schema.get("foreign_keys") or [])
+    lines.append(f"  identificadores/primary key: {', '.join(pk) if pk else '-'}")
+    if indexes:
+        lines.append("  indices:")
+        for index in indexes:
+            lines.append(
+                "    - "
+                + "; ".join(
+                    part
+                    for part in (
+                        f"name={_stringify(index.get('name'))}",
+                        f"columns={', '.join(str(c) for c in (index.get('column_names') or []))}",
+                        f"unique={_stringify(index.get('unique'))}",
+                    )
+                    if part
+                )
+            )
+    else:
+        lines.append("  indices: -")
+    if uniques:
+        lines.append("  restricoes unique:")
+        for unique in uniques:
+            lines.append(
+                f"    - name={_stringify(unique.get('name'))}; columns={', '.join(str(c) for c in (unique.get('column_names') or []))}"
+            )
+    else:
+        lines.append("  restricoes unique: -")
+    if fks:
+        lines.append("  foreign keys:")
+        for fk in fks:
+            lines.append(
+                f"    - name={_stringify(fk.get('name'))}; columns={', '.join(str(c) for c in (fk.get('constrained_columns') or []))}; "
+                f"referred_table={_stringify(fk.get('referred_table'))}; referred_columns={', '.join(str(c) for c in (fk.get('referred_columns') or []))}"
+            )
+    else:
+        lines.append("  foreign keys: -")
+    lines.append("  colunas:")
+    if not columns:
+        lines.append("    - nenhuma coluna introspectada")
+    for column in columns:
+        parts = [
+            f"name={column.get('name')}",
+            f"type={column.get('type')}",
+            f"nullable={column.get('nullable')}",
+            f"primary_key={column.get('primary_key')}",
+        ]
+        default = column.get("default")
+        if default:
+            parts.append(f"default={default}")
+        lines.append("    - " + "; ".join(parts))
+    return lines
+
+
 def _format_table_dump_lines(data: dict[str, dict[str, Any]]) -> list[str]:
     lines: list[str] = []
-    lines.append("[dados integrais por tabela]")
-    lines.append("  Observacao: o TXT e o PDF abaixo copiam os valores existentes no banco para as tabelas exportadas.")
+    lines.append("[schema e dados integrais por tabela]")
+    lines.append("  Exportacao owner-only: valores sao copiados como estao no banco, sem mascarar tokens, file_id, hash, chaves ou identificadores.")
+    lines.append("  Tabelas nao mapeadas por model tambem entram se existirem no banco.")
     lines.append("")
-    for table_name in _LISTENING_EXPORT_TABLES:
-        item = data.get(table_name) or {"columns": [], "rows": []}
+    for table_name in sorted(data):
+        item = data.get(table_name) or {"columns": [], "schema": {}, "rows": []}
         columns = list(item.get("columns") or [])
+        schema = dict(item.get("schema") or {})
         rows = list(item.get("rows") or [])
-        label = _TABLE_LABELS.get(table_name, table_name)
-        lines.append(f"[{table_name}] {label} | linhas={len(rows)} | colunas={', '.join(columns) if columns else 'tabela ausente'}")
+        label = _TABLE_LABELS.get(table_name, "tabela existente no banco")
+        lines.append(f"[{table_name}] {label} | linhas={len(rows)} | colunas={', '.join(columns) if columns else 'sem colunas'}")
+        lines.extend(_format_schema_lines(table_name, schema))
         if not rows:
-            lines.append("  sem registros")
+            lines.append("  registros: sem registros")
             lines.append("")
             continue
+        lines.append("  registros:")
         for index, row in enumerate(rows, start=1):
-            lines.append(f"  #{index}")
+            identifiers = _identifier_values(row, columns)
+            id_suffix = f" | identificadores: {'; '.join(identifiers)}" if identifiers else ""
+            lines.append(f"    #{index}{id_suffix}")
             for column in columns:
-                lines.append(f"    {column}: {_stringify(row.get(column))}")
+                lines.append(f"      {column}: {_stringify(row.get(column))}")
             lines.append("")
     return lines
 
@@ -626,23 +785,25 @@ def _format_table_dump_lines(data: dict[str, dict[str, Any]]) -> list[str]:
 def _build_login_export_text(generated_at: datetime) -> tuple[str, ListeningExportStats]:
     data, stats, users = _collect_listening_tables()
     lines: list[str] = []
-    lines.append("TR4 /listening - relatorio integral de inscricoes e interacoes")
+    lines.append("TR4 /listening - exportacao administrativa integral do banco")
     lines.append(f"Gerado em UTC: {generated_at.isoformat(sep=' ')}")
     lines.append(f"Corte legacy: {LEGACY_CUTOFF.isoformat(sep=' ')} UTC")
     lines.append("")
     lines.append("Escopo do relatorio:")
-    lines.append("  - inscricoes/login salvos: lastfm_profiles, spotify_tokens")
-    lines.append("  - estado operacional: legacy_restricted_users")
-    lines.append("  - interacoes identificaveis pelo banco: tnow_recent_tracks, track_plays, track_reactions, track_likes, card_messages, tnow_private_visibility")
+    lines.append("  - exporta todas as tabelas visiveis no banco configurado, nao apenas uma lista fixa")
+    lines.append("  - inclui schema, primary keys, indices, unique constraints, foreign keys quando o driver expuser")
+    lines.append("  - inclui todos os valores gravados, inclusive tokens, file_id, hash, chaves, ids e demais identificadores")
+    lines.append("  - resume por user_id/telegram_user_id/owner_user_id quando essas colunas existirem")
     lines.append("  - quando o banco nao salva nome Telegram, o relatorio identifica pelo user_id e pelos dados musicais/operacionais disponiveis")
     lines.append("")
     lines.append("Totais:")
     lines.append(f"  usuarios identificados: {stats.user_count}")
+    lines.append(f"  tabelas exportadas: {stats.schema_count}")
     lines.append(f"  linhas totais exportadas: {stats.row_count}")
-    lines.append(f"  linhas de inscricao/login: {stats.login_row_count}")
-    lines.append(f"  linhas de interacao/uso: {stats.interaction_row_count}")
+    lines.append(f"  linhas de inscricao/login conhecidas: {stats.login_row_count}")
+    lines.append(f"  linhas de interacao/uso conhecidas: {stats.interaction_row_count}")
     lines.append(f"  tabelas presentes: {', '.join(stats.present_tables) if stats.present_tables else '-'}")
-    lines.append(f"  tabelas ausentes: {', '.join(stats.missing_tables) if stats.missing_tables else '-'}")
+    lines.append(f"  tabelas conhecidas ausentes: {', '.join(stats.known_missing_tables) if stats.known_missing_tables else '-'}")
     lines.append("")
     lines.extend(_format_user_summary_lines(users))
     lines.extend(_format_table_dump_lines(data))
