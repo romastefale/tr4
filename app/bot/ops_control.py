@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware, Dispatcher, Router
@@ -25,6 +27,39 @@ from app.services.ops_control import (
 
 logger = logging.getLogger(__name__)
 router = Router(name="ops_control")
+
+_LISTENING_TASK: asyncio.Task[Any] | None = None
+_LISTENING_TASK_STARTED_AT: float | None = None
+_LISTENING_LAST_KEYS: dict[str, float] = {}
+_LISTENING_DUPLICATE_TTL_SECONDS = 15 * 60
+
+
+def _listening_task_running() -> bool:
+    return _LISTENING_TASK is not None and not _LISTENING_TASK.done()
+
+
+def _listening_task_age_seconds() -> int | None:
+    if _LISTENING_TASK_STARTED_AT is None or not _listening_task_running():
+        return None
+    return max(0, int(time.monotonic() - _LISTENING_TASK_STARTED_AT))
+
+
+def _listening_dedupe_key(message: Message, *, api_all: bool) -> str:
+    chat_id = getattr(getattr(message, "chat", None), "id", None)
+    user_id = getattr(getattr(message, "from_user", None), "id", None)
+    message_id = getattr(message, "message_id", None)
+    return f"{chat_id}:{user_id}:{message_id}:{int(api_all)}"
+
+
+def _listening_key_seen_recently(key: str) -> bool:
+    now = time.monotonic()
+    expired = [item for item, seen_at in _LISTENING_LAST_KEYS.items() if now - seen_at > _LISTENING_DUPLICATE_TTL_SECONDS]
+    for item in expired:
+        _LISTENING_LAST_KEYS.pop(item, None)
+    if key in _LISTENING_LAST_KEYS:
+        return True
+    _LISTENING_LAST_KEYS[key] = now
+    return False
 
 class OperationalControlMiddleware(BaseMiddleware):
     async def __call__(
@@ -231,48 +266,149 @@ async def legacy_command(message: Message) -> None:
     )
 
 
-@router.message(Command("listening"))
-async def listening_command(message: Message) -> None:
-    if not _owner_only(message):
-        return
-    if not message.from_user:
-        return
+
+async def _send_document_with_retry(
+    bot: Any,
+    *,
+    chat_id: int,
+    document: BufferedInputFile,
+    caption: str,
+    parse_mode: str | None = None,
+    attempts: int = 3,
+    request_timeout: int = 180,
+) -> None:
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            await bot.send_document(
+                chat_id=chat_id,
+                document=document,
+                caption=caption,
+                parse_mode=parse_mode,
+                request_timeout=request_timeout,
+            )
+            return
+        except Exception as exc:  # network and Telegram errors are reported, not fatal to the bot.
+            last_exc = exc
+            logger.warning(
+                "LISTENING_DOCUMENT_SEND_RETRY owner_id=%s attempt=%s/%s error=%s",
+                chat_id,
+                attempt,
+                attempts,
+                f"{type(exc).__name__}: {exc}",
+            )
+            if attempt < attempts:
+                await asyncio.sleep(min(10, 2 * attempt))
+    assert last_exc is not None
+    raise last_exc
+
+
+async def _run_listening_export_delivery(bot: Any, *, owner_id: int, api_all: bool) -> None:
     try:
-        raw_arg = _arg(message).lower()
-        api_all = raw_arg in {"api-all", "all", "completo", "full"}
-        api_debug = await _build_listening_api_debug(message.bot, api_all=api_all)
+        await bot.send_message(owner_id, "Gerando /listening administrativo. Vou enviar os arquivos nesta DM.")
+    except Exception:
+        logger.debug("LISTENING_START_NOTICE_FAILED owner_id=%s", owner_id, exc_info=True)
+    try:
+        api_debug = await _build_listening_api_debug(bot, api_all=api_all)
         exports = build_listening_export_parts(api_debug=api_debug)
     except Exception:
         logger.exception("LISTENING_EXPORT_FAILED")
-        await message.answer("Falha ao gerar exportação /listening. Veja o log do deploy.")
+        try:
+            await bot.send_message(owner_id, "Falha ao gerar exportação /listening. Veja o log do deploy.")
+        except Exception:
+            logger.debug("LISTENING_EXPORT_FAILURE_NOTICE_FAILED owner_id=%s", owner_id, exc_info=True)
         return
 
     total_parts = len(exports)
-    try:
-        for part_number, export in enumerate(exports, start=1):
-            part_suffix = f" parte {part_number}/{total_parts}" if total_parts > 1 else ""
-            caption = (
-                f"Exportação /listening gerada{part_suffix}.\n"
-                f"Usuários identificados: <code>{export.user_count}</code>.\n"
-                f"Linhas exportadas: <code>{export.row_count}</code> "
-                f"(logins: <code>{export.login_row_count}</code>; interações: <code>{export.interaction_row_count}</code>).\n"
-                "O TXT e o PDF trazem resumo enriquecido por user_id, tokens completos, dump integral das tabelas, updates brutos salvos e depuração possível via API."
-            )
-            await message.bot.send_document(
-                chat_id=message.from_user.id,
+    failures: list[str] = []
+    for part_number, export in enumerate(exports, start=1):
+        part_suffix = f" parte {part_number}/{total_parts}" if total_parts > 1 else ""
+        caption = (
+            f"Exportação /listening gerada{part_suffix}.\n"
+            f"Usuários identificados: <code>{export.user_count}</code>.\n"
+            f"Linhas exportadas: <code>{export.row_count}</code> "
+            f"(logins: <code>{export.login_row_count}</code>; interações: <code>{export.interaction_row_count}</code>).\n"
+            "O TXT e o PDF trazem resumo enriquecido por user_id, tokens completos, dump integral das tabelas, updates brutos salvos e depuração possível via API."
+        )
+        try:
+            await _send_document_with_retry(
+                bot,
+                chat_id=owner_id,
                 document=BufferedInputFile(export.txt_bytes, filename=export.txt_filename),
                 caption=caption,
                 parse_mode="HTML",
             )
-            await message.bot.send_document(
-                chat_id=message.from_user.id,
+        except Exception as exc:
+            logger.exception("LISTENING_TXT_DM_SEND_FAILED owner_id=%s filename=%s", owner_id, export.txt_filename)
+            failures.append(f"TXT {export.txt_filename}: {type(exc).__name__}: {exc}")
+        try:
+            await _send_document_with_retry(
+                bot,
+                chat_id=owner_id,
                 document=BufferedInputFile(export.pdf_bytes, filename=export.pdf_filename),
                 caption=f"PDF /listening organizado em tabela textual{part_suffix}.",
             )
-    except Exception:
-        logger.exception("LISTENING_DM_SEND_FAILED owner_id=%s", message.from_user.id)
-        await message.answer("Falha ao enviar a exportação /listening na DM do owner. Confira se o owner já iniciou conversa privada com o bot e veja o log do deploy.")
+        except Exception as exc:
+            logger.exception("LISTENING_PDF_DM_SEND_FAILED owner_id=%s filename=%s", owner_id, export.pdf_filename)
+            failures.append(f"PDF {export.pdf_filename}: {type(exc).__name__}: {exc}")
+
+    if failures:
+        try:
+            await bot.send_message(owner_id, "Falhas no envio do /listening:\n" + "\n".join(failures[:10]))
+        except Exception:
+            logger.debug("LISTENING_FAILURE_SUMMARY_SEND_FAILED owner_id=%s", owner_id, exc_info=True)
+    else:
+        try:
+            await bot.send_message(owner_id, "Exportação /listening concluída.")
+        except Exception:
+            logger.debug("LISTENING_DONE_NOTICE_FAILED owner_id=%s", owner_id, exc_info=True)
+
+@router.message(Command("listening"))
+async def listening_command(message: Message) -> None:
+    global _LISTENING_TASK, _LISTENING_TASK_STARTED_AT
+    if not _owner_only(message):
+        return
+    if not message.from_user:
         return
 
-    if message.chat.id != message.from_user.id:
-        await message.answer("Enviei o /listening na sua DM.")
+    raw_arg = _arg(message).lower().strip()
+    owner_id = int(message.from_user.id)
+
+    if raw_arg in {"stop", "cancel", "cancelar", "parar"}:
+        if _listening_task_running() and _LISTENING_TASK is not None:
+            _LISTENING_TASK.cancel()
+            _LISTENING_TASK_STARTED_AT = None
+            await message.answer("Envio/geração do /listening em andamento foi cancelado nesta instância.")
+        else:
+            await message.answer("Não há /listening em execução nesta instância.")
+        return
+
+    if raw_arg in {"status", "estado"}:
+        age = _listening_task_age_seconds()
+        await message.answer(
+            "Status /listening: "
+            + (f"em execução há {age}s." if age is not None else "sem execução ativa nesta instância.")
+        )
+        return
+
+    api_all = raw_arg in {"api-all", "all", "completo", "full"}
+    key = _listening_dedupe_key(message, api_all=api_all)
+    if _listening_key_seen_recently(key):
+        logger.info("LISTENING_DUPLICATE_COMMAND_IGNORED owner_id=%s key=%s", owner_id, key)
+        return
+
+    if _listening_task_running():
+        age = _listening_task_age_seconds()
+        await message.answer(
+            "Já existe uma geração/envio de /listening em andamento"
+            + (f" há {age}s." if age is not None else ".")
+            + " Use /listening status para conferir ou /listening stop para cancelar."
+        )
+        return
+
+    _LISTENING_TASK_STARTED_AT = time.monotonic()
+    _LISTENING_TASK = asyncio.create_task(_run_listening_export_delivery(message.bot, owner_id=owner_id, api_all=api_all))
+    await message.answer(
+        "Iniciei uma única geração do /listening em segundo plano e vou enviar os arquivos na sua DM. "
+        "Comandos repetidos/reentregues pelo Telegram serão ignorados enquanto esta execução estiver ativa."
+    )

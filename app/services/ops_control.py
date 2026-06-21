@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 LEGACY_CUTOFF = datetime(2026, 6, 15, 0, 0, 0)
 SILENT_MODE_KEY = "silent_mode_enabled"
 LEGACY_MODE_KEY = "legacy_mode_enabled"
-MAX_TELEGRAM_DOCUMENT_BYTES = 45 * 1024 * 1024
+MAX_TELEGRAM_DOCUMENT_BYTES = 15 * 1024 * 1024
 _ALLOWED_DURING_SILENT = {"start", "help"}
 _ALLOWED_FOR_LEGACY_RELOGIN = {"start", "help", "login", "lastfm"}
 _LOGIN_TABLES = ("lastfm_profiles", "spotify_tokens")
@@ -783,7 +783,7 @@ def _telegram_identity_summary(user: dict[str, Any]) -> str:
     username = _username_from_user_dict(user)
     if username:
         parts.append(f"username={username}")
-    for key in ("id", "type", "is_bot", "language_code"):
+    for key in ("id", "type", "is_bot", "language_code", "source", "source_table"):
         if user.get(key) not in (None, ""):
             parts.append(f"{key}={_stringify(user.get(key))}")
     return "; ".join(parts) if parts else _stringify(user)
@@ -858,7 +858,7 @@ def _api_user_identity_map(api_debug: dict[str, Any] | None) -> dict[int, dict[s
         if isinstance(chat, dict):
             result[user_id] = chat
         elif item.get("get_chat_error"):
-            result[user_id] = {"id": user_id, "api_error": item.get("get_chat_error")}
+            result[user_id] = {"api_error": item.get("get_chat_error")}
     return result
 
 
@@ -904,6 +904,108 @@ def _row_user_roles(row: dict[str, Any], columns: list[str]) -> list[tuple[str, 
     return roles
 
 
+def _json_dict_from_value(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    if value in (None, ""):
+        return None
+    try:
+        parsed = json.loads(str(value))
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def _row_identity_candidates(table_name: str, role: str, row: dict[str, Any], user_id: int) -> list[dict[str, Any]]:
+    """Extract Telegram identity from any table row that stores it.
+
+    Older TR4 tables already contain usable public identity fields, but the
+    first /listening enriched report only consumed identities from
+    bot_seen_updates and live getChat. This helper mines all persisted rows so
+    the summary uses what the bot already saved before raw-update auditing was
+    added.
+    """
+    identities: list[dict[str, Any]] = []
+
+    for json_column in ("user_json", "actor_json", "from_user_json", "payload_json", "payload_tecnico_json", "context_json"):
+        parsed = _json_dict_from_value(row.get(json_column))
+        if not parsed:
+            continue
+        # Direct Telegram WebApp/auth user payload.
+        if _try_int(parsed.get("id")) == user_id:
+            item = dict(parsed)
+            item.setdefault("source", json_column)
+            item.setdefault("source_table", table_name)
+            identities.append(item)
+        # Nested Telegram user payloads inside generic JSON.
+        for nested_key in ("from", "user", "actor", "telegram_user"):
+            nested = parsed.get(nested_key)
+            if isinstance(nested, dict) and _try_int(nested.get("id")) == user_id:
+                item = dict(nested)
+                item.setdefault("source", f"{json_column}.{nested_key}")
+                item.setdefault("source_table", table_name)
+                identities.append(item)
+
+    # Explicit profile table.
+    if table_name == "telegram_user_profiles":
+        item = {
+            "id": user_id,
+            "first_name": row.get("first_name"),
+            "last_name": row.get("last_name"),
+            "username": row.get("username"),
+            "full_name": row.get("full_name"),
+            "language_code": row.get("language_code"),
+            "source": row.get("source") or "telegram_user_profiles",
+            "source_table": table_name,
+        }
+        identities.append(item)
+
+    # Generic public identity columns used by moderation/private-session tables.
+    name = (
+        row.get("user_name")
+        or row.get("nome_publico")
+        or row.get("nome")
+        or row.get("actor_name")
+        or row.get("actor_label")
+        or row.get("full_name")
+        or row.get("title")
+    )
+    username = row.get("user_username") or row.get("username") or row.get("actor_username")
+    if name or username:
+        item = {
+            "id": user_id,
+            "first_name": name,
+            "username": username,
+            "source": role,
+            "source_table": table_name,
+        }
+        identities.append(item)
+
+    # Chat tables can identify chats/groups. Keep them separately but in the
+    # same identity structure when the role value being summarized is a chat id.
+    if "chat" in role:
+        chat_title = row.get("title") or row.get("titulo") or row.get("ui_label") or row.get("nome_publico")
+        chat_username = row.get("username")
+        if chat_title or chat_username:
+            identities.append(
+                {
+                    "id": user_id,
+                    "title": chat_title,
+                    "username": chat_username,
+                    "type": "chat_or_group_saved",
+                    "source": role,
+                    "source_table": table_name,
+                }
+            )
+
+    unique: dict[str, dict[str, Any]] = {}
+    for item in identities:
+        cleaned = {key: value for key, value in item.items() if value not in (None, "")}
+        if not cleaned:
+            continue
+        unique[_identity_key(cleaned)] = cleaned
+    return list(unique.values())
+
 def _add_user_fact(users: dict[int, dict[str, Any]], user_id: int, *, table_name: str, role: str, row: dict[str, Any]) -> None:
     user = users.setdefault(
         user_id,
@@ -934,6 +1036,8 @@ def _add_user_fact(users: dict[int, dict[str, Any]], user_id: int, *, table_name
     )
     user["tables"].add(table_name)
     user["roles"].add(f"{table_name}.{role}")
+    for identity in _row_identity_candidates(table_name, role, row, user_id):
+        user["telegram_saved_identities"][_identity_key(identity)] = identity
     for parsed in _date_values(row):
         first = user.get("first_seen")
         last = user.get("last_seen")
@@ -1057,10 +1161,10 @@ def _format_user_summary_lines(users: dict[int, dict[str, Any]], *, api_debug: d
         saved_identities = list((user.get("telegram_saved_identities") or {}).values())
         preferred_saved = saved_identities[-1] if saved_identities else {}
         lines.append(f"  usuario_id: {user_id}")
-        lines.append(f"    Telegram salvo nos updates: {_telegram_identity_summary(preferred_saved)}")
+        lines.append(f"    Telegram salvo no banco: {_telegram_identity_summary(preferred_saved)}")
         if len(saved_identities) > 1:
-            lines.append(f"    Telegram salvo - historico de nomes/usernames: {' | '.join(_telegram_identity_summary(item) for item in saved_identities[-5:])}")
-        lines.append(f"    Telegram API atual/getChat: {_telegram_identity_summary(api_identity)}")
+            lines.append(f"    Telegram salvo - historico de nomes/usernames/fontes: {' | '.join(_telegram_identity_summary(item) for item in saved_identities[-8:])}")
+        lines.append(f"    Telegram API atual/getChat: {_telegram_identity_summary(api_identity if not api_identity.get('api_error') else {})}")
         if api_identity.get("api_error"):
             lines.append(f"    Telegram API erro: {_stringify(api_identity.get('api_error'))}")
 
