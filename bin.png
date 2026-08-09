@@ -1,0 +1,861 @@
+#!/usr/bin/env python3
+"""Controla progresso cronológico e pausas por entropia em um único TXT legível.
+
+O arquivo de saída permanece texto UTF-8 puro. Não usa Base64, blocos ocultos,
+compressão ou payload binário. Cada evento registra campos completos em texto e
+uma cadeia SHA-256 visível para detectar alterações acidentais.
+
+A frase-sentinela definida pelo usuário perde uma letra, da esquerda para a
+direita, a cada incidente classificado como origem artificial. Espaços e outros
+caracteres não alfabéticos são preservados e monitorados no conjunto.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+import tempfile
+import unicodedata
+import uuid
+from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
+
+FORMAT_VERSION = 1
+TITLE = "# Registro de Progresso Cronológico e Entropia"
+CHRONO_BEGIN = "===== INÍCIO DA CRONOLOGIA ====="
+CHRONO_END = "===== FIM DA CRONOLOGIA ====="
+GENESIS_HASH = "0" * 64
+DEFAULT_STATE_FILE = "progresso-entropico.txt"
+SENTINEL_PHRASE = unicodedata.normalize("NFC", "Não sou Inteligente e sim Artificial")
+VALID_STATES = {"ATIVO", "PAUSADO", "ENCERRADO"}
+VALID_NETWORK = {"BLOQUEADA", "AUTORIZADA"}
+VALID_KINDS = {"INICIO", "PROGRESSO", "INCIDENTE", "RETOMADA", "REDE_AUTORIZADA", "ENCERRAMENTO"}
+VALID_ORIGINS = {"ARTIFICIAL", "EXTERNA", "NÃO SE APLICA"}
+MAX_TEXT_CHARS = 500_000
+NA = "NÃO SE APLICA"
+
+FIELD_ORDER = (
+    "INSTRUCAO_USUARIO_LITERAL",
+    "REESCRITA_PUBLICA_DO_AGENTE",
+    "PROGRESSO_ESPERADO",
+    "PROGRESSO_OBSERVADO",
+    "EVIDENCIA",
+    "INTERPRETACAO_INCIDENTE_DA_ENTROPIA",
+    "MOTIVO_DA_PAUSA",
+    "AUTORIZACAO_LITERAL_DE_RETOMADA",
+    "RESULTADO",
+)
+
+
+class RegistroError(ValueError):
+    """Erro previsível de validação ou de transição."""
+
+
+@dataclass(frozen=True)
+class LoadedRecord:
+    path: Path
+    text: str
+    events: list[dict[str, Any]]
+    state: str
+    network: str
+    record_id: str
+    current_hash: str
+    suppressed_indices: tuple[int, ...]
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def normalize_text(value: Any, *, field: str) -> str:
+    if value is None:
+        raise RegistroError(f"Campo obrigatório ausente: {field}")
+    text = unicodedata.normalize("NFC", str(value))
+    if not text.strip():
+        raise RegistroError(f"Campo obrigatório vazio: {field}")
+    if "\x00" in text:
+        raise RegistroError(f"Campo {field} contém byte nulo.")
+    if len(text) > MAX_TEXT_CHARS:
+        raise RegistroError(f"Campo {field} excede {MAX_TEXT_CHARS} caracteres.")
+    return text
+
+
+def canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def event_hash(event: dict[str, Any]) -> str:
+    data = {k: v for k, v in event.items() if k != "hash"}
+    return hashlib.sha256(canonical_json(data).encode("utf-8")).hexdigest()
+
+
+def phrase_from_suppressed(indices: Iterable[int]) -> str:
+    removed = set(indices)
+    return "".join(char for index, char in enumerate(SENTINEL_PHRASE) if index not in removed)
+
+
+def next_letter_index(indices: Iterable[int]) -> int | None:
+    removed = set(indices)
+    for index, char in enumerate(SENTINEL_PHRASE):
+        if char.isalpha() and index not in removed:
+            return index
+    return None
+
+
+def letter_count(text: str) -> int:
+    return sum(char.isalpha() for char in text)
+
+
+def visible_char(char: str) -> str:
+    names = {
+        " ": "<ESPAÇO>",
+        "\t": "<TAB>",
+        "\n": "<QUEBRA_DE_LINHA>",
+        "\r": "<RETORNO_DE_CARRO>",
+    }
+    return names.get(char, char)
+
+
+def character_set_text(text: str) -> str:
+    return " | ".join(visible_char(char) for char in sorted(set(text), key=ord)) or "<VAZIO>"
+
+
+def character_counts_text(text: str) -> str:
+    counts = Counter(text)
+    parts = [f"{visible_char(char)}={counts[char]}" for char in sorted(counts, key=ord)]
+    return " | ".join(parts) or "<VAZIO>"
+
+
+def make_fields(**kwargs: Any) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for name in FIELD_ORDER:
+        value = kwargs.get(name, NA)
+        fields[name] = normalize_text(value, field=name)
+    return fields
+
+
+def make_event(
+    *,
+    record_id: str,
+    seq: int,
+    kind: str,
+    state_before: str,
+    state_after: str,
+    network_before: str,
+    network_after: str,
+    origin: str,
+    suppressed_before: tuple[int, ...],
+    suppressed_after: tuple[int, ...],
+    removed_index: int | None,
+    fields: dict[str, str],
+    prev_hash: str,
+) -> dict[str, Any]:
+    if kind not in VALID_KINDS:
+        raise RegistroError(f"Tipo de evento inválido: {kind}")
+    if origin not in VALID_ORIGINS:
+        raise RegistroError(f"Origem inválida: {origin}")
+    event: dict[str, Any] = {
+        "format": FORMAT_VERSION,
+        "record_id": record_id,
+        "seq": seq,
+        "utc": now_utc(),
+        "kind": kind,
+        "state_before": state_before,
+        "state_after": state_after,
+        "network_before": network_before,
+        "network_after": network_after,
+        "origin": origin,
+        "suppressed_before": list(suppressed_before),
+        "suppressed_after": list(suppressed_after),
+        "removed_index": removed_index,
+        "removed_letter": SENTINEL_PHRASE[removed_index] if removed_index is not None else None,
+        "phrase_before": phrase_from_suppressed(suppressed_before),
+        "phrase_after": phrase_from_suppressed(suppressed_after),
+        "fields": fields,
+        "prev_hash": prev_hash,
+    }
+    event["hash"] = event_hash(event)
+    return event
+
+
+def render_text_field(label: str, value: str) -> str:
+    return (
+        f"{label}_CARACTERES: {len(value)}\n"
+        f"{label}_INICIO\n"
+        f"{value}\n"
+        f"{label}_FIM\n"
+    )
+
+
+def render_event(event: dict[str, Any]) -> str:
+    removed_index = event["removed_index"]
+    removed_position = "NENHUMA" if removed_index is None else str(removed_index + 1)
+    removed_letter = "NENHUMA" if event["removed_letter"] is None else event["removed_letter"]
+    before = tuple(event["suppressed_before"])
+    after = tuple(event["suppressed_after"])
+    lines = [
+        f"===== EVENTO {event['seq']:06d} =====\n",
+        f"FORMATO: {event['format']}\n",
+        f"REGISTRO_ID: {event['record_id']}\n",
+        f"SEQUENCIA: {event['seq']}\n",
+        f"UTC: {event['utc']}\n",
+        f"TIPO: {event['kind']}\n",
+        f"ESTADO_ANTES: {event['state_before']}\n",
+        f"ESTADO_DEPOIS: {event['state_after']}\n",
+        f"REDE_ANTES: {event['network_before']}\n",
+        f"REDE_DEPOIS: {event['network_after']}\n",
+        f"ORIGEM_DO_INCIDENTE: {event['origin']}\n",
+        f"POSICAO_ORIGINAL_SUPRIMIDA: {removed_position}\n",
+        f"LETRA_SUPRIMIDA: {removed_letter}\n",
+        f"INDICES_SUPRIMIDOS_ANTES: {','.join(str(i + 1) for i in before) or 'NENHUM'}\n",
+        f"INDICES_SUPRIMIDOS_DEPOIS: {','.join(str(i + 1) for i in after) or 'NENHUM'}\n",
+        f"HASH_ANTERIOR: {event['prev_hash']}\n",
+    ]
+    lines.append(render_text_field("FRASE_SENTINELA_ANTES", event["phrase_before"]))
+    lines.append(render_text_field("FRASE_SENTINELA_DEPOIS", event["phrase_after"]))
+    for name in FIELD_ORDER:
+        lines.append(render_text_field(name, event["fields"][name]))
+    lines.extend(
+        [
+            f"HASH_EVENTO: {event['hash']}\n",
+            f"===== FIM EVENTO {event['seq']:06d} =====\n",
+        ]
+    )
+    return "".join(lines)
+
+
+def render_record(events: list[dict[str, Any]]) -> str:
+    state, network, record_id, current_hash, suppressed = validate_events(events)
+    phrase = phrase_from_suppressed(suppressed)
+    header = [
+        f"{TITLE}\n",
+        f"FORMATO: {FORMAT_VERSION}\n",
+        f"REGISTRO_ID: {record_id}\n",
+        f"ESTADO_ATUAL: {state}\n",
+        f"REDE_ATUAL: {network}\n",
+        f"EVENTOS: {len(events)}\n",
+        f"HASH_ATUAL: {current_hash}\n",
+        f"LETRAS_ORIGINAIS: {letter_count(SENTINEL_PHRASE)}\n",
+        f"LETRAS_SUPRIMIDAS: {len(suppressed)}\n",
+        f"LETRAS_RESTANTES: {letter_count(phrase)}\n",
+        f"INDICES_SUPRIMIDOS: {','.join(str(i + 1) for i in suppressed) or 'NENHUM'}\n",
+        f"CONJUNTO_DE_CARACTERES_ATUAL: {character_set_text(phrase)}\n",
+        f"CONTAGEM_DE_CARACTERES_ATUAL: {character_counts_text(phrase)}\n",
+    ]
+    header.append(render_text_field("FRASE_SENTINELA_ORIGINAL", SENTINEL_PHRASE))
+    header.append(render_text_field("FRASE_SENTINELA_ATUAL", phrase))
+    header.append(f"{CHRONO_BEGIN}\n")
+    for event in events:
+        header.append(render_event(event))
+    header.append(f"{CHRONO_END}\n")
+    return "".join(header)
+
+
+class TextReader:
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+
+    def expect(self, literal: str) -> None:
+        if not self.text.startswith(literal, self.pos):
+            sample = self.text[self.pos : self.pos + 80]
+            raise RegistroError(f"Estrutura inválida; esperado {literal!r}, encontrado {sample!r}.")
+        self.pos += len(literal)
+
+    def line(self, prefix: str) -> str:
+        self.expect(prefix)
+        end = self.text.find("\n", self.pos)
+        if end < 0:
+            raise RegistroError(f"Linha sem término após {prefix}.")
+        value = self.text[self.pos:end]
+        self.pos = end + 1
+        return value
+
+    def text_field(self, label: str) -> str:
+        length_text = self.line(f"{label}_CARACTERES: ")
+        try:
+            length = int(length_text)
+        except ValueError as error:
+            raise RegistroError(f"Comprimento inválido em {label}.") from error
+        if length < 0 or length > MAX_TEXT_CHARS:
+            raise RegistroError(f"Comprimento fora do limite em {label}.")
+        self.expect(f"{label}_INICIO\n")
+        value = self.text[self.pos : self.pos + length]
+        if len(value) != length:
+            raise RegistroError(f"Campo truncado: {label}.")
+        self.pos += length
+        self.expect(f"\n{label}_FIM\n")
+        return value
+
+
+def parse_indices(value: str) -> tuple[int, ...]:
+    if value == "NENHUM":
+        return ()
+    try:
+        positions = tuple(int(item) for item in value.split(","))
+    except ValueError as error:
+        raise RegistroError("Lista de índices inválida.") from error
+    if any(position <= 0 for position in positions):
+        raise RegistroError("Posições devem ser positivas.")
+    return tuple(position - 1 for position in positions)
+
+
+def parse_event(reader: TextReader, expected_seq: int) -> dict[str, Any]:
+    reader.expect(f"===== EVENTO {expected_seq:06d} =====\n")
+    fmt = int(reader.line("FORMATO: "))
+    record_id = reader.line("REGISTRO_ID: ")
+    seq = int(reader.line("SEQUENCIA: "))
+    utc = reader.line("UTC: ")
+    kind = reader.line("TIPO: ")
+    state_before = reader.line("ESTADO_ANTES: ")
+    state_after = reader.line("ESTADO_DEPOIS: ")
+    network_before = reader.line("REDE_ANTES: ")
+    network_after = reader.line("REDE_DEPOIS: ")
+    origin = reader.line("ORIGEM_DO_INCIDENTE: ")
+    removed_position_text = reader.line("POSICAO_ORIGINAL_SUPRIMIDA: ")
+    removed_letter_text = reader.line("LETRA_SUPRIMIDA: ")
+    suppressed_before = parse_indices(reader.line("INDICES_SUPRIMIDOS_ANTES: "))
+    suppressed_after = parse_indices(reader.line("INDICES_SUPRIMIDOS_DEPOIS: "))
+    prev_hash = reader.line("HASH_ANTERIOR: ")
+    phrase_before = reader.text_field("FRASE_SENTINELA_ANTES")
+    phrase_after = reader.text_field("FRASE_SENTINELA_DEPOIS")
+    fields = {name: reader.text_field(name) for name in FIELD_ORDER}
+    declared_hash = reader.line("HASH_EVENTO: ")
+    reader.expect(f"===== FIM EVENTO {expected_seq:06d} =====\n")
+
+    removed_index = None if removed_position_text == "NENHUMA" else int(removed_position_text) - 1
+    removed_letter = None if removed_letter_text == "NENHUMA" else removed_letter_text
+    event = {
+        "format": fmt,
+        "record_id": record_id,
+        "seq": seq,
+        "utc": utc,
+        "kind": kind,
+        "state_before": state_before,
+        "state_after": state_after,
+        "network_before": network_before,
+        "network_after": network_after,
+        "origin": origin,
+        "suppressed_before": list(suppressed_before),
+        "suppressed_after": list(suppressed_after),
+        "removed_index": removed_index,
+        "removed_letter": removed_letter,
+        "phrase_before": phrase_before,
+        "phrase_after": phrase_after,
+        "fields": fields,
+        "prev_hash": prev_hash,
+        "hash": declared_hash,
+    }
+    return event
+
+
+def parse_record(text: str) -> list[dict[str, Any]]:
+    reader = TextReader(text)
+    reader.expect(f"{TITLE}\n")
+    fmt = int(reader.line("FORMATO: "))
+    if fmt != FORMAT_VERSION:
+        raise RegistroError("Formato do registro incompatível.")
+    reader.line("REGISTRO_ID: ")
+    reader.line("ESTADO_ATUAL: ")
+    reader.line("REDE_ATUAL: ")
+    event_count = int(reader.line("EVENTOS: "))
+    reader.line("HASH_ATUAL: ")
+    reader.line("LETRAS_ORIGINAIS: ")
+    reader.line("LETRAS_SUPRIMIDAS: ")
+    reader.line("LETRAS_RESTANTES: ")
+    reader.line("INDICES_SUPRIMIDOS: ")
+    reader.line("CONJUNTO_DE_CARACTERES_ATUAL: ")
+    reader.line("CONTAGEM_DE_CARACTERES_ATUAL: ")
+    original = reader.text_field("FRASE_SENTINELA_ORIGINAL")
+    if original != SENTINEL_PHRASE:
+        raise RegistroError("A frase-sentinela original foi alterada.")
+    reader.text_field("FRASE_SENTINELA_ATUAL")
+    reader.expect(f"{CHRONO_BEGIN}\n")
+    events = [parse_event(reader, seq) for seq in range(1, event_count + 1)]
+    reader.expect(f"{CHRONO_END}\n")
+    if reader.pos != len(text):
+        raise RegistroError("Há conteúdo não reconhecido após o fim da cronologia.")
+    return events
+
+
+def validate_events(events: list[dict[str, Any]]) -> tuple[str, str, str, str, tuple[int, ...]]:
+    if not events:
+        raise RegistroError("Registro sem eventos.")
+    record_id = events[0].get("record_id")
+    if not isinstance(record_id, str) or not record_id:
+        raise RegistroError("REGISTRO_ID inválido.")
+
+    state = "INEXISTENTE"
+    network = "BLOQUEADA"
+    current_hash = GENESIS_HASH
+    suppressed: tuple[int, ...] = ()
+
+    for expected_seq, event in enumerate(events, start=1):
+        if event.get("format") != FORMAT_VERSION:
+            raise RegistroError(f"Evento {expected_seq}: formato incompatível.")
+        if event.get("record_id") != record_id:
+            raise RegistroError(f"Evento {expected_seq}: pertence a outro registro.")
+        if event.get("seq") != expected_seq:
+            raise RegistroError(f"Evento {expected_seq}: sequência inválida.")
+        if event.get("kind") not in VALID_KINDS:
+            raise RegistroError(f"Evento {expected_seq}: tipo inválido.")
+        if event.get("state_before") != state:
+            raise RegistroError(f"Evento {expected_seq}: ESTADO_ANTES divergente.")
+        if event.get("network_before") != network:
+            raise RegistroError(f"Evento {expected_seq}: REDE_ANTES divergente.")
+        if tuple(event.get("suppressed_before", ())) != suppressed:
+            raise RegistroError(f"Evento {expected_seq}: índices anteriores divergentes.")
+        if event.get("prev_hash") != current_hash:
+            raise RegistroError(f"Evento {expected_seq}: HASH_ANTERIOR divergente.")
+        if event.get("hash") != event_hash(event):
+            raise RegistroError(f"Evento {expected_seq}: HASH_EVENTO inválido.")
+        if event.get("phrase_before") != phrase_from_suppressed(suppressed):
+            raise RegistroError(f"Evento {expected_seq}: frase anterior divergente.")
+
+        kind = event["kind"]
+        origin = event["origin"]
+        after = tuple(event.get("suppressed_after", ()))
+        removed_index = event.get("removed_index")
+        removed_letter = event.get("removed_letter")
+
+        if expected_seq == 1:
+            if kind != "INICIO" or state != "INEXISTENTE":
+                raise RegistroError("O primeiro evento deve ser INICIO.")
+            expected_state = "ATIVO"
+            expected_network = "BLOQUEADA"
+        elif kind == "PROGRESSO":
+            if state != "ATIVO":
+                raise RegistroError("PROGRESSO só é permitido em estado ATIVO.")
+            expected_state = "ATIVO"
+            expected_network = network
+        elif kind == "INCIDENTE":
+            if state != "ATIVO":
+                raise RegistroError("INCIDENTE só é permitido em estado ATIVO.")
+            if origin not in {"ARTIFICIAL", "EXTERNA"}:
+                raise RegistroError("INCIDENTE deve indicar origem ARTIFICIAL ou EXTERNA.")
+            expected_state = "PAUSADO"
+            expected_network = network
+        elif kind == "RETOMADA":
+            if state != "PAUSADO":
+                raise RegistroError("RETOMADA só é permitida em estado PAUSADO.")
+            if letter_count(phrase_from_suppressed(suppressed)) == 0:
+                raise RegistroError("A frase-sentinela está esgotada; crie um novo registro.")
+            expected_state = "ATIVO"
+            expected_network = network
+        elif kind == "REDE_AUTORIZADA":
+            if state != "ATIVO":
+                raise RegistroError("REDE_AUTORIZADA só é permitida em estado ATIVO.")
+            if network != "BLOQUEADA":
+                raise RegistroError("A rede já estava autorizada.")
+            expected_state = "ATIVO"
+            expected_network = "AUTORIZADA"
+        elif kind == "ENCERRAMENTO":
+            if state != "ATIVO":
+                raise RegistroError("ENCERRAMENTO só é permitido em estado ATIVO.")
+            expected_state = "ENCERRADO"
+            expected_network = network
+        else:
+            raise RegistroError(f"Transição inválida no evento {expected_seq}.")
+
+        if kind == "INCIDENTE" and origin == "ARTIFICIAL":
+            expected_removed = next_letter_index(suppressed)
+            if expected_removed is None:
+                raise RegistroError("Não há mais letras disponíveis para supressão.")
+            expected_after = tuple((*suppressed, expected_removed))
+            if removed_index != expected_removed:
+                raise RegistroError(f"Evento {expected_seq}: letra artificial suprimida fora da ordem.")
+            if removed_letter != SENTINEL_PHRASE[expected_removed]:
+                raise RegistroError(f"Evento {expected_seq}: letra suprimida divergente.")
+        else:
+            expected_after = suppressed
+            if removed_index is not None or removed_letter is not None:
+                raise RegistroError(f"Evento {expected_seq}: supressão indevida.")
+
+        if after != expected_after:
+            raise RegistroError(f"Evento {expected_seq}: índices posteriores divergentes.")
+        if event.get("phrase_after") != phrase_from_suppressed(after):
+            raise RegistroError(f"Evento {expected_seq}: frase posterior divergente.")
+        if event.get("state_after") != expected_state:
+            raise RegistroError(f"Evento {expected_seq}: ESTADO_DEPOIS divergente.")
+        if event.get("network_after") != expected_network:
+            raise RegistroError(f"Evento {expected_seq}: REDE_DEPOIS divergente.")
+
+        fields = event.get("fields")
+        if not isinstance(fields, dict) or tuple(fields.keys()) != FIELD_ORDER:
+            raise RegistroError(f"Evento {expected_seq}: conjunto de campos incompleto ou fora da ordem.")
+        for name in FIELD_ORDER:
+            normalize_text(fields[name], field=name)
+
+        state = expected_state
+        network = expected_network
+        suppressed = after
+        current_hash = event["hash"]
+
+    if state not in VALID_STATES:
+        raise RegistroError("Estado final inválido.")
+    if network not in VALID_NETWORK:
+        raise RegistroError("Estado de rede inválido.")
+    return state, network, record_id, current_hash, suppressed
+
+
+def load_record(path: Path) -> LoadedRecord:
+    if not path.exists():
+        raise RegistroError(f"Arquivo não existe: {path}")
+    text = path.read_text(encoding="utf-8")
+    events = parse_record(text)
+    state, network, record_id, current_hash, suppressed = validate_events(events)
+    expected = render_record(events)
+    if text != expected:
+        raise RegistroError("O TXT diverge da representação canônica; possível edição ou omissão.")
+    return LoadedRecord(path, text, events, state, network, record_id, current_hash, suppressed)
+
+
+def atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+def append_event(path: Path, event: dict[str, Any], prior_events: list[dict[str, Any]]) -> LoadedRecord:
+    events = [*prior_events, event]
+    text = render_record(events)
+    atomic_write(path, text)
+    reopened = load_record(path)
+    if reopened.text != text:
+        raise RegistroError("Divergência após reabertura do TXT.")
+    return reopened
+
+
+
+def add_payload_args(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--payload-file", help="Arquivo JSON UTF-8 com os campos do comando.")
+    group.add_argument("--payload-stdin", action="store_true", help="Ler payload JSON UTF-8 da entrada padrão.")
+
+
+def load_payload(args: argparse.Namespace) -> dict[str, Any]:
+    if getattr(args, "payload_file", None):
+        raw = Path(args.payload_file).expanduser().read_text(encoding="utf-8")
+    elif getattr(args, "payload_stdin", False):
+        raw = sys.stdin.read()
+    else:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RegistroError(
+            f"Payload JSON inválido: {error.msg} na linha {error.lineno}, coluna {error.colno}."
+        ) from error
+    if not isinstance(payload, dict):
+        raise RegistroError("O payload JSON deve ser um objeto.")
+    return payload
+
+
+def hydrate_args(args: argparse.Namespace) -> argparse.Namespace:
+    payload = load_payload(args)
+    allowed = {
+        key
+        for key in vars(args)
+        if key not in {"command", "state", "payload_file", "payload_stdin"}
+    }
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise RegistroError(f"Campos desconhecidos no payload: {', '.join(unknown)}")
+    for key, value in payload.items():
+        current = getattr(args, key, None)
+        if current not in (None, False):
+            raise RegistroError(f"Campo {key} foi informado tanto na CLI quanto no payload.")
+        setattr(args, key, value)
+    return args
+
+
+def require_arg(args: argparse.Namespace, name: str) -> str:
+    return normalize_text(getattr(args, name, None), field=name)
+
+
+def common_event_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--instrucao", help="Instrução literal do usuário, sem reticências.")
+    parser.add_argument("--reescrita", help="Reescrita pública completa; não é raciocínio privado.")
+    parser.add_argument("--esperado", help="Próximo progresso cronológico esperado.")
+    parser.add_argument("--observado", help="Progresso efetivamente observado.")
+    parser.add_argument("--evidencia", help="Evidência verificável ou declaração explícita de ausência.")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state", default=DEFAULT_STATE_FILE, help="Único TXT persistente.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init", help="Iniciar cronologia com rede bloqueada.")
+    add_payload_args(init)
+    init.add_argument("--pedido")
+    init.add_argument("--reescrita")
+    init.add_argument("--proximo")
+
+    progress = sub.add_parser("progress", help="Registrar marco material sem pausa.")
+    add_payload_args(progress)
+    common_event_args(progress)
+    progress.add_argument("--entropia", help="Interpretação atual da entropia; use ESTÁVEL se não houver incidente.")
+
+    incident = sub.add_parser("incident", help="Registrar incidente, suprimir letra se artificial e pausar.")
+    add_payload_args(incident)
+    common_event_args(incident)
+    incident.add_argument("--origem")
+    incident.add_argument("--entropia")
+    incident.add_argument("--motivo-pausa")
+
+    resume = sub.add_parser("resume", help="Retomar somente com autorização literal do usuário.")
+    add_payload_args(resume)
+    resume.add_argument("--autorizacao")
+    resume.add_argument("--reescrita")
+    resume.add_argument("--proximo")
+    resume.add_argument("--evidencia")
+
+    network = sub.add_parser("authorize-network", help="Autorizar rede após instrução explícita do usuário.")
+    add_payload_args(network)
+    network.add_argument("--autorizacao")
+    network.add_argument("--reescrita")
+    network.add_argument("--proximo")
+    network.add_argument("--evidencia")
+    network.add_argument("--escopo", help="Uso externo permitido, inclusive autorização parcial.")
+    network.add_argument("--restricoes", help="Limites literais impostos pelo usuário.")
+
+    finalize = sub.add_parser("finalize", help="Encerrar após validar o entregável real.")
+    add_payload_args(finalize)
+    finalize.add_argument("--instrucao")
+    finalize.add_argument("--reescrita")
+    finalize.add_argument("--resultado")
+    finalize.add_argument("--evidencia")
+
+    sub.add_parser("validate", help="Validar estrutura, cronologia, campos e cadeia de hashes.")
+    sub.add_parser("status", help="Exibir estado resumido sem alterar o TXT.")
+    return parser
+
+
+def require_state(record: LoadedRecord, expected: str) -> None:
+    if record.state != expected:
+        raise RegistroError(f"Operação exige estado {expected}; estado atual: {record.state}.")
+
+
+def command_init(path: Path, args: argparse.Namespace) -> LoadedRecord:
+    if path.exists():
+        raise RegistroError(f"O TXT já existe: {path}")
+    fields = make_fields(
+        INSTRUCAO_USUARIO_LITERAL=require_arg(args, "pedido"),
+        REESCRITA_PUBLICA_DO_AGENTE=require_arg(args, "reescrita"),
+        PROGRESSO_ESPERADO=require_arg(args, "proximo"),
+        PROGRESSO_OBSERVADO="Registro inicial criado antes da primeira ação substantiva.",
+        EVIDENCIA=f"TXT criado em {path} e reaberto para validação.",
+        INTERPRETACAO_INCIDENTE_DA_ENTROPIA="ESTÁVEL: ainda não houve desvio cronológico observado.",
+    )
+    event = make_event(
+        record_id=str(uuid.uuid4()), seq=1, kind="INICIO",
+        state_before="INEXISTENTE", state_after="ATIVO",
+        network_before="BLOQUEADA", network_after="BLOQUEADA",
+        origin="NÃO SE APLICA", suppressed_before=(), suppressed_after=(),
+        removed_index=None, fields=fields, prev_hash=GENESIS_HASH,
+    )
+    return append_event(path, event, [])
+
+
+def command_progress(record: LoadedRecord, args: argparse.Namespace) -> LoadedRecord:
+    require_state(record, "ATIVO")
+    fields = make_fields(
+        INSTRUCAO_USUARIO_LITERAL=require_arg(args, "instrucao"),
+        REESCRITA_PUBLICA_DO_AGENTE=require_arg(args, "reescrita"),
+        PROGRESSO_ESPERADO=require_arg(args, "esperado"),
+        PROGRESSO_OBSERVADO=require_arg(args, "observado"),
+        EVIDENCIA=require_arg(args, "evidencia"),
+        INTERPRETACAO_INCIDENTE_DA_ENTROPIA=require_arg(args, "entropia"),
+    )
+    event = make_event(
+        record_id=record.record_id, seq=len(record.events) + 1, kind="PROGRESSO",
+        state_before=record.state, state_after="ATIVO",
+        network_before=record.network, network_after=record.network,
+        origin="NÃO SE APLICA", suppressed_before=record.suppressed_indices,
+        suppressed_after=record.suppressed_indices, removed_index=None,
+        fields=fields, prev_hash=record.current_hash,
+    )
+    return append_event(record.path, event, record.events)
+
+
+def command_incident(record: LoadedRecord, args: argparse.Namespace) -> LoadedRecord:
+    require_state(record, "ATIVO")
+    origin_raw = require_arg(args, "origem").lower()
+    if origin_raw not in {"artificial", "externa"}:
+        raise RegistroError("origem deve ser artificial ou externa.")
+    origin = origin_raw.upper()
+    removed_index = next_letter_index(record.suppressed_indices) if origin == "ARTIFICIAL" else None
+    if origin == "ARTIFICIAL" and removed_index is None:
+        raise RegistroError("A frase-sentinela não possui mais letras; inicie novo registro.")
+    suppressed_after = (
+        tuple((*record.suppressed_indices, removed_index))
+        if removed_index is not None else record.suppressed_indices
+    )
+    fields = make_fields(
+        INSTRUCAO_USUARIO_LITERAL=require_arg(args, "instrucao"),
+        REESCRITA_PUBLICA_DO_AGENTE=require_arg(args, "reescrita"),
+        PROGRESSO_ESPERADO=require_arg(args, "esperado"),
+        PROGRESSO_OBSERVADO=require_arg(args, "observado"),
+        EVIDENCIA=require_arg(args, "evidencia"),
+        INTERPRETACAO_INCIDENTE_DA_ENTROPIA=require_arg(args, "entropia"),
+        MOTIVO_DA_PAUSA=require_arg(args, "motivo_pausa"),
+    )
+    event = make_event(
+        record_id=record.record_id, seq=len(record.events) + 1, kind="INCIDENTE",
+        state_before=record.state, state_after="PAUSADO",
+        network_before=record.network, network_after=record.network,
+        origin=origin, suppressed_before=record.suppressed_indices,
+        suppressed_after=suppressed_after, removed_index=removed_index,
+        fields=fields, prev_hash=record.current_hash,
+    )
+    return append_event(record.path, event, record.events)
+
+
+def command_resume(record: LoadedRecord, args: argparse.Namespace) -> LoadedRecord:
+    require_state(record, "PAUSADO")
+    fields = make_fields(
+        INSTRUCAO_USUARIO_LITERAL=require_arg(args, "autorizacao"),
+        REESCRITA_PUBLICA_DO_AGENTE=require_arg(args, "reescrita"),
+        PROGRESSO_ESPERADO=require_arg(args, "proximo"),
+        PROGRESSO_OBSERVADO="Retomada registrada no mesmo ponto cronológico, sem reinicialização.",
+        EVIDENCIA=require_arg(args, "evidencia"),
+        INTERPRETACAO_INCIDENTE_DA_ENTROPIA=(
+            "A autorização explícita encerra a pausa e preserva a política de rede vigente."
+        ),
+        AUTORIZACAO_LITERAL_DE_RETOMADA=require_arg(args, "autorizacao"),
+    )
+    event = make_event(
+        record_id=record.record_id, seq=len(record.events) + 1, kind="RETOMADA",
+        state_before=record.state, state_after="ATIVO",
+        network_before=record.network, network_after=record.network,
+        origin="NÃO SE APLICA", suppressed_before=record.suppressed_indices,
+        suppressed_after=record.suppressed_indices, removed_index=None,
+        fields=fields, prev_hash=record.current_hash,
+    )
+    return append_event(record.path, event, record.events)
+
+
+def command_authorize_network(record: LoadedRecord, args: argparse.Namespace) -> LoadedRecord:
+    require_state(record, "ATIVO")
+    if record.network != "BLOQUEADA":
+        raise RegistroError("A rede já está autorizada neste registro.")
+    escopo = normalize_text(
+        getattr(args, "escopo", None) or "TODO USO EXTERNO NECESSÁRIO À TAREFA",
+        field="escopo",
+    )
+    restricoes = normalize_text(
+        getattr(args, "restricoes", None) or "SEM RESTRIÇÕES ADICIONAIS DECLARADAS",
+        field="restricoes",
+    )
+    fields = make_fields(
+        INSTRUCAO_USUARIO_LITERAL=require_arg(args, "autorizacao"),
+        REESCRITA_PUBLICA_DO_AGENTE=(
+            require_arg(args, "reescrita")
+            + f"\nESCOPO_DE_REDE_AUTORIZADO: {escopo}"
+            + f"\nRESTRICOES_DE_REDE: {restricoes}"
+        ),
+        PROGRESSO_ESPERADO=require_arg(args, "proximo"),
+        PROGRESSO_OBSERVADO="Autorização de rede registrada sem realizar acesso externo.",
+        EVIDENCIA=require_arg(args, "evidencia"),
+        INTERPRETACAO_INCIDENTE_DA_ENTROPIA=(
+            "ESTÁVEL: a autorização e seus limites vieram literalmente do usuário."
+        ),
+    )
+    event = make_event(
+        record_id=record.record_id, seq=len(record.events) + 1, kind="REDE_AUTORIZADA",
+        state_before=record.state, state_after="ATIVO",
+        network_before=record.network, network_after="AUTORIZADA",
+        origin="NÃO SE APLICA", suppressed_before=record.suppressed_indices,
+        suppressed_after=record.suppressed_indices, removed_index=None,
+        fields=fields, prev_hash=record.current_hash,
+    )
+    return append_event(record.path, event, record.events)
+
+
+def command_finalize(record: LoadedRecord, args: argparse.Namespace) -> LoadedRecord:
+    require_state(record, "ATIVO")
+    fields = make_fields(
+        INSTRUCAO_USUARIO_LITERAL=require_arg(args, "instrucao"),
+        REESCRITA_PUBLICA_DO_AGENTE=require_arg(args, "reescrita"),
+        PROGRESSO_ESPERADO="Encerrar somente após conferir o entregável real contra a instrução vigente.",
+        PROGRESSO_OBSERVADO="Encerramento solicitado após a verificação declarada.",
+        EVIDENCIA=require_arg(args, "evidencia"),
+        INTERPRETACAO_INCIDENTE_DA_ENTROPIA="ESTÁVEL no encerramento, conforme evidência registrada.",
+        RESULTADO=require_arg(args, "resultado"),
+    )
+    event = make_event(
+        record_id=record.record_id, seq=len(record.events) + 1, kind="ENCERRAMENTO",
+        state_before=record.state, state_after="ENCERRADO",
+        network_before=record.network, network_after=record.network,
+        origin="NÃO SE APLICA", suppressed_before=record.suppressed_indices,
+        suppressed_after=record.suppressed_indices, removed_index=None,
+        fields=fields, prev_hash=record.current_hash,
+    )
+    return append_event(record.path, event, record.events)
+
+
+def print_status(record: LoadedRecord) -> None:
+    phrase = phrase_from_suppressed(record.suppressed_indices)
+    print(f"ARQUIVO={record.path}")
+    print(f"ESTADO={record.state}")
+    print(f"REDE={record.network}")
+    print(f"EVENTOS={len(record.events)}")
+    print(f"LETRAS_SUPRIMIDAS={len(record.suppressed_indices)}")
+    print(f"LETRAS_RESTANTES={letter_count(phrase)}")
+    print(f"HASH_ATUAL={record.current_hash}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        args = hydrate_args(args)
+        path = Path(args.state).expanduser().resolve()
+        if args.command == "init":
+            record = command_init(path, args)
+        else:
+            record = load_record(path)
+            if args.command == "progress":
+                record = command_progress(record, args)
+            elif args.command == "incident":
+                record = command_incident(record, args)
+            elif args.command == "resume":
+                record = command_resume(record, args)
+            elif args.command == "authorize-network":
+                record = command_authorize_network(record, args)
+            elif args.command == "finalize":
+                record = command_finalize(record, args)
+            elif args.command in {"validate", "status"}:
+                pass
+            else:
+                raise RegistroError(f"Comando desconhecido: {args.command}")
+        print_status(record)
+        if args.command == "incident":
+            print("PAUSA_OBRIGATORIA=1")
+            print(f"MOTIVO_DA_PAUSA={require_arg(args, 'motivo_pausa')}")
+        if args.command == "validate":
+            print("VALIDO=1")
+        return 0
+    except (RegistroError, OSError, UnicodeError, ValueError) as error:
+        print(f"ERRO: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
