@@ -7,15 +7,6 @@ import uuid
 from aiogram import Dispatcher, F
 from aiogram.dispatcher.event.bases import UNHANDLED
 from aiogram.filters import Command, StateFilter
-from aiogram.types import (
-    CallbackQuery,
-    InlineQuery,
-    InlineQueryResultCachedPhoto,
-    InlineQueryResultPhoto,
-    Message,
-    MessageReactionUpdated,
-    ReactionTypeEmoji,
-)
 
 from app.bot.intent import detect_intent
 from app.config.settings import LASTFM_API_KEY, is_code_owner
