@@ -7,7 +7,9 @@ musical final. A legenda final inline é sempre sanitizada para não conter link
 
 Regras desta fase:
 - fluxo inline musical inteiro: apenas dono do código. Usuário comum não recebe opções inline.
-- tnow/mosaico inline: matriz universal apenas para o dono, sem tentar descobrir grupo destino.
+- busca por texto livre: lista vertical (capa + música + artista · álbum); ao publicar
+  herda o layout inline do playing, com ♫ e sem contador de plays (escolha manual).
+- prefixo tly/letra + termo: a mesma lista, com (Lyrics) no resultado; ao publicar usa o fluxo de letra.
 - resultado final com foto prioriza file_id persistente no Telegram; URL só fica como fallback seguro.
 """
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import html
+import json
 import logging
 import re
 import time
@@ -64,6 +67,7 @@ from app.services.spotify import spotify_service
 from app.services.spotify_links import looks_like_spotify_track_reference
 from app.services.tnow_activity_cache import schedule_tnow_activity_record
 from app.services.tnow_card import render_tnow_card
+from app.services.track_search import TrackHit, search_tracks
 
 logger = logging.getLogger(__name__)
 router = Router(name="music_inline")
@@ -112,6 +116,7 @@ _KIND_LOADING = {
     "week": "Gerando extrato da semana do Last.fm...",
     "month": "Gerando extrato mensal do Last.fm...",
     "mosaic": "Gerando mosaico musical...",
+    "pick": "Gerando música...",
 }
 
 _INLINE_MENU_KINDS: tuple[str, ...] = ("playing", "tly", "tcanvas", "week", "month", "mosaic")
@@ -205,11 +210,13 @@ def _split_query(raw: str | None) -> tuple[str | None, str | None]:
     return kind, arg or None
 
 
-def is_music_inline_query(raw: str | None) -> bool:
+def is_music_inline_query(raw: str | None, *, owner: bool = False) -> bool:
     if not (raw or "").strip():
         return True
     kind, _arg = _split_query(raw)
-    return kind is not None
+    if kind is not None:
+        return True
+    return bool(owner)
 
 
 def _strip_links(value: str | None) -> str:
@@ -538,6 +545,53 @@ def _format_inline_music_header(
     return f"{name_part}\n{play_prefix}{track_name} — {artist}"
 
 
+def _format_inline_manual_header(name_part: str, track_name: str, artist: str) -> str:
+    """Playing layout with ♫ and no play count — manual search pick."""
+    return f"{name_part}\n♫ {track_name} — {artist}"
+
+
+def _encode_pick(hit: TrackHit) -> str:
+    return json.dumps(
+        {
+            "t": hit.title,
+            "a": hit.artist,
+            "b": hit.album or "",
+            "c": hit.cover_big or hit.cover_thumb or "",
+            "i": hit.track_id,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _decode_pick(raw: str | None) -> dict[str, str] | None:
+    try:
+        payload = json.loads(raw or "")
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    title = str(payload.get("t") or "").strip()
+    artist = str(payload.get("a") or "").strip()
+    if not title or not artist:
+        return None
+    return {
+        "title": title,
+        "artist": artist,
+        "album": str(payload.get("b") or "").strip(),
+        "cover": str(payload.get("c") or "").strip(),
+        "track_id": str(payload.get("i") or "").strip(),
+    }
+
+
+def _pick_search_term(raw: str | None) -> str | None:
+    picked = _decode_pick(raw)
+    if picked:
+        return f'{picked["title"]} — {picked["artist"]}'
+    value = (raw or "").strip()
+    return value or None
+
+
 def _inline_tly_search_query(raw: str | None) -> str | None:
     value = (raw or "").strip()
     if not value:
@@ -590,7 +644,7 @@ async def _search_spotify_inline_track(raw_query: str | None) -> dict | None:
 
 async def _resolve_inline_tly_track(item: _PendingInline) -> dict | None:
     if item.arg:
-        return await _search_spotify_inline_track(item.arg)
+        return await _search_spotify_inline_track(_pick_search_term(item.arg))
     return await music_service.get_current_or_last_played(item.user_id)
 
 
@@ -789,6 +843,28 @@ async def _render_mosaic(bot: Bot, item: _PendingInline) -> _InlineRender:
     return _InlineRender(caption=text, fallback_text=text)
 
 
+async def _render_pick(item: _PendingInline) -> _InlineRender:
+    picked = _decode_pick(item.arg)
+    if not picked:
+        text = "Não encontrei essa música."
+        return _InlineRender(caption=text, fallback_text=text)
+    name_part = _inline_name_style(item.display_name or "Usuário")
+    caption = _format_inline_manual_header(
+        name_part,
+        html.escape(picked["title"]),
+        html.escape(picked["artist"]),
+    )
+    safe_caption = _strip_links(caption)
+    cover = picked.get("cover") or None
+    return _InlineRender(
+        caption=safe_caption,
+        photo=cover,
+        filename="pick-inline.jpg",
+        fallback_text=safe_caption,
+        track_id=picked.get("track_id") or None,
+    )
+
+
 async def _render(bot: Bot, item: _PendingInline) -> _InlineRender:
     if not _is_owner(item.user_id):
         logger.info("MUSIC_INLINE_RENDER_BLOCKED_NON_OWNER | user_id=%s | kind=%s", item.user_id, item.kind)
@@ -806,10 +882,12 @@ async def _render(bot: Bot, item: _PendingInline) -> _InlineRender:
         return await _render_month(item)
     if item.kind == "mosaic":
         return await _render_mosaic(bot, item)
+    if item.kind == "pick":
+        return await _render_pick(item)
     return _InlineRender(caption="Comando inline indisponível.", fallback_text="Comando inline indisponível.")
 
 
-@router.inline_query(lambda query: is_music_inline_query(query.query))
+@router.inline_query(lambda query: is_music_inline_query(query.query, owner=_is_owner(query.from_user.id)))
 async def music_inline_query(query: InlineQuery) -> None:
     kind, arg = _split_query(query.query)
 
@@ -851,7 +929,48 @@ async def music_inline_query(query: InlineQuery) -> None:
 
     _purge_pending()
 
+    async def _answer_track_picks(*, term: str, result_kind: str) -> None:
+        hits = await search_tracks(term, limit=8)
+        results: list[InlineQueryResultArticle] = []
+        loading = _KIND_LOADING["tly"] if result_kind == "tly" else _KIND_LOADING["pick"]
+        for hit in hits:
+            result_id = f"mi:{result_kind}:{uuid.uuid4().hex[:12]}"
+            _PENDING[result_id] = _PendingInline(
+                kind=result_kind,
+                user_id=int(query.from_user.id),
+                display_name=query.from_user.full_name or "Usuário",
+                username=query.from_user.username,
+                arg=_encode_pick(hit),
+                created_at=time.monotonic(),
+            )
+            description = hit.artist
+            if hit.album:
+                description = f"{hit.artist} · {hit.album}"
+            if result_kind == "tly":
+                description = f"{description} (Lyrics)"
+            article_kwargs: dict = {
+                "id": result_id,
+                "title": hit.title,
+                "description": description,
+                "input_message_content": InputTextMessageContent(
+                    message_text=html.escape(loading),
+                    parse_mode="HTML",
+                ),
+                "reply_markup": _build_loading_markup(result_id),
+            }
+            thumb = hit.cover_thumb or hit.cover_big
+            if thumb:
+                article_kwargs["thumbnail_url"] = thumb
+                article_kwargs["thumbnail_width"] = 96
+                article_kwargs["thumbnail_height"] = 96
+            results.append(InlineQueryResultArticle(**article_kwargs))
+        await query.answer(results, cache_time=1, is_personal=True)
+
     if not kind:
+        raw = (query.query or "").strip()
+        if raw:
+            await _answer_track_picks(term=raw, result_kind="pick")
+            return
         results = [
             result
             for item_kind in _INLINE_MENU_KINDS
@@ -859,6 +978,10 @@ async def music_inline_query(query: InlineQuery) -> None:
             if result is not None
         ]
         await query.answer(results, cache_time=0, is_personal=True)
+        return
+
+    if kind == "tly" and arg and not looks_like_spotify_track_reference(arg):
+        await _answer_track_picks(term=arg, result_kind="tly")
         return
 
     result = _make_result(kind, arg)

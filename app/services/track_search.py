@@ -28,6 +28,7 @@ class TrackHit:
     cover_big: str | None
     cover_thumb: str | None
     url: str | None
+    album: str | None = None
 
 
 async def search_tracks(term: str, *, limit: int = 8) -> list[TrackHit]:
@@ -65,8 +66,9 @@ async def search_tracks(term: str, *, limit: int = 8) -> list[TrackHit]:
         seen.add(dedup)
         album = item.get("album") or {}
         cover_big = album.get("cover_big") or album.get("cover_medium")
-        cover_thumb = album.get("cover_small") or album.get("cover_medium")
+        cover_thumb = album.get("cover_medium") or album.get("cover_small") or album.get("cover_big")
         url = item.get("link")
+        album_title = str(album.get("title") or "").strip() or None
         hits.append(
             TrackHit(
                 track_id=str(item.get("id") or "").strip(),
@@ -75,6 +77,7 @@ async def search_tracks(term: str, *, limit: int = 8) -> list[TrackHit]:
                 cover_big=str(cover_big) if cover_big else None,
                 cover_thumb=str(cover_thumb) if cover_thumb else None,
                 url=str(url) if url else None,
+                album=album_title,
             )
         )
         if len(hits) >= limit:

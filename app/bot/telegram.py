@@ -811,7 +811,10 @@ def _register_handlers(dp: Dispatcher) -> None:
         try:
             from app.bot.music_inline import is_music_inline_query
 
-            return is_music_inline_query(query.query)
+            return is_music_inline_query(
+                query.query,
+                owner=is_code_owner(query.from_user.id) if query.from_user else False,
+            )
         except Exception:
             logger.debug("MUSIC_INLINE_V2_FORMAT_CHECK_FAILED", exc_info=True)
             return False
