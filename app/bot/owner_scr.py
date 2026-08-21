@@ -17,7 +17,15 @@ from aiogram.types import (
 )
 
 from app.config.settings import LASTFM_SCR_MAX_PLAYS, is_code_owner
-from app.services.lastfm_scrobbler import ScrobbleItem, check_lastfm_auth, scrobble_items
+from app.services.lastfm_scrobbler import (
+    ScrobbleItem,
+    check_lastfm_auth,
+    lastfm_auth_url,
+    lastfm_get_auth_token,
+    lastfm_get_session,
+    save_persisted_session,
+    scrobble_items,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="owner_scr")
@@ -53,6 +61,7 @@ class _PendingScr:
 
 _PENDING: dict[int, _PendingScr] = {}
 _BUSY: set[int] = set()
+_AUTH_TOKENS: dict[int, str] = {}
 
 
 def _html_to_text(value: str) -> str:
@@ -327,3 +336,96 @@ async def scr_confirm_callback(query: CallbackQuery) -> None:
         f"Ignorados: <code>{result.ignored}</code>{extra}",
         parse_mode="HTML",
     )
+
+
+def _auth_keyboard(url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Autorizar no Last.fm", url=url)],
+            [InlineKeyboardButton(text="Já autorizei", callback_data="lfmauth:done")],
+        ]
+    )
+
+
+async def _start_lfmauth(message: Message, user_id: int) -> None:
+    token, error = await lastfm_get_auth_token()
+    if not token:
+        await message.answer(
+            "Não consegui abrir a autorização.\n"
+            f"{html.escape(error or 'Confira TR3_LASTFM_API_KEY e TR3_LASTFM_API_SECRET no Railway.')}",
+            parse_mode="HTML",
+        )
+        return
+    _AUTH_TOKENS[user_id] = token
+    url = lastfm_auth_url(token)
+    await message.answer(
+        "1. Toque em <b>Autorizar no Last.fm</b>\n"
+        "2. Confirme com a conta que deve receber os scrobbles\n"
+        "3. Volte aqui e toque em <b>Já autorizei</b>",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=_auth_keyboard(url),
+    )
+
+
+@router.message(Command("lfmauth"))
+async def lfmauth_command(message: Message) -> None:
+    if await _deny_if_needed(message):
+        return
+    assert message.from_user
+    user_id = int(message.from_user.id)
+    auth = await check_lastfm_auth()
+    if auth.ok:
+        await message.answer(
+            f"Last.fm já autorizado como <b>{html.escape(auth.username or '?')}</b>.\n"
+            "Manda /lfmauth de novo se quiser trocar de conta.",
+            parse_mode="HTML",
+        )
+        # Still allow a fresh link if they explicitly want to reconnect:
+        # only skip extra prompt; they can send /lfmauth twice. Start anyway if they
+        # used the command — they asked to authorize.
+    await _start_lfmauth(message, user_id)
+
+
+@router.callback_query(F.data == "lfmauth:done")
+async def lfmauth_done(query: CallbackQuery) -> None:
+    if not query.from_user or not is_code_owner(query.from_user.id):
+        await query.answer("Acesso indisponível.", show_alert=True)
+        return
+    if query.message is None or getattr(query.message.chat, "type", None) != "private":
+        await query.answer("Só no privado.", show_alert=True)
+        return
+    user_id = int(query.from_user.id)
+    token = _AUTH_TOKENS.get(user_id)
+    if not token:
+        await query.answer("Pedido expirado. Manda /lfmauth de novo.", show_alert=True)
+        return
+    await query.answer("Conferindo…")
+    sk, username, error = await lastfm_get_session(token)
+    if not sk:
+        await query.message.answer(
+            html.escape(error or "Ainda não autorizou. Abre o link, confirma, e toca de novo em Já autorizei."),
+        )
+        return
+    saved = save_persisted_session(sk=sk, username=username or "")
+    _AUTH_TOKENS.pop(user_id, None)
+    check = await check_lastfm_auth()
+    if check.ok:
+        await query.message.answer(
+            f"Pronto. Last.fm conectado como <b>{html.escape(check.username or username or '?')}</b>.\n"
+            "Pode testar: responde um card com <code>/scr 1</code>.",
+            parse_mode="HTML",
+        )
+        return
+    if saved:
+        await query.message.answer(
+            "Salvei a sessão, mas o Last.fm ainda não confirmou. Espera um instante e tenta /scr 1.",
+        )
+        return
+    await query.message.answer(
+        "Autorizei, mas não consegui gravar no disco do servidor.\n"
+        "Cola isso no Railway como <code>TR3_LASTFM_SESSION_KEY</code> e faz redeploy:\n"
+        f"<code>{html.escape(sk)}</code>",
+        parse_mode="HTML",
+    )
+

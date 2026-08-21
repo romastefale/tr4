@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import logging
 import time
 from collections import Counter, OrderedDict
@@ -12,6 +13,7 @@ from typing import Any, Iterable
 import httpx
 
 from app.config.settings import (
+    DATA_DIR,
     HTTP_TIMEOUT_SECONDS,
     LASTFM_API_BASE_URL,
     LASTFM_API_KEY,
@@ -268,18 +270,120 @@ def build_api_sig(params: dict[str, str], api_secret: str) -> str:
     return hashlib.md5(material.encode("utf-8")).hexdigest()
 
 
-def _config_error() -> str | None:
+_SESSION_FILE = DATA_DIR / "lastfm_session.json"
+
+
+def get_lastfm_session_key() -> str:
+    stored = load_persisted_session()
+    if stored and stored.get("sk"):
+        return str(stored["sk"])
+    return str(LASTFM_SESSION_KEY or "").strip()
+
+
+def load_persisted_session() -> dict[str, str] | None:
+    try:
+        payload = json.loads(_SESSION_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    sk = str(payload.get("sk") or "").strip()
+    if not sk:
+        return None
+    return {
+        "sk": sk,
+        "username": str(payload.get("username") or "").strip(),
+    }
+
+
+def save_persisted_session(*, sk: str, username: str = "") -> bool:
+    try:
+        _SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _SESSION_FILE.write_text(
+            json.dumps({"sk": sk, "username": username}, ensure_ascii=True),
+            encoding="utf-8",
+        )
+        return True
+    except OSError:
+        logger.exception("LASTFM_SESSION_PERSIST_FAILED path=%s", _SESSION_FILE)
+        return False
+
+
+def _signing_config_error() -> str | None:
     missing = []
     if not LASTFM_API_KEY:
         missing.append("TR3_LASTFM_API_KEY")
     if not LASTFM_API_SECRET:
         missing.append("TR3_LASTFM_API_SECRET")
-    if not LASTFM_SESSION_KEY:
-        missing.append("TR3_LASTFM_SESSION_KEY")
     if missing:
         return "Variáveis ausentes: " + ", ".join(missing)
     return None
 
+
+def _config_error() -> str | None:
+    signing = _signing_config_error()
+    if signing:
+        return signing
+    if not get_lastfm_session_key():
+        return "Last.fm ainda não autorizado. Use /lfmauth no privado."
+    return None
+
+
+async def _signed_post(params: dict[str, str]) -> dict[str, Any]:
+    payload = dict(params)
+    payload["api_sig"] = build_api_sig(payload, str(LASTFM_API_SECRET))
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+        response = await client.post(LASTFM_API_BASE_URL, data=payload)
+    try:
+        body = response.json()
+    except Exception:
+        body = {"error": f"http_{response.status_code}", "message": response.text[:500]}
+    if not isinstance(body, dict):
+        return {"error": "malformed_response", "message": str(body)[:300]}
+    if response.status_code != 200 and "error" not in body:
+        body["error"] = f"http_{response.status_code}"
+    return body
+
+
+async def lastfm_get_auth_token() -> tuple[str | None, str | None]:
+    error = _signing_config_error()
+    if error:
+        return None, error
+    body = await _signed_post(
+        {
+            "method": "auth.getToken",
+            "api_key": str(LASTFM_API_KEY),
+            "format": "json",
+        }
+    )
+    token = str(body.get("token") or "").strip()
+    if token:
+        return token, None
+    return None, str(body.get("message") or body.get("error") or "Não consegui gerar o token Last.fm.")
+
+
+def lastfm_auth_url(token: str) -> str:
+    return f"https://www.last.fm/api/auth/?api_key={LASTFM_API_KEY}&token={token}"
+
+
+async def lastfm_get_session(token: str) -> tuple[str | None, str | None, str | None]:
+    error = _signing_config_error()
+    if error:
+        return None, None, error
+    body = await _signed_post(
+        {
+            "method": "auth.getSession",
+            "api_key": str(LASTFM_API_KEY),
+            "token": token,
+            "format": "json",
+        }
+    )
+    session = body.get("session") if isinstance(body.get("session"), dict) else {}
+    sk = str(session.get("key") or "").strip()
+    username = str(session.get("name") or "").strip()
+    if sk:
+        return sk, username, None
+    return None, None, str(body.get("message") or body.get("error") or "Autorize no Last.fm e toque de novo em Já autorizei.")
 
 
 def _fingerprint(value: str) -> str:
@@ -292,7 +396,7 @@ def _lastfm_credential_facts() -> tuple[str, int, int]:
     return (
         _fingerprint(str(LASTFM_API_KEY or "")),
         len(str(LASTFM_API_SECRET or "")),
-        len(str(LASTFM_SESSION_KEY or "")),
+        len(str(get_lastfm_session_key() or "")),
     )
 
 
@@ -315,7 +419,7 @@ async def check_lastfm_auth() -> LastfmAuthCheckResult:
     params: dict[str, str] = {
         "method": "user.getInfo",
         "api_key": str(LASTFM_API_KEY),
-        "sk": str(LASTFM_SESSION_KEY),
+        "sk": str(get_lastfm_session_key()),
         "format": "json",
     }
     params["api_sig"] = build_api_sig(params, str(LASTFM_API_SECRET))
@@ -482,7 +586,7 @@ async def scrobble_items(items: list[ScrobbleItem]) -> ScrobbleImportResult:
             params: dict[str, str] = {
                 "method": LASTFM_SCROBBLE_METHOD,
                 "api_key": str(LASTFM_API_KEY),
-                "sk": str(LASTFM_SESSION_KEY),
+                "sk": str(get_lastfm_session_key()),
                 "format": "json",
             }
             for idx, item in enumerate(batch):
