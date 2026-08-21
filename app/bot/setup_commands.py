@@ -69,6 +69,8 @@ _OWNER_ONLY_COMMANDS: tuple[CommandDef, ...] = (
     CommandDef("onoff", "Silenciar usuários comuns"),
     CommandDef("legacy", "Restringir logins antigos"),
     CommandDef("listening", "Exportar banco completo"),
+    CommandDef("scr", "Scrobblar a música respondida"),
+    CommandDef("sct", "Scrobblar pedindo a quantidade"),
 )
 
 _OWNER_PRIVATE_COMMANDS: tuple[CommandDef, ...] = _PRIVATE_COMMANDS + _OWNER_ONLY_COMMANDS

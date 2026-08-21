@@ -58,6 +58,16 @@ def _bool_env(name: str, default: bool, *, legacy: Iterable[str] = ()) -> bool:
     return default
 
 
+def _secret_env(name: str, default: str = "", *, legacy: Iterable[str] = ()) -> str:
+    # Secrets copied through dashboards often arrive with accidental spaces or
+    # wrapping quotes. Last.fm signatures are byte-exact, so normalize only the
+    # deployment wrapper characters, never the internal value.
+    value = _env(name, default, legacy=legacy).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1].strip()
+    return value
+
+
 def _int_set_env(name: str, *, legacy: Iterable[str] = ()) -> frozenset[int]:
     values: set[int] = set()
     raw_values: list[str] = []
@@ -218,6 +228,14 @@ LASTFM_API_KEY = _env(
     "TR3_LASTFM_API_KEY",
     legacy=("LASTFM_API_KEY",),
 )
+LASTFM_API_SECRET = _secret_env(
+    "TR3_LASTFM_API_SECRET",
+    legacy=("LASTFM_API_SECRET",),
+)
+LASTFM_SESSION_KEY = _secret_env(
+    "TR3_LASTFM_SESSION_KEY",
+    legacy=("LASTFM_SESSION_KEY", "TR3_LASTFM_SK", "LASTFM_SK"),
+)
 LASTFM_API_BASE_URL = _env(
     "TR3_LASTFM_API_BASE_URL",
     "https://ws.audioscrobbler.com/2.0/",
@@ -227,6 +245,31 @@ HTTP_TIMEOUT_SECONDS = _float_env(
     "TR3_HTTP_TIMEOUT_SECONDS",
     SPOTIFY_HTTP_TIMEOUT_SECONDS,
     legacy=("HTTP_TIMEOUT_SECONDS",),
+)
+LASTFM_SCROBBLE_IMPORT_BATCH_SIZE = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_BATCH_SIZE",
+    50,
+    legacy=("LASTFM_SCROBBLE_IMPORT_BATCH_SIZE",),
+)
+LASTFM_SCROBBLE_IMPORT_SLEEP_SECONDS = _float_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_SLEEP_SECONDS",
+    1.2,
+    legacy=("LASTFM_SCROBBLE_IMPORT_SLEEP_SECONDS",),
+)
+LASTFM_SCROBBLE_IMPORT_SPACING_SECONDS = _int_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_SPACING_SECONDS",
+    61,
+    legacy=("LASTFM_SCROBBLE_IMPORT_SPACING_SECONDS",),
+)
+LASTFM_SCROBBLE_IMPORT_STOP_ON_DAILY_LIMIT = _bool_env(
+    "TR3_LASTFM_SCROBBLE_IMPORT_STOP_ON_DAILY_LIMIT",
+    True,
+    legacy=("LASTFM_SCROBBLE_IMPORT_STOP_ON_DAILY_LIMIT",),
+)
+LASTFM_SCR_MAX_PLAYS = _int_env(
+    "TR3_LASTFM_SCR_MAX_PLAYS",
+    500,
+    legacy=("LASTFM_SCR_MAX_PLAYS",),
 )
 
 def _resolve_data_dir() -> Path:
