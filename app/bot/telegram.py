@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import html
 import logging
-import uuid
 
 from aiogram import Dispatcher, F
 from aiogram.dispatcher.event.bases import UNHANDLED
 from aiogram.filters import Command, StateFilter
 from aiogram.types import (
     CallbackQuery,
-    InlineQuery,
-    InlineQueryResultCachedPhoto,
-    InlineQueryResultPhoto,
     Message,
     MessageReactionUpdated,
     ReactionTypeEmoji,
@@ -95,70 +91,6 @@ async def _answer_with_effect(message: Message, text: str, effect_id: str, **kwa
         except Exception:
             logger.debug("EFFECT_SEND_FAILED effect_id=%s", effect_id, exc_info=True)
     return await message.answer(text, **kwargs)
-
-
-_SANS_BOLD_ITALIC_UPPER_OFFSET = 0x1D63C - ord("A")
-_SANS_BOLD_ITALIC_LOWER_OFFSET = 0x1D656 - ord("a")
-
-
-def _inline_public_name_style(value: str | None) -> str:
-    raw = (value or "Usuário").strip() or "Usuário"
-    out: list[str] = []
-    for ch in raw:
-        if "A" <= ch <= "Z":
-            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_UPPER_OFFSET))
-        elif "a" <= ch <= "z":
-            out.append(chr(ord(ch) + _SANS_BOLD_ITALIC_LOWER_OFFSET))
-        else:
-            out.append(ch)
-    return html.escape("".join(out))
-
-
-
-async def _inline_photo_result_for_cover(
-    bot,
-    *,
-    result_id: str,
-    track_id: str | None,
-    cover_url: str,
-    thumbnail_url: str | None,
-    title: str | None = None,
-    description: str | None = None,
-    caption: str,
-):
-    """Monta resultado inline usando file_id quando a capa já foi cacheada.
-
-    InlineQueryResultPhoto exige URL HTTP. Para capa já salva no Telegram,
-    o tipo correto é InlineQueryResultCachedPhoto com photo_file_id. Se o
-    cache falhar, preserva o comportamento antigo por URL.
-    """
-    try:
-        resolved = await cover_cache_service.resolve_photo(
-            bot,
-            track_id=track_id,
-            cover_url=cover_url,
-            filename="inline-legacy-cover.jpg",
-        )
-        if isinstance(resolved, str) and resolved and resolved != cover_url:
-            return InlineQueryResultCachedPhoto(
-                id=result_id,
-                photo_file_id=resolved,
-                title=title,
-                description=description,
-                caption=caption,
-                parse_mode="HTML",
-            )
-    except Exception:
-        logger.debug("INLINE_PUBLIC_COVER_CACHE_SKIPPED track_id=%s", track_id, exc_info=True)
-    return InlineQueryResultPhoto(
-        id=result_id,
-        photo_url=cover_url,
-        thumbnail_url=thumbnail_url or cover_url,
-        title=title,
-        description=description,
-        caption=caption,
-        parse_mode="HTML",
-    )
 
 
 def _track_label(track: dict) -> tuple[str, str, str, str | None]:
@@ -799,114 +731,15 @@ def _register_handlers(dp: Dispatcher) -> None:
                 event.chat.id, event.message_id, event.user.id,
             )
 
-    # Inline público. Query vazia (ou "playing") -> card da música tocando
-    # como 1ª opção. Query com termo -> busca por termo (mesmo motor do /radiofm).
-    def _is_x9_inline_format(query: InlineQuery) -> bool:
-        parts = (query.query or "").strip().split()
-        if len(parts) != 2:
-            return False
-        return all(p.lstrip("-").isdigit() for p in parts)
-
-    def _is_music_inline_v2_format(query: InlineQuery) -> bool:
-        try:
-            from app.bot.music_inline import is_music_inline_query
-
-            return is_music_inline_query(
-                query.query,
-                owner=is_code_owner(query.from_user.id) if query.from_user else False,
-            )
-        except Exception:
-            logger.debug("MUSIC_INLINE_V2_FORMAT_CHECK_FAILED", exc_info=True)
-            return False
-
-    async def _answer_playing(query: InlineQuery) -> None:
-        track = await music_service.get_current_or_last_played(query.from_user.id)
-        if not track:
-            await query.answer([], cache_time=1, is_personal=True)
-            return
-        track_id = str(track.get("track_id") or "").strip()
-        schedule_tnow_activity_record(query.from_user.id, track, context="inline_public_playing")
-        track_name_raw = str(track.get("track_name") or "").strip()
-        artist_raw = str(track.get("artist") or "").strip()
-        track_name, artist, track_url, cover = _track_label(track)
-        if not cover:
-            await query.answer([], cache_time=1, is_personal=True)
-            return
-        total_plays: int | None = None
-        try:
-            total_plays, _plays_source = await _resolve_play_button_count(query.from_user.id, track_id, artist_raw, track_name_raw)
-        except Exception:
-            logger.debug("INLINE_PUBLIC_PLAYING_COUNT_SKIPPED user=%s track=%s", query.from_user.id, track_id, exc_info=True)
-        who = html.escape(query.from_user.full_name or "Usuário")
-        user_link = f"tg://user?id={query.from_user.id}"
-        who_part = f'<b><a href="{html.escape(user_link, quote=True)}">{who}</a></b>'
-        track_part = f'<a href="{track_url}">{track_name}</a>' if track_url else track_name
-        if isinstance(total_plays, int) and total_plays >= 0:
-            caption = f"{who_part}\n\n♫ <code>{total_plays}</code> · <b>{track_part}</b> — <i>{artist}</i>"
-        else:
-            caption = f"{who_part}\n\n♫ <b>{track_part}</b> — <i>{artist}</i>"
-        result = await _inline_photo_result_for_cover(
-            query.bot,
-            result_id=str(uuid.uuid4()),
-            track_id=track_id,
-            cover_url=cover,
-            thumbnail_url=cover,
-            caption=caption,
-        )
-        await query.answer([result], cache_time=2, is_personal=True)
-
-    @dp.inline_query(lambda q: not _is_x9_inline_format(q) and not _is_music_inline_v2_format(q))
-    async def inline_public(query: InlineQuery) -> None:
-        raw = (query.query or "").strip()
-        # Segurança inline musical: query vazia não deve cair no legado /playing,
-        # porque esse fluxo antigo usa photo_url e caption com link. O /playing
-        # seguro agora é explícito: @bot playing.
-        if not raw:
-            await query.answer([], cache_time=1, is_personal=True)
-            return
-        if raw.lower() == "playing":
-            await _answer_playing(query)
-            return
-
-        from app.services.track_search import search_tracks
-
-        hits = await search_tracks(raw, limit=10)
-        results: list[InlineQueryResultPhoto | InlineQueryResultCachedPhoto] = []
-        for hit in hits:
-            if not hit.cover_big:
-                continue
-            name_part = _inline_public_name_style(query.from_user.full_name or "Usuário")
-            caption = f"{name_part}\n♫ {html.escape(hit.title)} — {html.escape(hit.artist)}"
-            results.append(
-                await _inline_photo_result_for_cover(
-                    query.bot,
-                    result_id=str(uuid.uuid4()),
-                    track_id=hit.track_id,
-                    cover_url=hit.cover_big,
-                    thumbnail_url=hit.cover_thumb or hit.cover_big,
-                    title=hit.title,
-                    description=hit.artist,
-                    caption=caption,
-                )
-            )
-        await query.answer(results, cache_time=5, is_personal=True)
-
     # IMPORTANTE: o filtro `~F.text.startswith("/")` impede que este handler
     # consuma comandos. Sem isso, qualquer texto começando com "/" (ex.:
     # /weekfm, /monthfm em sub-routers) bateria neste handler primeiro, o
     # `return` cedo devolveria None ao observer (que NÃO é UNHANDLED em
     # aiogram3), e a propagação para sub-routers seria abortada.
-    # StateFilter(None) também evita interceptar texto durante FSM.
-    # Music-only: sem diálogo privado com estado de espera; mantém comandos musicais livres.
-    def _music_dialog_active(message: Message) -> bool:
-        # Music-only build: não há diálogo privado com estado de espera.
-        return False
-
     @dp.message(
         StateFilter(None),
         F.text,
         ~F.text.startswith("/"),
-        lambda m: not _music_dialog_active(m),
     )
     async def text_aliases(message: Message):
         if not _should_handle_text_alias(message):

@@ -40,5 +40,7 @@ def test_fluxo_musica_atual_nao_mudou():
 
 
 def test_layout_publico_corrigido_continua_presente():
-    assert 'caption = f"{name_part}\\n♫ {html.escape(hit.title)} — {html.escape(hit.artist)}"' in TELEGRAM
+    assert "async def inline_public" not in TELEGRAM
     assert 'caption = f"<b>{html.escape(hit.title)}</b> - <i>{html.escape(hit.artist)}</i>"' not in TELEGRAM
+    assert "def _format_inline_music_header" in INLINE
+    assert "def _format_inline_manual_header" in INLINE

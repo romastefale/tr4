@@ -66,7 +66,7 @@ async def _list_common_groups(bot, user_id: int) -> list[dict]:
             except Exception:
                 return None
         status = getattr(member, "status", None)
-        if status in {"left", "ki" + "cked"}:
+        if status in {"left", "kicked"}:
             return None
         if status == "restricted" and not getattr(member, "is_member", True):
             return None

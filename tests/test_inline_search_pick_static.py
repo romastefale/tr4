@@ -14,7 +14,7 @@ def test_empty_menu_path_still_present() -> None:
 
 def test_owner_free_text_claimed_by_v2() -> None:
     assert "owner: bool = False" in INLINE
-    assert "owner=is_code_owner(query.from_user.id)" in TELEGRAM
+    assert "owner=_is_owner(query.from_user.id)" in INLINE
     assert 'result_kind="pick"' in INLINE
 
 

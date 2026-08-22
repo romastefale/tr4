@@ -16,13 +16,13 @@ def test_playing_payload_layout_global_sem_linha_de_likes():
     assert 'get_track_play_count(track_id), "local"' not in telegram
 
 
-def test_inline_public_legacy_usa_cached_photo_quando_possivel():
+def test_inline_legacy_photo_helper_removed():
     telegram = read("app/bot/telegram.py")
-    assert "InlineQueryResultCachedPhoto" in telegram
-    assert "async def _inline_photo_result_for_cover" in telegram
-    assert "photo_file_id=resolved" in telegram
+    assert "InlineQueryResultCachedPhoto" not in telegram
+    assert "async def _inline_photo_result_for_cover" not in telegram
+    assert "await _inline_photo_result_for_cover(" not in telegram
+    # cover cache remains for /playing and cards
     assert "await cover_cache_service.resolve_photo" in telegram
-    assert "await _inline_photo_result_for_cover(" in telegram
 
 
 def test_tstory_fallback_remove_file_id_velho_e_tenta_bytes_originais():

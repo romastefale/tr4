@@ -28,7 +28,7 @@ def test_tnow_activity_alimentada_por_fluxos_musicais_principais():
     assert "upsert_from_track(" in CACHE
     assert 'context="playing_payload"' in TELEGRAM
     assert 'context="tly_payload"' in TELEGRAM
-    assert 'context="inline_public_playing"' in TELEGRAM
+    assert 'context="inline_public_playing"' not in TELEGRAM
     INLINE = (ROOT / "app" / "bot" / "music_inline.py").read_text(encoding="utf-8")
     assert 'context="inline_tly"' in INLINE
     assert "TNOW_ACCEPTED_TRACK_SOURCES" in CACHE

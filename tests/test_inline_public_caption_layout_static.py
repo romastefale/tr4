@@ -5,14 +5,9 @@ TELEGRAM = (ROOT / "app" / "bot" / "telegram.py").read_text(encoding="utf-8")
 INLINE = (ROOT / "app" / "bot" / "music_inline.py").read_text(encoding="utf-8")
 
 
-def test_inline_public_legacy_caption_layout_corrigido():
-    assert "def _inline_public_name_style" in TELEGRAM
-    assert 'caption = f"{name_part}\\n♫ {html.escape(hit.title)} — {html.escape(hit.artist)}"' in TELEGRAM
-    assert 'caption = f"<b>{html.escape(hit.title)}</b> - <i>{html.escape(hit.artist)}</i>"' not in TELEGRAM
-
-
-def test_inline_public_define_name_part_no_loop():
-    assert 'name_part = _inline_public_name_style(query.from_user.full_name or "Usuário")' in TELEGRAM
+def test_inline_public_legacy_removed():
+    assert "def _inline_public_name_style" not in TELEGRAM
+    assert "async def inline_public" not in TELEGRAM
 
 
 def test_musica_atual_playing_preserva_payload_e_layout_inline_novo():

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import csv
 import hashlib
-import io
 import json
 import logging
 import time
-from collections import Counter, OrderedDict
+from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 
@@ -49,15 +47,6 @@ class FailedScrobble:
 
 
 @dataclass(frozen=True)
-class ParsedScrobbleCsv:
-    items: list[ScrobbleItem]
-    unique_tracks: int
-    rows_read: int
-    rejected_rows: int
-    aggregate_preview: list[tuple[str, str, int]]
-
-
-@dataclass(frozen=True)
 class ScrobbleImportResult:
     requested: int
     accepted: int
@@ -82,180 +71,6 @@ class LastfmAuthCheckResult:
     api_key_fingerprint: str
     secret_length: int
     session_key_length: int
-
-
-def _clean_cell(value: Any) -> str:
-    return str(value or "").strip().strip("\ufeff")
-
-
-def _clean_header(value: str) -> str:
-    cleaned = _clean_cell(value).lower()
-    replacements = {
-        "á": "a",
-        "à": "a",
-        "ã": "a",
-        "â": "a",
-        "é": "e",
-        "ê": "e",
-        "í": "i",
-        "ó": "o",
-        "ô": "o",
-        "õ": "o",
-        "ú": "u",
-        "ç": "c",
-    }
-    for old, new in replacements.items():
-        cleaned = cleaned.replace(old, new)
-    return cleaned.replace(" ", "_").replace("-", "_")
-
-
-_ARTIST_COLUMNS = {"artist", "artista", "artists", "cantor", "performer"}
-_TRACK_COLUMNS = {"track", "musica", "song", "faixa", "title", "titulo", "nome"}
-_ALBUM_COLUMNS = {"album", "disco"}
-_COUNT_COLUMNS = {
-    "count",
-    "plays",
-    "playcount",
-    "target_count",
-    "inject_count",
-    "scrobbles",
-    "reproducoes",
-    "reproducao",
-    "quantidade",
-    "vezes",
-}
-
-
-def _decode_csv(data: bytes) -> str:
-    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
-
-
-def _sniff_dialect(text: str) -> csv.Dialect:
-    sample = text[:4096]
-    try:
-        return csv.Sniffer().sniff(sample, delimiters=",;\t")
-    except csv.Error:
-        return csv.excel
-
-
-def _index_for(headers: list[str], aliases: set[str]) -> int | None:
-    for idx, header in enumerate(headers):
-        if _clean_header(header) in aliases:
-            return idx
-    return None
-
-
-def _parse_positive_int(value: str, *, default: int = 1) -> int:
-    raw = _clean_cell(value)
-    if not raw:
-        return default
-    try:
-        parsed = int(raw)
-    except ValueError:
-        parsed = int(float(raw.replace(",", ".")))
-    if parsed < 0:
-        raise ValueError("count negativo")
-    return parsed
-
-
-def _looks_like_header(row: list[str]) -> bool:
-    cleaned = {_clean_header(cell) for cell in row}
-    return bool(cleaned & _ARTIST_COLUMNS) and bool(cleaned & _TRACK_COLUMNS)
-
-
-def _make_preview(items: Iterable[ScrobbleItem], *, limit: int = 12) -> list[tuple[str, str, int]]:
-    counts: "OrderedDict[tuple[str, str], int]" = OrderedDict()
-    for item in items:
-        key = (item.artist, item.track)
-        counts[key] = counts.get(key, 0) + 1
-    return [(artist, track, count) for (artist, track), count in list(counts.items())[:limit]]
-
-
-def parse_scrobble_csv(data: bytes, *, max_expanded_items: int | None = None) -> ParsedScrobbleCsv:
-    """Parse CSV accepted by the owner import command.
-
-    Accepted formats:
-      - artist,track  (one scrobble per row)
-      - artist,track,album  (third text column as album)
-      - artist,track,count or artist,track,target_count/inject_count  (expanded by count)
-      - header aliases in Portuguese/English are accepted.
-    """
-    text = _decode_csv(data)
-    dialect = _sniff_dialect(text)
-    reader = csv.reader(io.StringIO(text), dialect)
-    raw_rows = [[_clean_cell(cell) for cell in row] for row in reader if any(_clean_cell(cell) for cell in row)]
-    if not raw_rows:
-        raise ValueError("CSV vazio.")
-
-    first = raw_rows[0]
-    has_header = _looks_like_header(first)
-    data_rows = raw_rows[1:] if has_header else raw_rows
-
-    artist_idx: int | None = None
-    track_idx: int | None = None
-    album_idx: int | None = None
-    count_idx: int | None = None
-
-    if has_header:
-        headers = first
-        artist_idx = _index_for(headers, _ARTIST_COLUMNS)
-        track_idx = _index_for(headers, _TRACK_COLUMNS)
-        album_idx = _index_for(headers, _ALBUM_COLUMNS)
-        count_idx = _index_for(headers, _COUNT_COLUMNS)
-    else:
-        artist_idx = 0
-        track_idx = 1 if len(first) >= 2 else None
-        if len(first) >= 3:
-            try:
-                _parse_positive_int(first[2])
-                count_idx = 2
-            except Exception:
-                album_idx = 2
-        if len(first) >= 4:
-            try:
-                _parse_positive_int(first[3])
-                count_idx = 3
-            except Exception:
-                pass
-
-    if artist_idx is None or track_idx is None:
-        raise ValueError("CSV precisa conter artista e música. Use colunas artist,track ou artista,musica.")
-
-    items: list[ScrobbleItem] = []
-    rejected_rows = 0
-    for row in data_rows:
-        try:
-            artist = _clean_cell(row[artist_idx]) if artist_idx < len(row) else ""
-            track = _clean_cell(row[track_idx]) if track_idx < len(row) else ""
-            album = _clean_cell(row[album_idx]) if album_idx is not None and album_idx < len(row) else ""
-            count = _parse_positive_int(row[count_idx], default=1) if count_idx is not None and count_idx < len(row) else 1
-        except Exception:
-            rejected_rows += 1
-            continue
-        if not artist or not track or count <= 0:
-            rejected_rows += 1
-            continue
-        for _ in range(count):
-            items.append(ScrobbleItem(artist=artist, track=track, album=album or None))
-            if max_expanded_items is not None and len(items) > max_expanded_items:
-                raise ValueError(f"CSV expande para mais de {max_expanded_items} scrobbles.")
-
-    if not items:
-        raise ValueError("Nenhum scrobble válido encontrado no CSV.")
-
-    unique_tracks = len({(item.artist.lower(), item.track.lower()) for item in items})
-    return ParsedScrobbleCsv(
-        items=items,
-        unique_tracks=unique_tracks,
-        rows_read=len(data_rows),
-        rejected_rows=rejected_rows,
-        aggregate_preview=_make_preview(items),
-    )
 
 
 def build_api_sig(params: dict[str, str], api_secret: str) -> str:
@@ -534,22 +349,6 @@ def _parse_scrobble_response(
         ignored_codes["unknown_ignored"] += missing
 
     return accepted, ignored, ignored_codes, failed_items, daily_limit_hit
-
-
-def count_items(items: Iterable[ScrobbleItem]) -> list[tuple[ScrobbleItem, int]]:
-    counts: "OrderedDict[ScrobbleItem, int]" = OrderedDict()
-    for item in items:
-        counts[item] = counts.get(item, 0) + 1
-    return list(counts.items())
-
-
-def build_count_csv(items: Iterable[ScrobbleItem]) -> bytes:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["artist", "track", "album", "inject_count"])
-    for item, count in count_items(items):
-        writer.writerow([item.artist, item.track, item.album or "", count])
-    return buffer.getvalue().encode("utf-8-sig")
 
 
 async def scrobble_items(items: list[ScrobbleItem]) -> ScrobbleImportResult:

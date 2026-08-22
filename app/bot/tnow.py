@@ -443,7 +443,7 @@ async def _entry_from_activity(bot: Any, activity: TnowActivityHit) -> TnowEntry
 
 
 _GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
-_MEMBER_OUT_STATUSES = {"left", "ki" + "cked"}
+_MEMBER_OUT_STATUSES = {"left", "kicked"}
 
 
 async def _is_chat_member(bot: Any, chat_id: int, user_id: int) -> bool:

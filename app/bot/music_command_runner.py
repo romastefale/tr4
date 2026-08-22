@@ -116,7 +116,7 @@ async def _is_active_member(bot: Bot, chat_id: int, user_id: int) -> bool:
     except Exception:
         return False
     status = getattr(member, "status", None)
-    if status in {"left", "ki" + "cked"}:
+    if status in {"left", "kicked"}:
         return False
     if status == "restricted" and not getattr(member, "is_member", True):
         return False
@@ -144,7 +144,7 @@ async def list_common_music_groups(bot: Bot, user_id: int, *, limit: int = 50) -
             try:
                 bot_member = await bot.get_chat_member(chat_id, (await bot.get_me()).id)
                 bot_status = getattr(bot_member, "status", None)
-                if bot_status in {"left", "ki" + "cked"}:
+                if bot_status in {"left", "kicked"}:
                     return None
             except Exception:
                 return None

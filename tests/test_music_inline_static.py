@@ -9,7 +9,8 @@ TELEGRAM = (ROOT / "app" / "bot" / "telegram.py").read_text(encoding="utf-8")
 def test_music_inline_registered_before_legacy_inline_handler():
     assert "from app.bot.music_inline import router as music_inline_router" in MAIN
     assert "dispatcher.include_router(music_inline_router)" in MAIN
-    assert "not _is_music_inline_v2_format(q)" in TELEGRAM
+    assert "async def inline_public" not in TELEGRAM
+    assert "_is_music_inline_v2_format" not in TELEGRAM
 
 
 def test_chosen_inline_result_is_allowed_update():
@@ -43,10 +44,13 @@ def test_inline_musical_inteiro_e_owner_only():
     assert "MUSIC_INLINE_RENDER_BLOCKED_NON_OWNER" in INLINE
     assert "allowed = _is_owner(query.from_user.id)" in INLINE
 
-def test_empty_inline_query_does_not_use_legacy_playing_photo_url():
-    assert "if not raw:" in TELEGRAM
-    assert "await query.answer([], cache_time=1, is_personal=True)" in TELEGRAM
-    assert "query vazia não deve cair no legado /playing" in TELEGRAM
+def test_legacy_inline_public_removed():
+    assert "async def inline_public" not in TELEGRAM
+    assert "async def _answer_playing" not in TELEGRAM
+    assert "def _is_x9_inline_format" not in TELEGRAM
+    assert "def _inline_public_name_style" not in TELEGRAM
+    assert "photo_url=" not in TELEGRAM
+    assert "query vazia não deve cair no legado /playing" not in TELEGRAM
 
 def test_empty_inline_query_shows_clickable_menu():
     assert "_INLINE_MENU_KINDS" in INLINE

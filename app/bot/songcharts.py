@@ -36,7 +36,7 @@ def _spawn_bg(coro) -> asyncio.Task:
 # checagem é uma chamada Bot API — paraleliza pra não bloquear, mas sem
 # explodir o flood limit. Em prática: 30 conectados resolve em <1s.
 MEMBER_CHECK_CONCURRENCY = 8
-NON_MEMBER_STATUSES = {"left", "ki" + "cked"}
+NON_MEMBER_STATUSES = {"left", "kicked"}
 
 
 def _menu_keyboard(scope: str, chat_id: int, requester_id: int) -> InlineKeyboardMarkup:
