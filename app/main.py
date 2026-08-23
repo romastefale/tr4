@@ -25,6 +25,7 @@ from app.bot.owner_universal import router as owner_universal_router
 from app.bot.owner_manual_register import router as owner_manual_register_router
 from app.bot.owner_scr import router as owner_scr_router
 from app.bot.ops_control import install_operational_control_middleware, router as ops_control_router
+from app.bot.owner_command_guard import install_owner_command_guard
 from app.bot.myself import router as myself_router
 from app.bot.radiofm import router as radiofm_router
 from app.bot.setup_commands import setup_bot_commands
@@ -78,13 +79,6 @@ def _remember_music_group_from_update(update: Update) -> None:
 
 
 async def _configure_telegram_bot_background() -> None:
-    """Configure Telegram without blocking Railway /healthz startup.
-
-    Railway health checks only need the HTTP server to answer /healthz.
-    Network calls to Telegram (set_webhook/setup commands) can take longer than
-    the first health-check attempt, so this task finishes Telegram setup after
-    FastAPI has already started serving HTTP.
-    """
     global bot, _telegram_dispatcher_configured, _telegram_startup_status, _telegram_startup_error
     _telegram_startup_status = "starting"
     _telegram_startup_error = None
@@ -93,6 +87,7 @@ async def _configure_telegram_bot_background() -> None:
         local_bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         if not _telegram_dispatcher_configured:
             install_operational_control_middleware(dispatcher)
+            install_owner_command_guard(dispatcher)
             dispatcher.include_router(ops_control_router)
             dispatcher.include_router(monthfm_router)
             dispatcher.include_router(owner_universal_router)
@@ -185,7 +180,6 @@ def _db_ready_check() -> tuple[bool, str | None]:
         return True, None
     except SQLAlchemyError as exc:
         return False, f"{type(exc).__name__}: {exc}"
-
 
 
 _INLINE_ICON_DIR = Path(__file__).resolve().parent / "static" / "inline_icons"
