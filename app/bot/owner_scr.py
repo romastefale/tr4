@@ -26,6 +26,7 @@ from app.services.lastfm_scrobbler import (
     save_persisted_session,
     scrobble_items,
 )
+from app.services.reactions import reactions_service
 
 logger = logging.getLogger(__name__)
 router = Router(name="owner_scr")
@@ -128,11 +129,42 @@ def _confirm_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _track_from_reply(message: Message) -> tuple[str, str, str | None] | None:
+async def _track_from_reply(message: Message) -> tuple[str, str, str | None] | None:
+    """Resolve track for /scr from the replied music card.
+
+    Preference order:
+    1. Registered card metadata from /playing (Last.fm-first source names)
+    2. Caption regex parse (legacy fallback)
+    """
     reply = message.reply_to_message
     if reply is None:
         return None
-    return parse_track_from_caption(caption_from_message(reply))
+
+    try:
+        chat_id = int(reply.chat.id)
+        message_id = int(reply.message_id)
+        card_track = await reactions_service.resolve_card_track(chat_id, message_id)
+        if card_track is not None:
+            track, artist, _track_id = card_track
+            logger.info(
+                "SCR_TRACK_FROM_CARD chat=%s msg=%s track=%s artist=%s",
+                chat_id,
+                message_id,
+                track,
+                artist,
+            )
+            return track, artist, None
+    except Exception:
+        logger.debug("SCR_CARD_LOOKUP_FAILED", exc_info=True)
+
+    parsed = parse_track_from_caption(caption_from_message(reply))
+    if parsed is not None:
+        logger.info(
+            "SCR_TRACK_FROM_CAPTION track=%s artist=%s",
+            parsed[0],
+            parsed[1],
+        )
+    return parsed
 
 
 async def _deny_if_needed(message: Message) -> bool:
@@ -203,9 +235,12 @@ async def scr_command(message: Message, command: CommandObject) -> None:
     if user_id in _BUSY:
         await message.answer("Já tem um scrobble em andamento. Espera terminar.")
         return
-    parsed = _track_from_reply(message)
+    parsed = await _track_from_reply(message)
     if parsed is None:
-        await message.answer("Responda uma música que o bot mandou na DM com <code>/scr 123</code>.", parse_mode="HTML")
+        await message.answer(
+            "Responda uma música que o bot mandou na DM com <code>/scr 123</code>.",
+            parse_mode="HTML",
+        )
         return
     count = parse_play_count(command.args if command else None)
     if count is None:
@@ -229,7 +264,7 @@ async def sct_command(message: Message) -> None:
     if user_id in _BUSY:
         await message.answer("Já tem um scrobble em andamento. Espera terminar.")
         return
-    parsed = _track_from_reply(message)
+    parsed = await _track_from_reply(message)
     if parsed is None:
         await message.answer("Responda uma música que o bot mandou na DM com <code>/sct</code>.", parse_mode="HTML")
         return
@@ -428,4 +463,3 @@ async def lfmauth_done(query: CallbackQuery) -> None:
         f"<code>{html.escape(sk)}</code>",
         parse_mode="HTML",
     )
-
