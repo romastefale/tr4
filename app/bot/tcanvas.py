@@ -1,16 +1,12 @@
-"""/tcanvas — manda o Spotify Canvas (vídeo curto vertical) da música atual.
+"""/tcanvas — Spotify Canvas da música atual, com fallback /playing.
 
-Mesma legenda e botões do /playing. Se a música não tiver Canvas (ou o
-download falhar), cai SILENCIOSAMENTE no fluxo do /playing — o user sempre
-recebe alguma coisa útil.
+Contrato:
+- legenda == /playing (sempre)
+- 2 meios para o vídeo (site público; oficial opcional se houver SP_DC)
+- se ambos falharem: PLAYING_FALLBACK (capa/texto, mesma legenda)
 
-Abordagem: usa o endpoint não-documentado `spclient.wg.spotify.com/canvaz-cache`
-com um Bearer token anônimo do web player (`open.spotify.com/get_access_token`).
-Não envolve OAuth do usuário. Mesma técnica usada por canvasdownloader.com e
-github.com/bartleyg/my-spotify-canvas.
-
-O envio/cache do vídeo (reuso de file_id, canal de arquivo, fallback) fica no
-helper compartilhado `deliver_canvas` (mesma lógica do /tly).
+Mapas de referência: bartleyg/my-spotify-canvas, Delitefully/spotify-canvas-downloader.
+Entrega/cache/file_id: `deliver_canvas`.
 """
 from __future__ import annotations
 
