@@ -67,6 +67,31 @@ class ReactionsService:
                 )
             ).scalar_one_or_none()
 
+    async def resolve_card_track(
+        self, chat_id: int, message_id: int
+    ) -> tuple[str, str, str] | None:
+        """Return (track_name, artist_name, track_id) for a registered music card.
+
+        Extracts plain strings inside the session so callers never touch a
+        detached ORM instance. Used by /scr to reuse the same metadata that
+        /playing already resolved from Last.fm (or Spotify fallback).
+        """
+        with SessionLocal() as db:
+            card = db.execute(
+                select(CardMessage).where(
+                    CardMessage.chat_id == chat_id,
+                    CardMessage.message_id == message_id,
+                )
+            ).scalar_one_or_none()
+            if card is None:
+                return None
+            track = str(card.track_name or "").strip()
+            artist = str(card.artist_name or "").strip()
+            track_id = str(card.track_id or "").strip()
+            if not track or not artist:
+                return None
+            return track[:200], artist[:200], track_id
+
     async def apply_reaction_change(
         self,
         chat_id: int,
