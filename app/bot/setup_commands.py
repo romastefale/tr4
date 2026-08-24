@@ -45,15 +45,9 @@ _GROUP_COMMANDS: tuple[CommandDef, ...] = (
     CommandDef("songcharts", "Ranking musical do grupo"),
 )
 
+# login/logout/albnow/tcanvas/radiofm/myself/weekfm/monthfm:
+# executáveis só pelo dono (owner_command_guard), mas fora de qualquer menu.
 _OWNER_ONLY_COMMANDS: tuple[CommandDef, ...] = (
-    CommandDef("login", "Conectar Spotify"),
-    CommandDef("logout", "Desconectar Spotify"),
-    CommandDef("albnow", "Álbum da música atual"),
-    CommandDef("tcanvas", "Canvas Spotify da música atual"),
-    CommandDef("radiofm", "Buscar uma música"),
-    CommandDef("myself", "Menu de extratos pessoais"),
-    CommandDef("weekfm", "Extrato semanal Last.fm"),
-    CommandDef("monthfm", "Extrato mensal Last.fm"),
     CommandDef("tnowall", "Mosaico consolidado por DM"),
     CommandDef("songchartsall", "Ranking consolidado por DM"),
     CommandDef("weekall", "Ranking semanal consolidado"),
